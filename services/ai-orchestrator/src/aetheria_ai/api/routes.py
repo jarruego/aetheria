@@ -17,6 +17,7 @@ from aetheria_ai.models.plan import (
 )
 from aetheria_ai.planner.planner import build_plan
 from aetheria_ai.validator.validator import validate_plan
+from aetheria_ai.world_state_client import record_plan_audit
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 
@@ -31,4 +32,14 @@ async def plans(request: PlanRequest) -> PlanResponse:
     # 1) La IA PROPONE un plan.
     plan = await build_plan(request)
     # 2) El validador determinista APRUEBA o RECHAZA. Nunca se ejecuta aquí.
-    return validate_plan(plan)
+    result = validate_plan(plan)
+    # 3) Fase 5: queda registrado en la auditoria (aprobado o rechazado).
+    await record_plan_audit({
+        "plan_id": str(result.plan_id),
+        "actor_type": request.actor.type.value,
+        "actor_id": request.actor.id,
+        "status": result.status.value,
+        "rejection_reason": result.rejection_reason,
+        "actions": [{"type": a.type.value, "params": a.params} for a in result.actions],
+    })
+    return result

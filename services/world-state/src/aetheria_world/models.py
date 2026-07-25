@@ -50,3 +50,24 @@ class HomeOut(BaseModel):
     z: float
     yaw: float
     pitch: float
+
+
+class ConversationAppend(BaseModel):
+    npc_key: str
+    player_uuid: str
+    role: str          # 'player' | 'npc'
+    content: str
+
+
+class ConversationTurn(BaseModel):
+    role: str
+    content: str
+
+
+class PlanAudit(BaseModel):
+    plan_id: str
+    actor_type: str
+    actor_id: str
+    status: str        # 'approved' | 'rejected'
+    rejection_reason: str | None = None
+    actions: list = []

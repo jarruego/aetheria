@@ -47,10 +47,36 @@ Cada fase deja algo funcionando y verificable.
 - [x] Comandos /sethome y /home (persistencia local v1)
 - [x] Servidor creativo (superflat) como backend de Velocity
 
-## Fase 5 - El mundo recuerda (camino de escritura a la DB)  (EN CURSO)
+## Fase 5 - El mundo recuerda (camino de escritura a la DB)  (COMPLETA)
 - [x] Camino de escritura: plugin -> gateway -> world-state -> Postgres (ADR-0010)
 - [x] Registrar jugadores al entrar (tabla players deja de ser solo la semilla)
 - [x] Casas (/home) migradas a la DB (migracion 0002, una por servidor)
-- [ ] Persistir `npc_memory` (memoria de conversacion de NPC) y `plan_audit`
-- [ ] Persistir economia / encargos (`contracts`)
-- [ ] El NPC lee su memoria del world-state (conversacion con contexto)
+- [x] Memoria de conversacion de NPC (migracion 0003): los NPC recuerdan lo que les cuentas
+- [x] Personalidad humana por NPC (nombre + caracter; ya no hablan como robots)
+- [x] Auditoria de planes (plan_audit): cada plan de la IA queda registrado
+- (La economia/encargos se traslada a la Fase 6: es un sistema grande por si mismo)
+
+## Fase 6 - Economia y servicios IA  (PENDIENTE)
+- [ ] Moneda, cuentas y transacciones (tablas accounts/transactions ya existen)
+- [ ] Profesiones y empresas
+- [ ] Encargos/contratos (contracts) entre jugadores y NPC
+- [ ] Servicios inteligentes de PAGO: Arquitecto IA, Urbanista IA, Decorador IA... (el
+      modelo de negocio de la vision: vender servicios, nunca ventajas)
+
+## Fase 7 - NPC vivos (rutinas)  (PENDIENTE)
+- [ ] Horarios, rutinas y pathfinding por codigo (hoy los guias son estaticos)
+- [ ] NPC que se mueven, trabajan y tienen agenda
+
+## Fase 8 - El mundo evoluciona solo  (PENDIENTE)
+- [ ] Simulacion en el backend (cron/ticks) que evoluciona economia y ciudades aunque no
+      haya nadie conectado
+
+## Fase 9 - Estructuras sociales  (PENDIENTE)
+- [ ] Parcelas con propietarios, ciudades, gobiernos, contratos entre jugadores
+
+## Mejoras transversales  (PENDIENTE)
+- [ ] Seguridad: filtro de contenido en respuestas de NPC + rate-limit por jugador
+- [ ] NPC con aspecto HUMANO real (skins) via Citizens o packets (hoy son aldeanos)
+- [ ] Memoria a largo plazo: resumir conversaciones viejas, no solo los ultimos turnos
+- [ ] Backups automaticos (DB + mundos), monitorizacion/logs, CI que compile el plugin Java
+- [ ] Prueba de login Bedrock (Geyser) y salto entre mundos con cliente real

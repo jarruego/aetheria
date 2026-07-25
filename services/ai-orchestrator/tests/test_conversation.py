@@ -11,14 +11,14 @@ def _req(msg: str) -> ConversationRequest:
 
 
 def test_classify_levels():
-    assert classify_level("hola buenas") == 1
+    assert classify_level("adios amigo") == 1
     assert classify_level("me gusta tu casa") == 2
     assert classify_level("planifica una plaza con fuentes") == 3
     assert classify_level("x" * 130) == 3
 
 
 def test_level1_is_deterministic_and_free():
-    resp = asyncio.run(handle_conversation(_req("hola")))
+    resp = asyncio.run(handle_conversation(_req("adios")))
     assert resp.level == 1
     assert resp.reply
     assert "[stub:" not in resp.reply  # Nivel 1 no usa proveedor

@@ -5,14 +5,18 @@ Los consume el API Gateway (y en Fase 3 el planner). Nunca devuelven bloques.
 
 from __future__ import annotations
 
+import json
 import uuid
 
 from fastapi import APIRouter, HTTPException
 
 from aetheria_world.db import is_ready, pool
 from aetheria_world.models import (
+    ConversationAppend,
+    ConversationTurn,
     HomeOut,
     HomeUpsert,
+    PlanAudit,
     PlayerUpsert,
     WorldRef,
     WorldSummary,
@@ -116,3 +120,51 @@ async def get_home(player_uuid: str, server: str) -> HomeOut:
     if row is None:
         raise HTTPException(status_code=404, detail="El jugador no tiene casa en este servidor")
     return HomeOut(**dict(row))
+
+
+# --- Memoria de conversacion de NPC (Fase 5: el NPC te recuerda) ---
+
+@router.post("/npc-memory")
+async def append_conversation(body: ConversationAppend) -> dict:
+    _require_db()
+    async with pool().acquire() as conn:
+        await conn.execute(
+            "insert into npc_conversations (npc_key, player_uuid, role, content) values ($1, $2, $3, $4)",
+            body.npc_key, body.player_uuid, body.role, body.content,
+        )
+    return {"status": "ok"}
+
+
+@router.get("/npc-memory", response_model=list[ConversationTurn])
+async def get_conversation(npc_key: str, player_uuid: str, limit: int = 8) -> list[ConversationTurn]:
+    _require_db()
+    limit = max(1, min(limit, 50))
+    async with pool().acquire() as conn:
+        rows = await conn.fetch(
+            """
+            select role, content from npc_conversations
+            where npc_key = $1 and player_uuid = $2
+            order by created_at desc
+            limit $3
+            """,
+            npc_key, player_uuid, limit,
+        )
+    # Cronologico (mas antiguo primero) para reconstruir la conversacion.
+    return [ConversationTurn(role=r["role"], content=r["content"]) for r in reversed(rows)]
+
+
+# --- Auditoria de planes (Fase 5: cada plan de la IA queda registrado) ---
+
+@router.post("/plan-audit")
+async def record_plan_audit(body: PlanAudit) -> dict:
+    _require_db()
+    async with pool().acquire() as conn:
+        await conn.execute(
+            """
+            insert into plan_audit (plan_id, actor_type, actor_id, status, rejection_reason, actions)
+            values ($1, $2, $3, $4, $5, $6::jsonb)
+            """,
+            uuid.UUID(body.plan_id), body.actor_type, body.actor_id, body.status,
+            body.rejection_reason, json.dumps(body.actions),
+        )
+    return {"status": "ok"}

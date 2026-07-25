@@ -43,7 +43,8 @@ El plugin lee su rol de la variable de entorno `AETHERIA_ROLE` (o `role` en `con
   - **NPC guias conversables** junto a cada portal (aldeanos, cada uno con **bioma +
     profesion distintos** = ropa/colores diferentes): clic derecho -> modo charla
     inmersivo (tu chat va solo al NPC, responde por la tuberia de 3 niveles; sales con
-    "adios" o alejandote). `ConversationManager`. Aun sin memoria (llega con la Fase 5).
+    "adios" o alejandote). `ConversationManager`. Cada NPC tiene **personalidad** (nombre +
+    caracter) y **memoria**: recuerda lo que le cuentas (persistido en la DB, Fase 5).
   - Bienvenida + instrucciones al entrar; te teletransporta a la sala.
   - **Protecciones de hub**: modo aventura, invulnerable, no puedes morir, atacar,
     recibir dano ni pasar hambre; sin mobs; paz; hora y clima fijos. (Eventos cancelados

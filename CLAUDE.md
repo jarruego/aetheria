@@ -36,6 +36,7 @@ Un servidor de Minecraft persistente donde la IA es el "sistema operativo del mu
 | `db/supabase/migrations/` | Esquema versionado + `db/migrate.sh` (runner idempotente) |
 | `minecraft/` | Velocity, Lobby, Main, plugin Java |
 | `infra/` | Terraform (Oracle Cloud) + Docker (Fase 4) |
+| `docs/infra/` | **Estado del despliegue cloud y traspaso entre sesiones** |
 
 ## Comandos habituales
 
@@ -68,14 +69,34 @@ pip install -e ".[dev]" && pytest -q && ruff check src tests
 - **F2 Backend + DB**: Postgres + migraciones versionadas + world-state (read-model).
 - **F3 IA + Validador**: adaptador LLM (default `stub` = **coste cero**), conversación 3
   niveles, planner que usa el contexto del world-state → plan → validador.
-- **Plugin Java (Paper)**: `/aetheria ask|plan`; ejecuta planes aprobados por **lista
-  blanca** (SAY operativo). Cierra el bucle IA → mundo. Cargado y verificado en `main`.
+- **Plugin Java (Paper)**: `/aetheria ask|plan|npc`; ejecuta planes aprobados por **lista
+  blanca** con acciones reales (SAY, MOVE_TO por pathfinding, GIVE_ITEM, PLACE_BLUEPRINT,
+  OPEN_TRADE; NPC como Villager). Se **compila y despliega solo** vía compose (servicio
+  one-shot `plugin-build`), local y cloud. Cierra el bucle IA → mundo.
+- **Arranque sin lobby** (recorte Always Free): Velocity → `main`, End desactivado,
+  Chunky para pregeneración. Reactivar lobby = descomentar en compose. → handoff §4-5.
 
 **Coste:** por defecto NO se gasta nada (`LLM_PROVIDER=stub`). Para IA real: `LLM_PROVIDER=claude`
 + `ANTHROPIC_API_KEY`. El Nivel 2 siempre usa proveedor local (nunca gasta). → ADR-0007.
 
-**Siguiente: Fase 4** (Cloud/IaC en `infra/terraform/`) y acciones "físicas" ricas del
-plugin (mover NPC, blueprints). → `docs/roadmap.md`
+**Fase 4 (Cloud/IaC): EN CURSO, bloqueada por capacidad de Oracle.** El módulo Terraform
+está escrito y validado; la red ya existe en Oracle (5 recursos), pero la instancia ARM
+falla con `Out of host capacity` (free tier saturado). Hay que insistir con
+`infra/terraform/retry-apply.sh`.
+→ **Estado, decisiones y pendientes: `docs/infra/fase4-oracle-handoff.md`** (leerlo antes
+de tocar nada de cloud).
+
+Tres cosas de ese documento que afectan al repo fuera de `infra/`:
+1. **Se arranca sin lobby** (solo `main`: overworld + nether, sin End) por el recorte de
+   Oracle a 2 OCPU / 12 GB. Los cambios exactos en `velocity.toml` y `docker-compose.yml`
+   están en la sección 5, sin aplicar.
+2. **El plugin Java no se despliega**: no está montado en `docker-compose.yml` ni lo
+   compila el `cloud-init`. En la nube `main` arrancaría sin el puente IA↔mundo (sección 6).
+3. **Desactivar el End** requiere un `bukkit.yml.template` nuevo + línea en
+   `gen-mc-config.sh`; no hay variable de entorno para ello.
+
+**Siguiente además**: acciones "físicas" ricas del plugin (mover NPC, blueprints).
+→ `docs/roadmap.md`
 
 ## Convenciones
 

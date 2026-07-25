@@ -1,0 +1,235 @@
+#cloud-config
+# =====================================================================
+# Aetheria AI - cloud-init para Oracle Cloud (Ubuntu 24.04 ARM64)
+#
+# Este fichero es una PLANTILLA de Terraform (templatefile). Las
+# expresiones $ { ... } (sin el espacio) las sustituye Terraform ANTES de
+# enviar el fichero a la maquina. Por eso el shell de abajo usa siempre
+# $VAR y $(cmd), y NUNCA la forma con llaves: colisionaria con Terraform.
+#
+# Que deja hecho, sin tocar nada a mano:
+#   1. Firewall del SISTEMA (iptables) abierto para Minecraft  <-- critico
+#   2. Docker Engine + plugin compose (repo oficial, arm64)
+#   3. Clon del repo en ${app_dir}
+#   4. .env generado en LOCAL con secretos aleatorios (no viajan nunca)
+#   5. scripts/gen-mc-config.sh -> velocity.toml + forwarding.secret + paper
+#   6. docker compose up -d --build + unidad systemd para el reboot
+#
+# Log completo:  sudo tail -f /var/log/aetheria-bootstrap.log
+# =====================================================================
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - gnupg
+  - jq
+  - openssl
+
+write_files:
+  # -------------------------------------------------------------------
+  # Unidad systemd: garantiza que la topologia vuelve sola tras un reboot.
+  # Es cinturon Y tirantes: los contenedores ya llevan restart:unless-stopped
+  # en docker-compose.yml, pero eso solo funciona si el demonio Docker
+  # arranca y el compose ha sido levantado alguna vez desde este directorio.
+  # -------------------------------------------------------------------
+  - path: /etc/systemd/system/aetheria.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Aetheria AI - topologia completa (docker compose)
+      Documentation=https://github.com/jarruego/aetheria
+      Requires=docker.service
+      After=docker.service network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      WorkingDirectory=${app_dir}
+      ExecStart=/usr/bin/docker compose up -d
+      ExecStop=/usr/bin/docker compose down
+      TimeoutStartSec=0
+
+      [Install]
+      WantedBy=multi-user.target
+
+  # -------------------------------------------------------------------
+  # Script de arranque. Idempotente: se puede volver a lanzar a mano
+  # (sudo /usr/local/bin/aetheria-bootstrap.sh) para reparar la maquina
+  # o para re-desplegar tras un git push.
+  # -------------------------------------------------------------------
+  - path: /usr/local/bin/aetheria-bootstrap.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      APP_DIR="${app_dir}"
+      REPO_URL="${git_repo_url}"
+      BRANCH="${git_branch}"
+      JAVA_PORT="${java_port}"
+      BEDROCK_PORT="${bedrock_port}"
+      PAPER_MEM="${paper_memory}"
+      LOBBY_MEM="${lobby_memory}"
+      MAIN_MEM="${main_memory}"
+
+      export DEBIAN_FRONTEND=noninteractive
+
+      log() { echo "[aetheria] $(date -Is) $*"; }
+
+      # ===============================================================
+      # 1. FIREWALL DEL SISTEMA  <-- EL FALLO NUMERO 1 DE ORACLE CLOUD
+      # ===============================================================
+      # Las imagenes Ubuntu/Oracle Linux de OCI vienen con un iptables que
+      # RECHAZA todo el trafico entrante salvo el 22:
+      #
+      #     -A INPUT -j REJECT --reject-with icmp-host-prohibited
+      #
+      # Consecuencia: puedes tener la security list de la VCN abierta de par
+      # en par y el servidor de Minecraft seguira "no respondiendo". Se pierde
+      # una tarde entera mirando la consola de Oracle si no se sabe esto.
+      # Aqui insertamos las reglas EN LA POSICION 1 de la cadena INPUT (por
+      # delante del REJECT final) y las persistimos para que sobrevivan al
+      # reinicio.
+      #
+      # Nota: se hace ANTES de instalar Docker a proposito. Docker inyecta sus
+      # propias reglas al arrancar el demonio y las recrea en cada boot; si
+      # guardaramos despues, se persistirian duplicadas y sucias.
+      # ===============================================================
+      log "Configurando iptables (puertos de Minecraft)"
+      echo "iptables-persistent iptables-persistent/autosave_v4 boolean false" | debconf-set-selections
+      echo "iptables-persistent iptables-persistent/autosave_v6 boolean false" | debconf-set-selections
+      apt-get install -y iptables-persistent netfilter-persistent
+
+      ensure_input_accept() {
+        local proto="$1" port="$2"
+        if iptables -C INPUT -p "$proto" --dport "$port" -j ACCEPT 2>/dev/null; then
+          log "  regla ya presente: $proto/$port"
+        else
+          iptables -I INPUT 1 -p "$proto" --dport "$port" -j ACCEPT
+          log "  regla insertada: $proto/$port"
+        fi
+      }
+
+      ensure_input_accept tcp "$JAVA_PORT"      # Minecraft Java (Velocity)
+      ensure_input_accept udp "$BEDROCK_PORT"   # Minecraft Bedrock (Geyser)
+
+      netfilter-persistent save
+      log "Reglas iptables persistidas en /etc/iptables/rules.v4"
+
+      # ===============================================================
+      # 2. DOCKER ENGINE + PLUGIN COMPOSE (repo oficial, arm64)
+      # ===============================================================
+      if ! command -v docker >/dev/null 2>&1; then
+        log "Instalando Docker Engine desde el repositorio oficial"
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+          -o /etc/apt/keyrings/docker.asc
+        chmod a+r /etc/apt/keyrings/docker.asc
+
+        ARCH="$(dpkg --print-architecture)"          # arm64 en A1.Flex
+        CODENAME="$(. /etc/os-release && echo "$VERSION_CODENAME")"   # noble
+        echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $CODENAME stable" \
+          > /etc/apt/sources.list.d/docker.list
+
+        apt-get update -y
+        apt-get install -y docker-ce docker-ce-cli containerd.io \
+                           docker-buildx-plugin docker-compose-plugin
+      else
+        log "Docker ya instalado, se omite"
+      fi
+
+      systemctl enable --now docker
+      # Para poder usar docker sin sudo tras reconectar por SSH.
+      usermod -aG docker ubuntu || true
+
+      # ===============================================================
+      # 3. CODIGO: clonar o actualizar el repositorio
+      # ===============================================================
+      if [ -d "$APP_DIR/.git" ]; then
+        log "Actualizando repo existente en $APP_DIR"
+        git -C "$APP_DIR" fetch --prune origin
+        git -C "$APP_DIR" checkout "$BRANCH"
+        git -C "$APP_DIR" pull --ff-only
+      else
+        log "Clonando $REPO_URL ($BRANCH) en $APP_DIR"
+        git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+      fi
+
+      # ===============================================================
+      # 4. SECRETOS: se generan AQUI, en la maquina.
+      # ===============================================================
+      # El .env no esta en git (correcto). Los secretos de infraestructura
+      # (forwarding de Velocity, contrasena de Postgres, token interno) NO
+      # tienen por que existir fuera de esta maquina: se generan con
+      # openssl aqui mismo. Asi no viajan por la red, no acaban en el
+      # tfstate, ni en el portatil, ni en un gestor de secretos.
+      #
+      # La API key del LLM es la EXCEPCION: viene de fuera y se sube DESPUES
+      # con infra/terraform/upload-secrets.sh (ver README, seccion Secretos).
+      # El fichero queda con ANTHROPIC_API_KEY vacia; el stack arranca igual
+      # porque Minecraft no depende del LLM.
+      # ===============================================================
+      if [ ! -f "$APP_DIR/.env" ]; then
+        log "Generando .env con secretos aleatorios locales"
+        cp "$APP_DIR/.env.example" "$APP_DIR/.env"
+
+        FWD_SECRET="$(openssl rand -hex 24)"
+        PG_PASS="$(openssl rand -hex 24)"
+        SVC_TOKEN="$(openssl rand -hex 32)"
+
+        sed -i "s|^AETHERIA_ENV=.*|AETHERIA_ENV=prod|" "$APP_DIR/.env"
+        sed -i "s|^INTERNAL_SERVICE_TOKEN=.*|INTERNAL_SERVICE_TOKEN=$SVC_TOKEN|" "$APP_DIR/.env"
+        sed -i "s|^VELOCITY_FORWARDING_SECRET=.*|VELOCITY_FORWARDING_SECRET=$FWD_SECRET|" "$APP_DIR/.env"
+        sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$PG_PASS|" "$APP_DIR/.env"
+        # En la nube todo corre dentro de la red de Docker: el host de la DB
+        # es el nombre del servicio, no localhost.
+        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgresql://aetheria:$PG_PASS@postgres:5432/aetheria|" "$APP_DIR/.env"
+        sed -i "s|^PAPER_MEMORY=.*|PAPER_MEMORY=$PAPER_MEM|" "$APP_DIR/.env"
+
+        # Reparto asimetrico, preparado pero INERTE hoy: docker-compose.yml
+        # todavia da el mismo PAPER_MEMORY a lobby y a main. El dia que el
+        # compose lea estas dos, el reparto (lobby pequeno / main grande) se
+        # aplica solo, sin volver a tocar Terraform.
+        {
+          echo ""
+          echo "# --- Reparto por servidor (lo escribe cloud-init; ver infra/terraform) ---"
+          echo "LOBBY_MEMORY=$LOBBY_MEM"
+          echo "MAIN_MEMORY=$MAIN_MEM"
+        } >> "$APP_DIR/.env"
+
+        chmod 600 "$APP_DIR/.env"
+        log ".env creado (600). Los secretos NO salen de esta maquina."
+      else
+        log ".env ya existe, se respeta (no se regeneran secretos)"
+      fi
+
+      # ===============================================================
+      # 5. CONFIG DE MINECRAFT (velocity.toml, forwarding.secret, paper)
+      # ===============================================================
+      # Mismo script que en local: una sola fuente de verdad (regla de oro 6).
+      log "Materializando la configuracion de Velocity/Paper"
+      bash "$APP_DIR/scripts/gen-mc-config.sh"
+
+      # ===============================================================
+      # 6. ARRANQUE
+      # ===============================================================
+      log "Levantando la topologia (docker compose up -d --build)"
+      cd "$APP_DIR"
+      docker compose up -d --build
+
+      systemctl daemon-reload
+      systemctl enable aetheria.service
+      log "Unidad aetheria.service habilitada (arranque tras reboot)"
+
+      log "BOOTSTRAP COMPLETADO. Java -> puerto $JAVA_PORT, Bedrock -> UDP $BEDROCK_PORT"
+
+runcmd:
+  # Todo el log en un unico fichero, facil de pedirle al dueno si algo falla.
+  - ["bash", "-lc", "/usr/local/bin/aetheria-bootstrap.sh 2>&1 | tee -a /var/log/aetheria-bootstrap.log"]
+
+final_message: "Aetheria: cloud-init terminado en $UPTIME s. Revisa /var/log/aetheria-bootstrap.log"

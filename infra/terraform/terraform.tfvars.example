@@ -1,0 +1,59 @@
+# ============================================================
+# Aetheria AI - Ejemplo de terraform.tfvars
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# terraform.tfvars esta en .gitignore: NUNCA se sube al repositorio.
+# Ninguno de estos valores es un secreto grave salvo private_key_path
+# (que es una RUTA, no la clave: la clave se queda en tu disco).
+# ============================================================
+
+# ---------------- Credenciales OCI ----------------
+# Los 5 valores de abajo los da la consola de Oracle al crear la API key
+# (Perfil > My profile > API keys > Add API key > Download config file).
+# Ver README.md, paso 2.
+
+tenancy_ocid     = "ocid1.tenancy.oc1..xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+user_ocid        = "ocid1.user.oc1..xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+fingerprint      = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
+private_key_path = "C:/Users/tu-usuario/.oci/oci_api_key.pem"
+
+# Region: la HOME region de tu tenancy (la que elegiste al registrarte).
+# El Always Free solo funciona ahi. Confirmada para este proyecto: eu-madrid-1.
+region = "eu-madrid-1"
+
+# Compartment donde crear todo. Vacio = el tenancy (compartment raiz),
+# que es lo normal en una cuenta Always Free.
+compartment_ocid = ""
+
+# ---------------- Acceso ----------------
+# CONTENIDO de tu clave publica SSH, en una sola linea.
+# Si no tienes una:  ssh-keygen -t ed25519 -C "aetheria"
+# Luego pega aqui el contenido de ~/.ssh/id_ed25519.pub
+ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI............ aetheria"
+
+# IMPORTANTE: dejalo en 0.0.0.0/0 para el primer apply y, en cuanto entres,
+# cambialo a tu IP publica y vuelve a aplicar. Consulta tu IP en ifconfig.me.
+ssh_allowed_cidr = "0.0.0.0/0"
+# ssh_allowed_cidr = "88.12.34.56/32"
+
+# ---------------- Instancia ----------------
+# TECHO ALWAYS FREE VIGENTE: 2 OCPU + 12 GB (Oracle lo bajo desde 4/24).
+# Subirlos NO es gratis: en Free Tier sin upgrade la peticion se rechaza,
+# y en Pay As You Go se factura.
+instance_ocpus     = 2
+instance_memory_gb = 12
+boot_volume_gb     = 100
+
+# Si el apply falla con "Out of host capacity", prueba con 2 o 3
+# (solo si tu region tiene mas de un dominio de disponibilidad).
+availability_domain_index = 1
+
+# ---------------- Aplicacion ----------------
+git_repo_url = "https://github.com/jarruego/aetheria.git"
+git_branch   = "main"
+
+# Heap por servidor Paper. docker-compose.yml aplica el MISMO valor a lobby y
+# main, asi que esto se gasta dos veces. Con 12 GB, 2G es el maximo prudente:
+# ver README.md > Dimensionamiento. No lo subas a 3G.
+paper_memory = "2G"

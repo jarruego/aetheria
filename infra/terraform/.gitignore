@@ -1,0 +1,4 @@
+# Ficheros de plan: contienen los valores de las variables (OCIDs, fingerprint,
+# rutas locales) en claro. Nunca deben subirse al repositorio.
+tfplan
+*.tfplan

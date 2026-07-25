@@ -123,6 +123,24 @@ services:
     restart: unless-stopped
     networks: [aetheria-net]
 
+  # One-shot: compila el plugin Java en un contenedor Gradle (sin JDK en el host ni en la
+  # VM) y deja el jar en minecraft/.generated/main/plugins, que 'main' monta como plugins.
+  # Asi el despliegue (local y cloud) construye el plugin con el mismo `docker compose up`.
+  plugin-build:
+    image: gradle:8.10.2-jdk21
+    working_dir: /plugin
+    environment:
+      GRADLE_USER_HOME: /gradle-cache
+    volumes:
+      - ./minecraft/plugin-aetheria:/plugin
+      - ./minecraft/.generated/main/plugins:/dist
+      - gradle-cache:/gradle-cache
+    entrypoint:
+      - sh
+      - -c
+      - "gradle build --no-daemon -q && cp build/libs/aetheria-plugin-*.jar /dist/aetheria-plugin.jar && echo '[plugin-build] jar copiado a /dist'"
+    restart: "no"
+
   # Main: mundo persistente (economia, ciudades, IA). Solo accesible via Velocity.
   main:
     image: itzg/minecraft-server
@@ -133,10 +151,17 @@ services:
       ONLINE_MODE: "FALSE"
       MEMORY: "${PAPER_MEMORY:-2G}"
       USE_AIKAR_FLAGS: "true"
+      # El plugin Aetheria usa este token para autenticarse contra el API Gateway.
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-changeme-generate-a-long-random-secret}"
     volumes:
       # Directorio config completo (no un archivo suelto) para que Paper pueda escribir.
       - ./minecraft/.generated/main/config:/data/config
+      # Plugins: el jar lo genera el servicio one-shot 'plugin-build'.
+      - ./minecraft/.generated/main/plugins:/data/plugins
       - main-data:/data
+    depends_on:
+      plugin-build:
+        condition: service_completed_successfully
     restart: unless-stopped
     networks: [aetheria-net]
 
@@ -149,3 +174,4 @@ volumes:
   velocity-data:
   lobby-data:
   main-data:
+  gradle-cache:

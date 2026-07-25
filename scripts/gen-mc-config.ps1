@@ -22,6 +22,8 @@ New-Item -ItemType Directory -Force -Path (Join-Path $gen "velocity") | Out-Null
 foreach ($d in @("lobby", "main")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $gen "$d\config") | Out-Null
 }
+# Directorio de plugins de 'main' (lo rellena el servicio one-shot plugin-build).
+New-Item -ItemType Directory -Force -Path (Join-Path $gen "main\plugins") | Out-Null
 
 $enc = [System.Text.UTF8Encoding]::new($false)
 

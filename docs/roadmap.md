@@ -77,6 +77,8 @@ Cada fase deja algo funcionando y verificable.
 ## Mejoras transversales  (PENDIENTE)
 - [ ] Seguridad: filtro de contenido en respuestas de NPC + rate-limit por jugador
 - [ ] NPC con aspecto HUMANO real (skins) via Citizens o packets (hoy son aldeanos)
-- [ ] Memoria a largo plazo: resumir conversaciones viejas, no solo los ultimos turnos
+- [x] Memoria a largo plazo (migracion 0004): ficha evolutiva del jugador que condensa lo
+      viejo (concentra muchas charlas en un perfil), poda los turnos ya resumidos; corto
+      plazo verbatim (~10 turnos) + largo plazo difuso. La IA nunca se satura.
 - [ ] Backups automaticos (DB + mundos), monitorizacion/logs, CI que compile el plugin Java
 - [ ] Prueba de login Bedrock (Geyser) y salto entre mundos con cliente real

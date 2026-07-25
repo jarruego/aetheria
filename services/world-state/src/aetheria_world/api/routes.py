@@ -18,6 +18,8 @@ from aetheria_world.models import (
     HomeUpsert,
     PlanAudit,
     PlayerUpsert,
+    SummaryOut,
+    SummaryUpsert,
     WorldRef,
     WorldSummary,
 )
@@ -132,7 +134,11 @@ async def append_conversation(body: ConversationAppend) -> dict:
             "insert into npc_conversations (npc_key, player_uuid, role, content) values ($1, $2, $3, $4)",
             body.npc_key, body.player_uuid, body.role, body.content,
         )
-    return {"status": "ok"}
+        count = await conn.fetchval(
+            "select count(*) from npc_conversations where npc_key = $1 and player_uuid = $2",
+            body.npc_key, body.player_uuid,
+        )
+    return {"status": "ok", "count": count}
 
 
 @router.get("/npc-memory", response_model=list[ConversationTurn])
@@ -151,6 +157,67 @@ async def get_conversation(npc_key: str, player_uuid: str, limit: int = 8) -> li
         )
     # Cronologico (mas antiguo primero) para reconstruir la conversacion.
     return [ConversationTurn(role=r["role"], content=r["content"]) for r in reversed(rows)]
+
+
+# Turnos VIEJOS (todos menos los ultimos `keep`): lo que hay que condensar y olvidar.
+_OLDER_FILTER = """
+    npc_key = $1 and player_uuid = $2
+    and id not in (
+        select id from npc_conversations
+        where npc_key = $1 and player_uuid = $2
+        order by created_at desc limit $3
+    )
+"""
+
+
+@router.get("/npc-memory/older", response_model=list[ConversationTurn])
+async def get_older(npc_key: str, player_uuid: str, keep: int = 10) -> list[ConversationTurn]:
+    _require_db()
+    async with pool().acquire() as conn:
+        rows = await conn.fetch(
+            f"select role, content from npc_conversations where {_OLDER_FILTER} order by created_at",
+            npc_key, player_uuid, keep,
+        )
+    return [ConversationTurn(role=r["role"], content=r["content"]) for r in rows]
+
+
+@router.delete("/npc-memory/older")
+async def prune_older(npc_key: str, player_uuid: str, keep: int = 10) -> dict:
+    _require_db()
+    async with pool().acquire() as conn:
+        await conn.execute(
+            f"delete from npc_conversations where {_OLDER_FILTER}",
+            npc_key, player_uuid, keep,
+        )
+    return {"status": "ok"}
+
+
+# --- Ficha evolutiva del jugador (memoria a largo plazo del NPC) ---
+
+@router.get("/npc-summary", response_model=SummaryOut)
+async def get_summary(npc_key: str, player_uuid: str) -> SummaryOut:
+    _require_db()
+    async with pool().acquire() as conn:
+        row = await conn.fetchrow(
+            "select summary from npc_player_memory where npc_key = $1 and player_uuid = $2",
+            npc_key, player_uuid,
+        )
+    return SummaryOut(summary=row["summary"] if row else "")
+
+
+@router.put("/npc-summary")
+async def put_summary(body: SummaryUpsert) -> dict:
+    _require_db()
+    async with pool().acquire() as conn:
+        await conn.execute(
+            """
+            insert into npc_player_memory (npc_key, player_uuid, summary, updated_at)
+            values ($1, $2, $3, now())
+            on conflict (npc_key, player_uuid) do update set summary = excluded.summary, updated_at = now()
+            """,
+            body.npc_key, body.player_uuid, body.summary,
+        )
+    return {"status": "ok"}
 
 
 # --- Auditoria de planes (Fase 5: cada plan de la IA queda registrado) ---

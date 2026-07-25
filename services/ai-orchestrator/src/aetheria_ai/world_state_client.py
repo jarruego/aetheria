@@ -41,13 +41,66 @@ async def get_npc_history(npc_key: str, player_uuid: str, limit: int = 8) -> lis
         return []
 
 
-async def append_npc_message(npc_key: str, player_uuid: str, role: str, content: str) -> None:
-    """Guarda un turno de conversacion. Silencioso: un fallo no debe cortar la charla."""
+async def append_npc_message(npc_key: str, player_uuid: str, role: str, content: str) -> int:
+    """Guarda un turno de conversacion y devuelve el recuento total (0 si falla)."""
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            await client.post(
+            resp = await client.post(
                 f"{_base()}/internal/npc-memory",
                 json={"npc_key": npc_key, "player_uuid": player_uuid, "role": role, "content": content},
+            )
+            resp.raise_for_status()
+            return int(resp.json().get("count", 0))
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+async def get_older_turns(npc_key: str, player_uuid: str, keep: int) -> list[dict]:
+    """Turnos VIEJOS (todos menos los ultimos `keep`), para condensarlos en la ficha."""
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.get(
+                f"{_base()}/internal/npc-memory/older",
+                params={"npc_key": npc_key, "player_uuid": player_uuid, "keep": keep},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except Exception:  # noqa: BLE001
+        return []
+
+
+async def prune_older_turns(npc_key: str, player_uuid: str, keep: int) -> None:
+    """Borra los turnos viejos ya condensados (se difuminan/olvidan). Silencioso."""
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            await client.delete(
+                f"{_base()}/internal/npc-memory/older",
+                params={"npc_key": npc_key, "player_uuid": player_uuid, "keep": keep},
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def get_npc_summary(npc_key: str, player_uuid: str) -> str:
+    """Ficha evolutiva del jugador (memoria a largo plazo del NPC). '' si no hay."""
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.get(
+                f"{_base()}/internal/npc-summary",
+                params={"npc_key": npc_key, "player_uuid": player_uuid},
+            )
+            resp.raise_for_status()
+            return resp.json().get("summary", "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+async def put_npc_summary(npc_key: str, player_uuid: str, summary: str) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            await client.put(
+                f"{_base()}/internal/npc-summary",
+                json={"npc_key": npc_key, "player_uuid": player_uuid, "summary": summary},
             )
     except Exception:  # noqa: BLE001
         pass

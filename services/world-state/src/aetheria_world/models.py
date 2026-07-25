@@ -64,6 +64,16 @@ class ConversationTurn(BaseModel):
     content: str
 
 
+class SummaryUpsert(BaseModel):
+    npc_key: str
+    player_uuid: str
+    summary: str
+
+
+class SummaryOut(BaseModel):
+    summary: str
+
+
 class PlanAudit(BaseModel):
     plan_id: str
     actor_type: str

@@ -23,11 +23,13 @@ if ($secret -eq 'changeme-velocity-modern-forwarding-secret') {
 
 # Parametros por modo
 if ($Mode -eq 'full') {
-    $servers = "lobby = `"lobby:25565`"`nmain = `"main:25565`""
+    $paperServers = @("lobby", "main", "creative")
+    $servers = "lobby = `"lobby:25565`"`nmain = `"main:25565`"`ncreative = `"creative:25565`""
     $try = '["lobby"]'
     $allowEnd = 'true'
 }
 else {
+    $paperServers = @("main")
     $servers = 'main = "main:25565"'
     $try = '["main"]'
     $allowEnd = 'false'
@@ -37,7 +39,7 @@ $gen = Join-Path $root "minecraft\.generated"
 New-Item -ItemType Directory -Force -Path (Join-Path $gen "velocity") | Out-Null
 # Los Paper montan el DIRECTORIO config completo (Docker crearia /data/config como root
 # si montaramos un archivo suelto, y Paper no podria escribir sus otros configs).
-foreach ($d in @("lobby", "main")) {
+foreach ($d in $paperServers) {
     New-Item -ItemType Directory -Force -Path (Join-Path $gen "$d\config") | Out-Null
 }
 # Directorios de plugins (los rellena el servicio one-shot plugin-build).
@@ -52,9 +54,9 @@ $vout = $vtpl.Replace('%%SERVERS%%', $servers).Replace('%%TRY%%', $try)
 [System.IO.File]::WriteAllText((Join-Path $gen "velocity\velocity.toml"), $vout, $enc)
 [System.IO.File]::WriteAllText((Join-Path $gen "velocity\forwarding.secret"), $secret, $enc)
 
-# config/paper-global.yml para lobby y main (con el secreto inline)
+# config/paper-global.yml para cada servidor Paper (con el secreto inline)
 $tpl = (Get-Content (Join-Path $root "minecraft\paper-global.yml.template") -Raw) -replace "`r`n", "`n"
-foreach ($s in @("lobby", "main")) {
+foreach ($s in $paperServers) {
     $out = $tpl.Replace('%%FORWARDING_SECRET%%', $secret)
     [System.IO.File]::WriteAllText((Join-Path $gen "$s\config\paper-global.yml"), $out, $enc)
 }

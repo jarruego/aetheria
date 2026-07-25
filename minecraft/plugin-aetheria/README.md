@@ -8,6 +8,8 @@ El unico componente que **ejecuta** cambios en el mundo. La IA propone; el plugi
   coste por defecto).
 - `/aetheria npc <spawn|remove> [clave]`: crea/elimina un NPC como **entidad real**
   (Villager persistente) en tu posicion.
+- `/sethome` / `/home`: guarda tu posicion y te teletransporta a tu casa (en los mundos
+  de juego; persistencia local v1, migrara a la base de datos con economia/parcelas).
 - `/aetheria plan <objetivo>`: pide un plan; si viene **aprobado** por el validador,
   ejecuta sus acciones de la **lista blanca** sobre el mundo real:
   - `SAY` — el NPC habla.
@@ -30,8 +32,9 @@ El plugin lee su rol de la variable de entorno `AETHERIA_ROLE` (o `role` en `con
   - Mundo **void** (vacio; el servicio `lobby` usa `LEVEL_TYPE=minecraft:flat` +
     `GENERATOR_SETTINGS` con `layers:[]`), donde solo existe una **sala cerrada** de
     cuarzo con cristaleras que construye el plugin, flotando en el vacio.
-  - **Portal de esmeralda** al `main`: al pisarlo, envia al jugador via el mensaje
-    BungeeCord "Connect" de Velocity (destino en `lobby.portal-target`).
+  - **Portales** configurables (`lobby.portals`): por defecto **main** (esmeralda) y
+    **creativo** (diamante). Al pisar uno, envia al jugador a ese servidor via el mensaje
+    BungeeCord "Connect" de Velocity.
   - Bienvenida + instrucciones al entrar; te teletransporta a la sala.
   - **Protecciones de hub**: modo aventura, invulnerable, no puedes morir, atacar,
     recibir dano ni pasar hambre; sin mobs; paz; hora y clima fijos. (Eventos cancelados

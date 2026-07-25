@@ -46,10 +46,37 @@ services:
     restart: unless-stopped
     networks: [aetheria-net]
 
-  # Velocity conoce el lobby (velocity.toml generado en modo full) y depende de el.
+  # Mundo CREATIVO: servidor Paper en modo creativo (mundo plano), backend de Velocity.
+  creative:
+    image: itzg/minecraft-server
+    environment:
+      EULA: "TRUE"
+      TYPE: "PAPER"
+      VERSION: "${MINECRAFT_VERSION:-1.21.4}"
+      ONLINE_MODE: "FALSE"
+      MEMORY: "${CREATIVE_MEMORY:-2G}"
+      USE_AIKAR_FLAGS: "true"
+      MODE: "creative"
+      DIFFICULTY: "peaceful"
+      # Superflat clasico de hierba (bedrock + tierra + hierba) para construir.
+      LEVEL_TYPE: "minecraft:flat"
+      GENERATOR_SETTINGS: '{"layers":[{"block":"minecraft:bedrock","height":1},{"block":"minecraft:dirt","height":2},{"block":"minecraft:grass_block","height":1}],"biome":"minecraft:plains"}'
+      GENERATE_STRUCTURES: "false"
+      SPAWN_MONSTERS: "false"
+      SPAWN_ANIMALS: "false"
+      VIEW_DISTANCE: "8"
+      SIMULATION_DISTANCE: "6"
+    volumes:
+      - ./minecraft/.generated/creative/config:/data/config
+      - creative-data:/data
+    restart: unless-stopped
+    networks: [aetheria-net]
+
+  # Velocity conoce lobby, main y creative (velocity.toml full) y depende de ellos.
   velocity:
     depends_on:
       - lobby
+      - creative
 
   # 'main' con mas holgura (hay hardware local). El End se activa via el bukkit.yml
   # generado en modo full (allow-end: true), sin cambiar montajes aqui.
@@ -61,3 +88,4 @@ services:
 
 volumes:
   lobby-data:
+  creative-data:

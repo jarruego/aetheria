@@ -36,12 +36,17 @@ public final class AetheriaPlugin extends JavaPlugin {
         final String role = System.getenv().getOrDefault("AETHERIA_ROLE",
                 getConfig().getString("role", "main")).toLowerCase();
         if (role.equals("lobby")) {
-            final String target = getConfig().getString("lobby.portal-target", "main");
             getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
-            final LobbyModule lobby = new LobbyModule(this, target);
+            final LobbyModule lobby = new LobbyModule(this, LobbyModule.readPortals(this));
             getServer().getPluginManager().registerEvents(lobby, this);
             // El mundo ya esta cargado cuando se habilitan los plugins.
             lobby.build();
+        } else {
+            // En los mundos de juego: comandos de casa (/home, /sethome).
+            final HomeManager homes = new HomeManager(this);
+            final HomeCommand homeCmd = new HomeCommand(homes);
+            Objects.requireNonNull(getCommand("home")).setExecutor(homeCmd);
+            Objects.requireNonNull(getCommand("sethome")).setExecutor(homeCmd);
         }
 
         getLogger().info("Aetheria habilitado (rol: " + role + "). Gateway: " + url);

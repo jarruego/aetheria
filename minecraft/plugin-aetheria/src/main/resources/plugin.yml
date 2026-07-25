@@ -9,6 +9,14 @@ commands:
     description: Interactua con la IA de Aetheria (conversacion, planes y NPC)
     usage: /aetheria <ask|plan|npc> ...
     permission: aetheria.use
+  home:
+    description: Te teletransporta a tu casa guardada
+    usage: /home
+    permission: aetheria.use
+  sethome:
+    description: Guarda tu posicion actual como casa
+    usage: /sethome
+    permission: aetheria.use
 permissions:
   aetheria.use:
     description: Permite usar los comandos de Aetheria

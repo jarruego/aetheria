@@ -1,6 +1,8 @@
 package com.aetheria.plugin;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -35,80 +37,119 @@ import com.google.common.io.ByteStreams;
 import net.kyori.adventure.text.Component;
 
 /**
- * Modulo LOBBY: convierte el servidor en un hub tipico de Minecraft.
- *
- * <p>Sala pequena y cerrada flotando en el vacio, con un portal al servidor principal.
- * Los jugadores estan en modo aventura, son invulnerables, no pueden morir, atacar,
- * recibir dano, pasar hambre ni tocar bloques. Solo se activa con rol 'lobby'; como este
- * plugin corre aqui SOLO en el lobby, las protecciones se aplican a todo el servidor.
+ * Modulo LOBBY: hub tipico de Minecraft en un mundo void. Sala cerrada flotando en el
+ * vacio con uno o varios portales a otros servidores, y protecciones (aventura,
+ * invulnerable, sin morir/atacar/hambre/mobs). Solo se activa con rol 'lobby'.
  */
 public final class LobbyModule implements Listener {
 
     private static final String CHANNEL = "BungeeCord";
     private static final long COOLDOWN_MS = 3000L;
 
-    // Origen fijo de la sala (flota en el vacio); interior de 11x11.
+    // Sala flotando en el vacio; interior de 11x11.
     private static final int OX = 0;
     private static final int FLOOR_Y = 100;
     private static final int OZ = 0;
-    private static final int R = 5;          // radio interior (11x11)
-    private static final int WALL_H = 4;     // altura de paredes
-    private static final int PORTAL_DZ = 3;  // portal a +3 en Z
+    private static final int R = 5;
+    private static final int WALL_H = 4;
+
+    // Posiciones (dx,dz) para cada portal, en las 4 direcciones cardinales.
+    private static final int[][] OFFSETS = { { 0, 3 }, { 0, -3 }, { 3, 0 }, { -3, 0 } };
+
+    /** Definicion de un portal leida de config. */
+    public record PortalDef(String server, Material material, String label) {}
+
+    private record PlacedPortal(String server, Location center) {}
 
     private final AetheriaPlugin plugin;
-    private final String targetServer;
+    private final List<PortalDef> portalDefs;
+    private final List<PlacedPortal> portals = new ArrayList<>();
     private final Map<UUID, Long> lastJump = new HashMap<>();
 
     private Location hubSpawn;
-    private Location portalCenter;
 
-    public LobbyModule(AetheriaPlugin plugin, String targetServer) {
+    public LobbyModule(AetheriaPlugin plugin, List<PortalDef> portalDefs) {
         this.plugin = plugin;
-        this.targetServer = targetServer;
+        this.portalDefs = portalDefs;
     }
 
-    /** Construye la sala del lobby y ajusta el mundo (reglas, dificultad, hora). */
+    /** Lee los portales de config.yml (lobby.portals); si no hay, uno a 'main'. */
+    public static List<PortalDef> readPortals(AetheriaPlugin plugin) {
+        final List<PortalDef> defs = new ArrayList<>();
+        for (Map<?, ?> raw : plugin.getConfig().getMapList("lobby.portals")) {
+            final String server = String.valueOf(raw.get("server"));
+            if (server == null || server.isBlank() || "null".equals(server)) {
+                continue;
+            }
+            Material material = Material.matchMaterial(String.valueOf(raw.get("material")));
+            if (material == null) {
+                material = Material.EMERALD_BLOCK;
+            }
+            final Object label = raw.get("label");
+            defs.add(new PortalDef(server, material,
+                    label != null ? String.valueOf(label) : server.toUpperCase()));
+        }
+        if (defs.isEmpty()) {
+            defs.add(new PortalDef("main", Material.EMERALD_BLOCK, "MAIN"));
+        }
+        return defs;
+    }
+
     public void build() {
         final World world = Bukkit.getWorlds().get(0);
         configureWorld(world);
+        buildRoom(world);
 
-        // Sala cerrada: suelo, techo, paredes (con cristaleras) de cuarzo.
+        for (int i = 0; i < portalDefs.size() && i < OFFSETS.length; i++) {
+            placePortal(world, portalDefs.get(i), OFFSETS[i]);
+        }
+
+        this.hubSpawn = new Location(world, OX + 0.5, FLOOR_Y + 1, OZ + 0.5);
+        world.setSpawnLocation(OX, FLOOR_Y + 1, OZ);
+        plugin.getLogger().info("Lobby: sala construida con " + portals.size() + " portal(es).");
+    }
+
+    private void buildRoom(World world) {
         for (int dx = -R; dx <= R; dx++) {
             for (int dz = -R; dz <= R; dz++) {
-                setBlock(world, dx, 0, dz, Material.QUARTZ_BLOCK);                 // suelo
-                setBlock(world, dx, WALL_H + 1, dz, Material.QUARTZ_BLOCK);        // techo
+                setBlock(world, dx, 0, dz, Material.QUARTZ_BLOCK);          // suelo
+                setBlock(world, dx, WALL_H + 1, dz, Material.QUARTZ_BLOCK); // techo
                 for (int dy = 1; dy <= WALL_H; dy++) {
                     if (Math.abs(dx) == R || Math.abs(dz) == R) {
                         final boolean window = (dy == 2 || dy == 3);
                         setBlock(world, dx, dy, dz, window ? Material.GLASS : Material.QUARTZ_BLOCK);
                     } else {
-                        setBlock(world, dx, dy, dz, Material.AIR);                 // interior vacio
+                        setBlock(world, dx, dy, dz, Material.AIR);
                     }
                 }
             }
         }
-        // Iluminacion en el techo.
         for (int[] p : new int[][] { { -3, -3 }, { 3, -3 }, { -3, 3 }, { 3, 3 }, { 0, 0 } }) {
             setBlock(world, p[0], WALL_H + 1, p[1], Material.SEA_LANTERN);
         }
+    }
 
-        // Portal de esmeralda 3x3 con centro luminoso.
+    private void placePortal(World world, PortalDef def, int[] off) {
+        final int cx = off[0];
+        final int cz = off[1];
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
-                setBlock(world, dx, 0, PORTAL_DZ + dz, Material.EMERALD_BLOCK);
+                setBlock(world, cx + dx, 0, cz + dz, def.material());
+                for (int dy = 1; dy <= WALL_H; dy++) {
+                    setBlock(world, cx + dx, dy, cz + dz, Material.AIR);
+                }
             }
         }
-        setBlock(world, 0, 0, PORTAL_DZ, Material.SEA_LANTERN);
+        setBlock(world, cx, 0, cz, Material.SEA_LANTERN); // centro luminoso
 
-        // Cartel junto al portal.
-        placeSign(world.getBlockAt(OX + 2, FLOOR_Y + 1, OZ + PORTAL_DZ),
-                "== AETHERIA ==", "Pisa el portal", "para ir a", targetServer.toUpperCase());
+        // Cartel al lado (perpendicular al eje del portal).
+        final int sx = Math.abs(cz) >= Math.abs(cx) ? cx + 2 : cx;
+        final int sz = Math.abs(cz) >= Math.abs(cx) ? cz : cz + 2;
+        placeSign(world.getBlockAt(OX + sx, FLOOR_Y + 1, OZ + sz),
+                "== AETHERIA ==", "Portal a", def.label(), "(pisa aqui)");
 
-        this.hubSpawn = new Location(world, OX + 0.5, FLOOR_Y + 1, OZ + 0.5);
-        this.portalCenter = new Location(world, OX + 0.5, FLOOR_Y + 1, OZ + PORTAL_DZ + 0.5);
-        world.setSpawnLocation(OX, FLOOR_Y + 1, OZ);
-
-        plugin.getLogger().info("Lobby: sala construida; portal -> " + targetServer);
+        portals.add(new PlacedPortal(def.server(),
+                new Location(world, OX + cx + 0.5, FLOOR_Y + 1, OZ + cz + 0.5)));
     }
 
     private void configureWorld(World world) {
@@ -129,7 +170,7 @@ public final class LobbyModule implements Listener {
         world.setGameRule(GameRule.DO_INSOMNIA, false);
         world.setStorm(false);
         world.setThundering(false);
-        world.setTime(6000); // mediodia fijo
+        world.setTime(6000);
     }
 
     private void setBlock(World world, int dx, int dy, int dz, Material material) {
@@ -148,7 +189,7 @@ public final class LobbyModule implements Listener {
         }
     }
 
-    // ---------------- Bienvenida y portal ----------------
+    // ---------------- Bienvenida y portales ----------------
 
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
@@ -157,19 +198,19 @@ public final class LobbyModule implements Listener {
         player.setInvulnerable(true);
         player.setFoodLevel(20);
         player.setSaturation(20f);
-        player.setHealth(20.0);   // salud maxima por defecto en el lobby
+        player.setHealth(20.0);
         if (hubSpawn != null) {
             player.teleport(hubSpawn);
         }
         player.sendMessage("§b§lBienvenido a Aetheria");
         player.sendMessage("§7Una civilizacion viva gobernada por IA.");
-        player.sendMessage("§fPisa el §aportal de esmeralda§f para entrar al mundo §a" + targetServer + "§f.");
-        player.sendMessage("§7O escribe §f/server " + targetServer + "§7. Habla con la IA: §f/aetheria ask <mensaje>");
+        player.sendMessage("§fPisa un §aportal§f para viajar. Tambien: §f/server <mundo>§7.");
+        player.sendMessage("§7Habla con la IA: §f/aetheria ask <mensaje>");
     }
 
     @EventHandler
     public void onMove(PlayerMoveEvent event) {
-        if (portalCenter == null || event.getTo() == null) {
+        if (event.getTo() == null || portals.isEmpty()) {
             return;
         }
         if (event.getFrom().getBlockX() == event.getTo().getBlockX()
@@ -177,16 +218,18 @@ public final class LobbyModule implements Listener {
             return;
         }
         final Player player = event.getPlayer();
-        if (event.getTo().distanceSquared(portalCenter) > 2.25) {
-            return;
+        for (PlacedPortal portal : portals) {
+            if (event.getTo().distanceSquared(portal.center()) <= 2.25) {
+                final long now = System.currentTimeMillis();
+                final Long last = lastJump.get(player.getUniqueId());
+                if (last != null && now - last < COOLDOWN_MS) {
+                    return;
+                }
+                lastJump.put(player.getUniqueId(), now);
+                sendToServer(player, portal.server());
+                return;
+            }
         }
-        final long now = System.currentTimeMillis();
-        final Long last = lastJump.get(player.getUniqueId());
-        if (last != null && now - last < COOLDOWN_MS) {
-            return;
-        }
-        lastJump.put(player.getUniqueId(), now);
-        sendToServer(player, targetServer);
     }
 
     private void sendToServer(Player player, String server) {
@@ -202,8 +245,7 @@ public final class LobbyModule implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDamage(EntityDamageEvent event) {
         if (event.getEntity() instanceof Player player) {
-            event.setCancelled(true);   // no recibes dano (ni caes, ni te ahogas, etc.)
-            // Red de seguridad: si de algun modo cae al vacio, vuelve al spawn.
+            event.setCancelled(true);
             if (event.getCause() == EntityDamageEvent.DamageCause.VOID && hubSpawn != null) {
                 player.teleport(hubSpawn);
             }
@@ -213,7 +255,7 @@ public final class LobbyModule implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onAttack(EntityDamageByEntityEvent event) {
         if (event.getDamager() instanceof Player) {
-            event.setCancelled(true);   // no puedes atacar
+            event.setCancelled(true);
         }
     }
 
@@ -243,14 +285,14 @@ public final class LobbyModule implements Listener {
     @EventHandler(ignoreCancelled = true)
     public void onWeather(WeatherChangeEvent event) {
         if (event.toWeatherState()) {
-            event.setCancelled(true);   // nunca llueve
+            event.setCancelled(true);
         }
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onSpawn(CreatureSpawnEvent event) {
         if (event.getSpawnReason() != CreatureSpawnEvent.SpawnReason.CUSTOM) {
-            event.setCancelled(true);   // sin mobs (salvo los que ponga el plugin)
+            event.setCancelled(true);
         }
     }
 }

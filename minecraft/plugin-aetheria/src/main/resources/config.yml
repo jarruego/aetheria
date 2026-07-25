@@ -13,7 +13,12 @@ default-npc: "arquitecto-01"
 # variable de entorno AETHERIA_ROLE (recomendado en docker-compose).
 role: "main"
 
-# Solo aplica en rol 'lobby':
+# Solo aplica en rol 'lobby': portales fisicos del hub (cada uno a un servidor).
 lobby:
-  # Servidor al que envia el portal fisico del hub.
-  portal-target: "main"
+  portals:
+    - server: "main"
+      material: "EMERALD_BLOCK"
+      label: "MAIN"
+    - server: "creative"
+      material: "DIAMOND_BLOCK"
+      label: "CREATIVO"

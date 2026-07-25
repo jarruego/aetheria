@@ -24,10 +24,12 @@ fi
 
 # Parametros por modo
 if [ "$MODE" = "full" ]; then
-  SERVERS='lobby = "lobby:25565"\nmain = "main:25565"'
+  PAPER_SERVERS="lobby main creative"
+  SERVERS='lobby = "lobby:25565"\nmain = "main:25565"\ncreative = "creative:25565"'
   TRY='["lobby"]'
   ALLOW_END='true'
 else
+  PAPER_SERVERS="main"
   SERVERS='main = "main:25565"'
   TRY='["main"]'
   ALLOW_END='false'
@@ -36,15 +38,16 @@ fi
 GEN="$ROOT/minecraft/.generated"
 # Los Paper montan el DIRECTORIO config completo (si montaramos un archivo suelto,
 # Docker crearia /data/config como root y Paper no podria escribir sus otros configs).
-mkdir -p "$GEN/velocity" "$GEN/lobby/config" "$GEN/lobby/plugins" "$GEN/main/config" "$GEN/main/plugins"
+mkdir -p "$GEN/velocity" "$GEN/lobby/plugins" "$GEN/main/plugins"
+for s in $PAPER_SERVERS; do mkdir -p "$GEN/$s/config"; done
 
 # velocity.toml (sin secreto; servidores/try segun modo) + forwarding.secret
 sed -e "s|%%SERVERS%%|$SERVERS|g" -e "s|%%TRY%%|$TRY|g" \
     "$ROOT/minecraft/proxy-velocity/velocity.toml.template" > "$GEN/velocity/velocity.toml"
 printf '%s' "$SECRET" > "$GEN/velocity/forwarding.secret"
 
-# config/paper-global.yml para lobby y main (con el secreto inline)
-for s in lobby main; do
+# config/paper-global.yml para cada servidor Paper (con el secreto inline)
+for s in $PAPER_SERVERS; do
   sed "s|%%FORWARDING_SECRET%%|$SECRET|g" "$ROOT/minecraft/paper-global.yml.template" > "$GEN/$s/config/paper-global.yml"
 done
 

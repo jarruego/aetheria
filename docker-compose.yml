@@ -1,12 +1,15 @@
 # ============================================================
-# Aetheria AI - Topologia local (Fase 0/1)
-# Levanta la red completa en una sola maquina. Cada servicio
-# es independiente: manana pueden vivir en maquinas distintas.
-#   docker compose up -d
+# Aetheria AI - Topologia local (Fase 0 + Fase 1)
+# Levanta backend + red Minecraft en una sola maquina. Cada servicio es
+# independiente: manana pueden vivir en maquinas distintas.
+#
+#   ./scripts/dev-up.ps1        (genera configs + arranca)
+#   docker compose up -d        (requiere haber ejecutado antes gen-mc-config)
 # ============================================================
 name: aetheria
 
 services:
+  # ---------------- Backend (Fase 0) ----------------
   api-gateway:
     build: ./services/api-gateway
     env_file: .env
@@ -25,17 +28,69 @@ services:
     restart: unless-stopped
     networks: [aetheria-net]
 
-  # --- Minecraft (se activan en Fase 1) ---
-  # velocity:
-  #   image: itzg/mc-proxy:latest
-  #   ...
-  # lobby:
-  #   image: itzg/minecraft-server:latest
-  #   ...
-  # main:
-  #   image: itzg/minecraft-server:latest
-  #   ...
+  # ---------------- Red Minecraft (Fase 1) ----------------
+  # Velocity: UNICO punto de entrada. Java por 25565, Bedrock por 19132 (Geyser).
+  velocity:
+    image: itzg/mc-proxy
+    environment:
+      TYPE: "VELOCITY"
+      # Geyser + Floodgate para Bedrock (movil, consola). URLs oficiales v2.
+      PLUGINS: >-
+        https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/velocity,
+        https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/velocity
+    ports:
+      - "${VELOCITY_PORT:-25565}:25565"
+      - "${GEYSER_BEDROCK_PORT:-19132}:19132/udp"
+    volumes:
+      # Configs generados por scripts/gen-mc-config (aportan el secreto de forwarding).
+      - ./minecraft/.generated/velocity/velocity.toml:/server/velocity.toml
+      - ./minecraft/.generated/velocity/forwarding.secret:/server/forwarding.secret
+      - velocity-data:/server
+    depends_on:
+      - lobby
+      - main
+    restart: unless-stopped
+    networks: [aetheria-net]
+
+  # Lobby: bienvenida/portales, SIN economia. Solo accesible via Velocity.
+  lobby:
+    image: itzg/minecraft-server
+    environment:
+      EULA: "TRUE"          # usar este servicio implica aceptar el EULA de Minecraft
+      TYPE: "PAPER"
+      VERSION: "${MINECRAFT_VERSION:-1.21.4}"
+      ONLINE_MODE: "FALSE"  # Velocity autentica; su puerto NUNCA se publica
+      MEMORY: "${PAPER_MEMORY:-2G}"
+      USE_AIKAR_FLAGS: "true"
+    volumes:
+      # Directorio config completo (no un archivo suelto) para que Paper pueda escribir.
+      - ./minecraft/.generated/lobby/config:/data/config
+      - lobby-data:/data
+    restart: unless-stopped
+    networks: [aetheria-net]
+
+  # Main: mundo persistente (economia, ciudades, IA). Solo accesible via Velocity.
+  main:
+    image: itzg/minecraft-server
+    environment:
+      EULA: "TRUE"
+      TYPE: "PAPER"
+      VERSION: "${MINECRAFT_VERSION:-1.21.4}"
+      ONLINE_MODE: "FALSE"
+      MEMORY: "${PAPER_MEMORY:-2G}"
+      USE_AIKAR_FLAGS: "true"
+    volumes:
+      # Directorio config completo (no un archivo suelto) para que Paper pueda escribir.
+      - ./minecraft/.generated/main/config:/data/config
+      - main-data:/data
+    restart: unless-stopped
+    networks: [aetheria-net]
 
 networks:
   aetheria-net:
     driver: bridge
+
+volumes:
+  velocity-data:
+  lobby-data:
+  main-data:

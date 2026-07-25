@@ -27,6 +27,7 @@ minecraft/**/.gradle/
 *.class
 
 # Minecraft runtime
+minecraft/.generated/
 minecraft/**/world/
 minecraft/**/world_nether/
 minecraft/**/world_the_end/

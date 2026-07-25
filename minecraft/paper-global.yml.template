@@ -1,0 +1,14 @@
+# Plantilla de paper-global.yml para servidores Paper detras de Velocity.
+# scripts/gen-mc-config sustituye %%FORWARDING_SECRET%% por el valor de .env y
+# escribe el resultado en minecraft/.generated/<servidor>/paper-global.yml (fuera de
+# git, porque contiene el secreto). Paper completa el resto de campos por defecto.
+_version: 29
+proxies:
+  bungee-cord:
+    online-mode: true
+  velocity:
+    enabled: true
+    # online-mode del BLOQUE velocity (distinto de server.properties online-mode):
+    # debe quedarse en true para que Velocity asigne UUID/skin correctos.
+    online-mode: true
+    secret: "%%FORWARDING_SECRET%%"

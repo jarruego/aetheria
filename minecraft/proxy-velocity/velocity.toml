@@ -1,0 +1,39 @@
+# Velocity - configuracion de Aetheria (fuente de verdad, versionada).
+# NO contiene el secreto: el modern forwarding lo lee de forwarding.secret.
+# El runtime se genera en minecraft/.generated/ con scripts/gen-mc-config.
+config-version = "2.7"
+
+# Unico punto de entrada de la red (ADR-0005). Java entra por aqui.
+bind = "0.0.0.0:25565"
+motd = "<#00aaff>Aetheria</#00aaff> - civilizacion viva"
+show-max-players = 100
+online-mode = true
+force-key-authentication = true
+prevent-client-proxy-connections = false
+
+# Modern forwarding: el secreto vive en un fichero aparte (mismo valor en Paper).
+player-info-forwarding-mode = "modern"
+forwarding-secret-file = "forwarding.secret"
+
+announce-forge = false
+kick-existing-players = false
+ping-passthrough = "DISABLED"
+
+[servers]
+# Los nombres resuelven por la red de docker-compose (nombre de servicio).
+lobby = "lobby:25565"
+main = "main:25565"
+# A donde va el jugador al conectar.
+try = ["lobby"]
+
+[forced-hosts]
+
+[advanced]
+compression-threshold = 256
+compression-level = -1
+login-ratelimit = 3000
+connection-timeout = 5000
+read-timeout = 30000
+
+[query]
+enabled = false

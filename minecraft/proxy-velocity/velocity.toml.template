@@ -1,6 +1,6 @@
-# Velocity - configuracion de Aetheria (fuente de verdad, versionada).
+# Plantilla de Velocity. gen-mc-config rellena la seccion [servers] segun el modo
+# (lean = solo main; full = lobby + main) y escribe minecraft/.generated/velocity/velocity.toml.
 # NO contiene el secreto: el modern forwarding lo lee de forwarding.secret.
-# El runtime se genera en minecraft/.generated/ con scripts/gen-mc-config.
 config-version = "2.7"
 
 # Unico punto de entrada de la red (ADR-0005). Java entra por aqui.
@@ -21,11 +21,9 @@ ping-passthrough = "DISABLED"
 
 [servers]
 # Los nombres resuelven por la red de docker-compose (nombre de servicio).
-# Arranque SIN lobby (recorte Always Free 2 OCPU/12 GB). Reactivar el lobby = anadir
-# de nuevo su linea y "lobby" al try. Ver docs/infra/fase4-oracle-handoff.md, seccion 4.
-main = "main:25565"
+%%SERVERS%%
 # A donde va el jugador al conectar.
-try = ["main"]
+try = %%TRY%%
 
 [forced-hosts]
 

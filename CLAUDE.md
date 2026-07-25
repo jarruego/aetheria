@@ -42,8 +42,8 @@ Un servidor de Minecraft persistente donde la IA es el "sistema operativo del mu
 
 ```bash
 # Levantar la topología local (crea .env desde .env.example si falta)
-./scripts/dev-up.ps1            # Windows
-docker compose up -d --build    # equivalente directo
+./scripts/dev-up.ps1            # modo LEAN (solo main, sin lobby/End) = igual que cloud
+./scripts/dev-up-full.ps1       # modo FULL local (lobby + main + End + más memoria)
 docker compose down             # parar
 
 # Salud

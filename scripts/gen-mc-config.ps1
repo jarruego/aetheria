@@ -1,6 +1,12 @@
 # Genera la configuracion de runtime de la red Minecraft desde las plantillas.
 # Inyecta el secreto de forwarding (desde .env) en archivos que quedan FUERA de git.
-# Uso:  ./scripts/gen-mc-config.ps1
+#
+#   ./scripts/gen-mc-config.ps1            # modo 'lean' (solo main, sin End) = cloud/defecto
+#   ./scripts/gen-mc-config.ps1 -Mode full # 'full' (lobby + main + End) = local completo
+param(
+    [ValidateSet('lean', 'full')]
+    [string]$Mode = 'lean'
+)
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 
@@ -15,6 +21,18 @@ if ($secret -eq 'changeme-velocity-modern-forwarding-secret') {
     Write-Warning "VELOCITY_FORWARDING_SECRET usa el valor por defecto. Cambialo en .env para produccion."
 }
 
+# Parametros por modo
+if ($Mode -eq 'full') {
+    $servers = "lobby = `"lobby:25565`"`nmain = `"main:25565`""
+    $try = '["lobby"]'
+    $allowEnd = 'true'
+}
+else {
+    $servers = 'main = "main:25565"'
+    $try = '["main"]'
+    $allowEnd = 'false'
+}
+
 $gen = Join-Path $root "minecraft\.generated"
 New-Item -ItemType Directory -Force -Path (Join-Path $gen "velocity") | Out-Null
 # Los Paper montan el DIRECTORIO config completo (Docker crearia /data/config como root
@@ -27,8 +45,10 @@ New-Item -ItemType Directory -Force -Path (Join-Path $gen "main\plugins") | Out-
 
 $enc = [System.Text.UTF8Encoding]::new($false)
 
-# velocity.toml (sin secreto) + forwarding.secret (el secreto, en su propio fichero)
-Copy-Item (Join-Path $root "minecraft\proxy-velocity\velocity.toml") (Join-Path $gen "velocity\velocity.toml") -Force
+# velocity.toml (sin secreto; servidores/try segun modo) + forwarding.secret
+$vtpl = (Get-Content (Join-Path $root "minecraft\proxy-velocity\velocity.toml.template") -Raw) -replace "`r`n", "`n"
+$vout = $vtpl.Replace('%%SERVERS%%', $servers).Replace('%%TRY%%', $try)
+[System.IO.File]::WriteAllText((Join-Path $gen "velocity\velocity.toml"), $vout, $enc)
 [System.IO.File]::WriteAllText((Join-Path $gen "velocity\forwarding.secret"), $secret, $enc)
 
 # config/paper-global.yml para lobby y main (con el secreto inline)
@@ -38,8 +58,8 @@ foreach ($s in @("lobby", "main")) {
     [System.IO.File]::WriteAllText((Join-Path $gen "$s\config\paper-global.yml"), $out, $enc)
 }
 
-# bukkit.yml de 'main' (desactiva el End; sin secreto)
+# bukkit.yml de 'main' (End segun modo)
 $bukkit = (Get-Content (Join-Path $root "minecraft\bukkit.yml.template") -Raw) -replace "`r`n", "`n"
-[System.IO.File]::WriteAllText((Join-Path $gen "main\bukkit.yml"), $bukkit, $enc)
+[System.IO.File]::WriteAllText((Join-Path $gen "main\bukkit.yml"), $bukkit.Replace('%%ALLOW_END%%', $allowEnd), $enc)
 
-Write-Host "Config de Minecraft generada en minecraft/.generated/ (velocity, lobby, main)." -ForegroundColor Green
+Write-Host "Config de Minecraft generada (modo: $Mode) en minecraft/.generated/." -ForegroundColor Green

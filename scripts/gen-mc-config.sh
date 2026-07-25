@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 # Genera la configuracion de runtime de la red Minecraft desde las plantillas.
 # Inyecta el secreto de forwarding (desde .env) en archivos que quedan FUERA de git.
+#
+#   ./scripts/gen-mc-config.sh          # modo 'lean' (solo main, sin End) = cloud/defecto
+#   ./scripts/gen-mc-config.sh full     # 'full' (lobby + main + End) = local completo
 set -euo pipefail
+
+MODE="${1:-lean}"
+case "$MODE" in
+  lean|full) ;;
+  *) echo "ERROR: modo invalido '$MODE' (usa lean|full)" >&2; exit 1 ;;
+esac
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$ROOT/.env"
@@ -13,13 +22,25 @@ if [ "$SECRET" = "changeme-velocity-modern-forwarding-secret" ]; then
   echo "AVISO: VELOCITY_FORWARDING_SECRET usa el valor por defecto. Cambialo en .env para produccion." >&2
 fi
 
+# Parametros por modo
+if [ "$MODE" = "full" ]; then
+  SERVERS='lobby = "lobby:25565"\nmain = "main:25565"'
+  TRY='["lobby"]'
+  ALLOW_END='true'
+else
+  SERVERS='main = "main:25565"'
+  TRY='["main"]'
+  ALLOW_END='false'
+fi
+
 GEN="$ROOT/minecraft/.generated"
 # Los Paper montan el DIRECTORIO config completo (si montaramos un archivo suelto,
 # Docker crearia /data/config como root y Paper no podria escribir sus otros configs).
 mkdir -p "$GEN/velocity" "$GEN/lobby/config" "$GEN/main/config" "$GEN/main/plugins"
 
-# velocity.toml (sin secreto) + forwarding.secret
-cp "$ROOT/minecraft/proxy-velocity/velocity.toml" "$GEN/velocity/velocity.toml"
+# velocity.toml (sin secreto; servidores/try segun modo) + forwarding.secret
+sed -e "s|%%SERVERS%%|$SERVERS|g" -e "s|%%TRY%%|$TRY|g" \
+    "$ROOT/minecraft/proxy-velocity/velocity.toml.template" > "$GEN/velocity/velocity.toml"
 printf '%s' "$SECRET" > "$GEN/velocity/forwarding.secret"
 
 # config/paper-global.yml para lobby y main (con el secreto inline)
@@ -27,7 +48,7 @@ for s in lobby main; do
   sed "s|%%FORWARDING_SECRET%%|$SECRET|g" "$ROOT/minecraft/paper-global.yml.template" > "$GEN/$s/config/paper-global.yml"
 done
 
-# bukkit.yml de 'main' (desactiva el End; sin secreto)
-cp "$ROOT/minecraft/bukkit.yml.template" "$GEN/main/bukkit.yml"
+# bukkit.yml de 'main' (End segun modo)
+sed "s|%%ALLOW_END%%|$ALLOW_END|g" "$ROOT/minecraft/bukkit.yml.template" > "$GEN/main/bukkit.yml"
 
-echo "Config de Minecraft generada en minecraft/.generated/ (velocity, lobby, main)."
+echo "Config de Minecraft generada (modo: $MODE) en minecraft/.generated/."

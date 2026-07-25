@@ -1,0 +1,46 @@
+# ============================================================
+# Override para MODO FULL LOCAL: sistema completo (lobby + main + End + mas memoria).
+# NO afecta al despliegue cloud, que usa solo docker-compose.yml (modo lean).
+#
+#   ./scripts/gen-mc-config.ps1 -Mode full   (genera velocity con lobby y End activado)
+#   docker compose -f docker-compose.yml -f docker-compose.full.yml up -d
+#   # ...o simplemente:  ./scripts/dev-up-full.ps1
+# ============================================================
+name: aetheria
+
+services:
+  # Reactiva el lobby (hub de bienvenida / portales a mundos).
+  lobby:
+    image: itzg/minecraft-server
+    environment:
+      EULA: "TRUE"
+      TYPE: "PAPER"
+      VERSION: "${MINECRAFT_VERSION:-1.21.4}"
+      ONLINE_MODE: "FALSE"   # Velocity autentica; su puerto NUNCA se publica
+      MEMORY: "${LOBBY_MEMORY:-1G}"
+      USE_AIKAR_FLAGS: "true"
+      VIEW_DISTANCE: "6"
+      SIMULATION_DISTANCE: "4"
+      SPAWN_MONSTERS: "false"
+      SPAWN_ANIMALS: "false"
+    volumes:
+      - ./minecraft/.generated/lobby/config:/data/config
+      - lobby-data:/data
+    restart: unless-stopped
+    networks: [aetheria-net]
+
+  # Velocity conoce el lobby (velocity.toml generado en modo full) y depende de el.
+  velocity:
+    depends_on:
+      - lobby
+
+  # 'main' con mas holgura (hay hardware local). El End se activa via el bukkit.yml
+  # generado en modo full (allow-end: true), sin cambiar montajes aqui.
+  main:
+    environment:
+      MEMORY: "${MAIN_MEMORY:-6G}"
+      VIEW_DISTANCE: "10"
+      SIMULATION_DISTANCE: "8"
+
+volumes:
+  lobby-data:

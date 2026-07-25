@@ -32,7 +32,19 @@ public final class AetheriaPlugin extends JavaPlugin {
         Objects.requireNonNull(getCommand("aetheria"), "comando 'aetheria' no declarado en plugin.yml")
                 .setExecutor(command);
 
-        getLogger().info("Aetheria habilitado. Gateway: " + url);
+        // Rol del servidor: 'lobby' activa el hub con portales; por defecto 'main'.
+        final String role = System.getenv().getOrDefault("AETHERIA_ROLE",
+                getConfig().getString("role", "main")).toLowerCase();
+        if (role.equals("lobby")) {
+            final String target = getConfig().getString("lobby.portal-target", "main");
+            getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
+            final LobbyModule lobby = new LobbyModule(this, target);
+            getServer().getPluginManager().registerEvents(lobby, this);
+            // El mundo ya esta cargado cuando se habilitan los plugins.
+            lobby.build();
+        }
+
+        getLogger().info("Aetheria habilitado (rol: " + role + "). Gateway: " + url);
     }
 
     @Override

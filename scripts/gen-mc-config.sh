@@ -36,7 +36,7 @@ fi
 GEN="$ROOT/minecraft/.generated"
 # Los Paper montan el DIRECTORIO config completo (si montaramos un archivo suelto,
 # Docker crearia /data/config como root y Paper no podria escribir sus otros configs).
-mkdir -p "$GEN/velocity" "$GEN/lobby/config" "$GEN/main/config" "$GEN/main/plugins"
+mkdir -p "$GEN/velocity" "$GEN/lobby/config" "$GEN/lobby/plugins" "$GEN/main/config" "$GEN/main/plugins"
 
 # velocity.toml (sin secreto; servidores/try segun modo) + forwarding.secret
 sed -e "s|%%SERVERS%%|$SERVERS|g" -e "s|%%TRY%%|$TRY|g" \

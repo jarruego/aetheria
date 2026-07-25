@@ -8,3 +8,12 @@ gateway:
 
 # NPC por defecto con el que se dirige la conversacion/planes desde los comandos.
 default-npc: "arquitecto-01"
+
+# Rol del servidor: 'main' (por defecto) o 'lobby'. Puede sobreescribirse con la
+# variable de entorno AETHERIA_ROLE (recomendado en docker-compose).
+role: "main"
+
+# Solo aplica en rol 'lobby':
+lobby:
+  # Servidor al que envia el portal fisico del hub.
+  portal-target: "main"

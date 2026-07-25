@@ -21,6 +21,19 @@ El objetivo determina las acciones (heuristica por palabras clave en el backend,
 coste). Ej.: *"construye una fuente"* -> `PLACE_BLUEPRINT`; *"dame pan y ven"* ->
 `GIVE_ITEM` + `MOVE_TO`.
 
+## Rol del servidor (main vs lobby)
+
+El plugin lee su rol de la variable de entorno `AETHERIA_ROLE` (o `role` en `config.yml`):
+
+- **`main`** (por defecto): NPC, conversacion y ejecucion de planes.
+- **`lobby`**: activa el **modulo lobby** — construye un hub (plataforma de cuarzo +
+  cartel + **portal de esmeralda**), da la bienvenida e instrucciones al entrar, y al
+  pisar el portal envia al jugador a `main` mediante el mensaje BungeeCord "Connect" de
+  Velocity (destino configurable en `lobby.portal-target`). En docker-compose, el
+  servicio `lobby` (modo full) arranca con `AETHERIA_ROLE=lobby`.
+
+Tambien funciona `/server main` · `/server lobby` (comando nativo de Velocity).
+
 ## Reglas (defensa en profundidad)
 
 - ❌ Nunca llama a un LLM ni a la base de datos: solo al **API Gateway** (`/v1/...`) con

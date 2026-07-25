@@ -23,8 +23,14 @@ services:
       SIMULATION_DISTANCE: "4"
       SPAWN_MONSTERS: "false"
       SPAWN_ANIMALS: "false"
+      LEVEL_TYPE: "FLAT"     # mundo llano: hub minimo, poco coste
+      # El plugin corre aqui con rol 'lobby' (hub + portales).
+      AETHERIA_ROLE: "lobby"
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-changeme-generate-a-long-random-secret}"
     volumes:
       - ./minecraft/.generated/lobby/config:/data/config
+      # Plugin Aetheria (mismo jar que main; lo genera plugin-build).
+      - ./minecraft/.generated/lobby/plugins:/data/plugins
       - lobby-data:/data
     restart: unless-stopped
     networks: [aetheria-net]

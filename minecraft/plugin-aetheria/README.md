@@ -39,6 +39,9 @@ El plugin lee su rol de la variable de entorno `AETHERIA_ROLE` (o `role` en `con
     BungeeCord "Connect" de Velocity.
   - En los **mundos de juego** (rol != lobby), el plugin construye un **portal de vuelta
     al lobby** cerca del spawn (`return-portal` en config).
+  - **NPC guias conversables** junto a cada portal (aldeanos): clic derecho -> modo charla
+    inmersivo (tu chat va solo al NPC, responde por la tuberia de 3 niveles; sales con
+    "adios" o alejandote). `ConversationManager`. Aun sin memoria (llega con la Fase 5).
   - Bienvenida + instrucciones al entrar; te teletransporta a la sala.
   - **Protecciones de hub**: modo aventura, invulnerable, no puedes morir, atacar,
     recibir dano ni pasar hambre; sin mobs; paz; hora y clima fijos. (Eventos cancelados

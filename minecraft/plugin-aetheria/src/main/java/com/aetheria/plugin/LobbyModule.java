@@ -65,14 +65,16 @@ public final class LobbyModule implements Listener {
 
     private final AetheriaPlugin plugin;
     private final List<PortalDef> portalDefs;
+    private final ConversationManager convo;
     private final List<PlacedPortal> portals = new ArrayList<>();
     private final Map<UUID, Long> lastJump = new HashMap<>();
 
     private Location hubSpawn;
 
-    public LobbyModule(AetheriaPlugin plugin, List<PortalDef> portalDefs) {
+    public LobbyModule(AetheriaPlugin plugin, List<PortalDef> portalDefs, ConversationManager convo) {
         this.plugin = plugin;
         this.portalDefs = portalDefs;
+        this.convo = convo;
     }
 
     public static List<PortalDef> readPortals(AetheriaPlugin plugin) {
@@ -102,6 +104,7 @@ public final class LobbyModule implements Listener {
         buildRoom(world);
         buildCenterpiece(world);
 
+        convo.clearGuides(world);   // evita guias duplicados al reiniciar
         for (int i = 0; i < portalDefs.size() && i < OFFSETS.length; i++) {
             placePortal(world, portalDefs.get(i), OFFSETS[i]);
         }
@@ -174,6 +177,12 @@ public final class LobbyModule implements Listener {
 
         portals.add(new PlacedPortal(def.server(),
                 new Location(world, OX + cx + 0.5, FLOOR_Y + 1, OZ + cz + 0.5)));
+
+        // Guia conversable un bloque hacia el centro, mirando al jugador que llega.
+        final int gx = cx - Integer.signum(cx);
+        final int gz = cz - Integer.signum(cz);
+        convo.spawnGuide(new Location(world, OX + gx + 0.5, FLOOR_Y + 1, OZ + gz + 0.5, guideYaw(cx, cz), 0f),
+                "guia-" + def.server(), "§bGuia de " + def.label());
     }
 
     private static BlockFace towardCenter(int cx, int cz) {
@@ -181,6 +190,13 @@ public final class LobbyModule implements Listener {
             return cx > 0 ? BlockFace.WEST : BlockFace.EAST;
         }
         return cz > 0 ? BlockFace.NORTH : BlockFace.SOUTH;
+    }
+
+    private static float guideYaw(int cx, int cz) {
+        if (Math.abs(cx) >= Math.abs(cz)) {
+            return cx > 0 ? 90f : 270f;   // mira al centro por el eje X
+        }
+        return cz > 0 ? 180f : 0f;        // mira al centro por el eje Z
     }
 
     private void configureWorld(World world) {

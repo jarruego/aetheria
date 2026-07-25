@@ -37,13 +37,15 @@ public final class ReturnPortalModule implements Listener {
 
     private final AetheriaPlugin plugin;
     private final String targetServer;
+    private final ConversationManager convo;
     private final Map<UUID, Long> lastJump = new HashMap<>();
 
     private Location portalCenter;
 
-    public ReturnPortalModule(AetheriaPlugin plugin, String targetServer) {
+    public ReturnPortalModule(AetheriaPlugin plugin, String targetServer, ConversationManager convo) {
         this.plugin = plugin;
         this.targetServer = targetServer;
+        this.convo = convo;
     }
 
     /** Construye el portal de vuelta a unos bloques del spawn del mundo. */
@@ -53,6 +55,8 @@ public final class ReturnPortalModule implements Listener {
         final int cx = spawn.getBlockX();
         final int cz = spawn.getBlockZ() + 3;      // separado del spawn para no activarlo sin querer
         final int baseY = spawn.getBlockY() - 1;   // nivel del suelo
+
+        convo.clearGuides(world);                  // evita guias duplicados al reiniciar
 
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
@@ -74,6 +78,11 @@ public final class ReturnPortalModule implements Listener {
                 "== LOBBY ==", "Pisa aqui", "para volver", "al lobby");
 
         this.portalCenter = new Location(world, cx + 0.5, baseY + 1, cz + 0.5);
+
+        // Guia conversable junto al portal de vuelta.
+        convo.spawnGuide(new Location(world, cx + 2 + 0.5, baseY + 1, cz + 0.5, 90f, 0f),
+                "guia-vuelta", "§bGuia del Lobby");
+
         plugin.getLogger().info("Portal de vuelta al lobby construido cerca del spawn.");
     }
 

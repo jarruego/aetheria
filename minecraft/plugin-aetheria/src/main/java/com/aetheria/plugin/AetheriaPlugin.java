@@ -32,12 +32,16 @@ public final class AetheriaPlugin extends JavaPlugin {
         Objects.requireNonNull(getCommand("aetheria"), "comando 'aetheria' no declarado en plugin.yml")
                 .setExecutor(command);
 
+        // NPC guias conversables (junto a los portales, en cualquier servidor).
+        final ConversationManager convo = new ConversationManager(this, gateway);
+        getServer().getPluginManager().registerEvents(convo, this);
+
         // Rol del servidor: 'lobby' activa el hub con portales; por defecto 'main'.
         final String role = System.getenv().getOrDefault("AETHERIA_ROLE",
                 getConfig().getString("role", "main")).toLowerCase();
         if (role.equals("lobby")) {
             getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
-            final LobbyModule lobby = new LobbyModule(this, LobbyModule.readPortals(this));
+            final LobbyModule lobby = new LobbyModule(this, LobbyModule.readPortals(this), convo);
             getServer().getPluginManager().registerEvents(lobby, this);
             // El mundo ya esta cargado cuando se habilitan los plugins.
             lobby.build();
@@ -48,11 +52,11 @@ public final class AetheriaPlugin extends JavaPlugin {
             Objects.requireNonNull(getCommand("home")).setExecutor(homeCmd);
             Objects.requireNonNull(getCommand("sethome")).setExecutor(homeCmd);
 
-            // Portal de vuelta al lobby.
+            // Portal de vuelta al lobby (con su guia).
             if (getConfig().getBoolean("return-portal.enabled", true)) {
                 getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
                 final ReturnPortalModule ret = new ReturnPortalModule(this,
-                        getConfig().getString("return-portal.target", "lobby"));
+                        getConfig().getString("return-portal.target", "lobby"), convo);
                 getServer().getPluginManager().registerEvents(ret, this);
                 ret.build();
             }

@@ -31,10 +31,10 @@ Un servidor de Minecraft persistente donde la IA es el "sistema operativo del mu
 | `docs/roadmap.md` | Plan por fases y estado actual |
 | `contracts/openapi.yaml` | Contrato REST Plugin↔Backend (fuente de verdad de la API) |
 | `services/ai-orchestrator/` | Planner + **validador** + adaptador LLM + conversación 3 niveles |
-| `services/api-gateway/` | API REST pública, auth, reenvío al backend |
-| `services/world-state/` | Resúmenes del mundo para la IA (Fase 2) |
-| `db/supabase/migrations/` | Esquema versionado |
-| `minecraft/` | Velocity, Lobby, Main, plugin Java (Fase 1) |
+| `services/api-gateway/` | API REST pública, auth, reenvío al backend y al world-state |
+| `services/world-state/` | Resúmenes estructurados del mundo (read-model sobre Postgres) |
+| `db/supabase/migrations/` | Esquema versionado + `db/migrate.sh` (runner idempotente) |
+| `minecraft/` | Velocity, Lobby, Main, plugin Java |
 | `infra/` | Terraform (Oracle Cloud) + Docker (Fase 4) |
 
 ## Comandos habituales
@@ -48,6 +48,11 @@ docker compose down             # parar
 # Salud
 #   API Gateway     -> http://localhost:8080/health
 #   AI Orchestrator -> http://localhost:8090/health
+#   World-State     -> http://localhost:8070/health
+#   Minecraft Java  -> localhost:25565   | Bedrock -> localhost:19132 (UDP)
+
+# Base de datos: las migraciones se aplican solas (servicio one-shot 'migrate').
+# Datos de demo para dev:  psql "$DATABASE_URL" -f db/seed-dev.sql
 
 # Tests / lint por servicio (ver también CONTRIBUTING.md)
 cd services/<servicio>
@@ -56,9 +61,13 @@ pip install -e ".[dev]" && pytest -q && ruff check src tests
 
 ## Estado actual
 
-**Fase 0 (Fundación): COMPLETA** y verificada end-to-end en contenedores, subida a
-GitHub (`https://github.com/jarruego/aetheria`). **Siguiente: Fase 1** (red Minecraft:
-Velocity + Lobby + Main + Geyser/Floodgate). → `docs/roadmap.md`
+**Fases 0, 1 y 2: COMPLETAS** y verificadas, en GitHub (`https://github.com/jarruego/aetheria`).
+- **F0 Fundación**: monorepo, backend (gateway + orchestrator + validador), CI.
+- **F1 Red Minecraft**: Velocity + Lobby + Main + Geyser/Floodgate en docker-compose.
+- **F2 Backend + DB**: Postgres + migraciones versionadas + world-state (read-model).
+
+**Siguiente: Fase 3** (IA + validador en acción: adaptador LLM real, conversación 3
+niveles, planner que usa el world-state). → `docs/roadmap.md`
 
 ## Convenciones
 

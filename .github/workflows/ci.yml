@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [ai-orchestrator, api-gateway]
+        service: [ai-orchestrator, api-gateway, world-state]
     defaults:
       run:
         working-directory: services/${{ matrix.service }}

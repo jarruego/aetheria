@@ -20,9 +20,12 @@ Cada fase deja algo funcionando y verificable.
 - [x] Verificacion: contenedores arrancan sin crash-loop y Velocity responde al ping
 - [ ] Pendiente (usuario): login real Java + Bedrock y salto lobby<->main
 
-## Fase 2 - Backend + Base de datos
-- Esquema Supabase versionado
-- world-state: resumenes estructurados (no bloques)
+## Fase 2 - Backend + Base de datos  (COMPLETA)
+- [x] Postgres local (equivalente a Supabase) en docker-compose
+- [x] Migraciones SQL versionadas con runner idempotente (db/migrate.sh, schema_migrations)
+- [x] world-state: resumenes estructurados (no bloques) sobre la DB
+- [x] API Gateway conectado a la DB via world-state (proxy /v1/worlds, /v1/world/{key}/summary)
+- [x] Verificacion: migracion aplicada, seed, resumenes correctos end-to-end, tests
 
 ## Fase 3 - IA + Validador
 - Adaptador LLM intercambiable

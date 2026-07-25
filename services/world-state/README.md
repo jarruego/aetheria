@@ -1,20 +1,27 @@
 # World-State
 
-Mantiene el **modelo del mundo** que consume la IA: resúmenes estructurados, **nunca
-bloques crudos**. Enviar millones de bloques a un LLM es inviable y caro; en su lugar,
-este servicio expone vistas como:
+Read-model del mundo: expone **resumenes estructurados** (recuentos de ciudades,
+parcelas, propietarios, NPC...), **nunca bloques crudos**. Es la fuente de contexto para
+el planner de la IA (ADR-0006).
 
-- Parcelas y propietarios
-- Ciudades y carreteras
-- Biomas
-- Construcciones (metadatos, no bloques)
-- Economía e inventarios (resúmenes)
+## Endpoints
 
-## Estado
+| Metodo | Ruta | Descripcion |
+|---|---|---|
+| GET | `/health` | Salud del servicio (incluye estado de la DB) |
+| GET | `/internal/worlds` | Lista de mundos |
+| GET | `/internal/world/{key}/summary` | Resumen estructurado de un mundo |
 
-**Placeholder de Fase 0.** La implementación llega en **Fase 2**, cuando exista el
-esquema de base de datos poblado (ver `db/supabase/migrations/`) y el flujo de eventos
-desde el plugin.
+## Base de datos
 
-Diseño previsto: FastAPI + acceso de solo lectura optimizado a Supabase, con
-"snapshots" identificables (`context_ref`) que el planner referencia al generar planes.
+Se conecta a `DATABASE_URL` (en Docker: el servicio `postgres`; en prod: Supabase). El
+esquema se aplica con las migraciones versionadas (`db/supabase/migrations/` via
+`db/migrate.sh`). El servicio degrada con 503 si la DB no esta disponible, sin caer.
+
+## Desarrollo
+
+```bash
+pip install -e ".[dev]"
+uvicorn aetheria_world.main:app --app-dir src --port 8070 --reload
+pytest
+```

@@ -17,8 +17,9 @@ class Settings(BaseSettings):
     # Token compartido servicio-a-servicio (plugin -> gateway).
     internal_service_token: str = "changeme-generate-a-long-random-secret"
 
-    # URL del AI Orchestrator (en docker-compose se resuelve por nombre de servicio).
+    # URLs de los servicios internos (en docker-compose se resuelven por nombre).
     ai_orchestrator_url: str = "http://ai-orchestrator:8090"
+    world_state_url: str = "http://world-state:8070"
 
 
 settings = Settings()

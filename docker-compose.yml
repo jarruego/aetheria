@@ -28,6 +28,58 @@ services:
     restart: unless-stopped
     networks: [aetheria-net]
 
+  # ---------------- Base de datos + World-State (Fase 2) ----------------
+  # Postgres local = equivalente a Supabase en dev (mismas migraciones).
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aetheria}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aetheria-local-dev}
+      POSTGRES_DB: ${POSTGRES_DB:-aetheria}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aetheria} -d ${POSTGRES_DB:-aetheria}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks: [aetheria-net]
+
+  # One-shot: aplica migraciones versionadas y termina (idempotente).
+  migrate:
+    image: postgres:16
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-aetheria}:${POSTGRES_PASSWORD:-aetheria-local-dev}@postgres:5432/${POSTGRES_DB:-aetheria}
+    volumes:
+      - ./db/supabase/migrations:/migrations:ro
+      - ./db/migrate.sh:/migrate.sh:ro
+    entrypoint: ["bash", "/migrate.sh"]
+    restart: "no"
+    networks: [aetheria-net]
+
+  # Read-model: resumenes estructurados del mundo (no bloques).
+  world-state:
+    build: ./services/world-state
+    env_file: .env
+    environment:
+      # Sobrescribe DATABASE_URL de .env para apuntar al servicio 'postgres'.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-aetheria}:${POSTGRES_PASSWORD:-aetheria-local-dev}@postgres:5432/${POSTGRES_DB:-aetheria}
+    ports:
+      - "8070:8070"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks: [aetheria-net]
+
   # ---------------- Red Minecraft (Fase 1) ----------------
   # Velocity: UNICO punto de entrada. Java por 25565, Bedrock por 19132 (Geyser).
   velocity:
@@ -91,6 +143,7 @@ networks:
     driver: bridge
 
 volumes:
+  postgres-data:
   velocity-data:
   lobby-data:
   main-data:

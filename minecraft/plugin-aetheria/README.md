@@ -32,9 +32,13 @@ El plugin lee su rol de la variable de entorno `AETHERIA_ROLE` (o `role` en `con
   - Mundo **void** (vacio; el servicio `lobby` usa `LEVEL_TYPE=minecraft:flat` +
     `GENERATOR_SETTINGS` con `layers:[]`), donde solo existe una **sala cerrada** de
     cuarzo con cristaleras que construye el plugin, flotando en el vacio.
+  - Sala amplia (15x15) con columnas, grandes cristaleras al vacio y un **faro central
+    con haz de luz**. Carteles orientados hacia el jugador.
   - **Portales** configurables (`lobby.portals`): por defecto **main** (esmeralda) y
     **creativo** (diamante). Al pisar uno, envia al jugador a ese servidor via el mensaje
     BungeeCord "Connect" de Velocity.
+  - En los **mundos de juego** (rol != lobby), el plugin construye un **portal de vuelta
+    al lobby** cerca del spawn (`return-portal` en config).
   - Bienvenida + instrucciones al entrar; te teletransporta a la sala.
   - **Protecciones de hub**: modo aventura, invulnerable, no puedes morir, atacar,
     recibir dano ni pasar hambre; sin mobs; paz; hora y clima fijos. (Eventos cancelados

@@ -140,11 +140,12 @@ services:
       - ./minecraft/plugin-aetheria:/plugin
       - ./minecraft/.generated/main/plugins:/dist-main
       - ./minecraft/.generated/lobby/plugins:/dist-lobby
+      - ./minecraft/.generated/creative/plugins:/dist-creative
       - gradle-cache:/gradle-cache
     entrypoint:
       - sh
       - -c
-      - "gradle build --no-daemon -q && cp build/libs/aetheria-plugin-*.jar /dist-main/aetheria-plugin.jar && cp build/libs/aetheria-plugin-*.jar /dist-lobby/aetheria-plugin.jar && echo '[plugin-build] jar copiado (main + lobby)'"
+      - "gradle build --no-daemon -q && cp build/libs/aetheria-plugin-*.jar /dist-main/aetheria-plugin.jar && cp build/libs/aetheria-plugin-*.jar /dist-lobby/aetheria-plugin.jar && cp build/libs/aetheria-plugin-*.jar /dist-creative/aetheria-plugin.jar && echo '[plugin-build] jar copiado (main + lobby + creative)'"
     restart: "no"
 
   # Main: mundo persistente (economia, ciudades, IA). Solo accesible via Velocity.

@@ -14,7 +14,9 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.Sign;
+import org.bukkit.block.data.Rotatable;
 import org.bukkit.block.sign.Side;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -37,26 +39,26 @@ import com.google.common.io.ByteStreams;
 import net.kyori.adventure.text.Component;
 
 /**
- * Modulo LOBBY: hub tipico de Minecraft en un mundo void. Sala cerrada flotando en el
- * vacio con uno o varios portales a otros servidores, y protecciones (aventura,
- * invulnerable, sin morir/atacar/hambre/mobs). Solo se activa con rol 'lobby'.
+ * Modulo LOBBY: hub tipico de Minecraft en un mundo void. Sala amplia y decorada
+ * (columnas, grandes cristaleras al vacio, faro central con haz de luz) con portales a
+ * otros servidores, y protecciones (aventura, invulnerable, sin morir/atacar/hambre/mobs).
+ * Solo se activa con rol 'lobby'.
  */
 public final class LobbyModule implements Listener {
 
     private static final String CHANNEL = "BungeeCord";
     private static final long COOLDOWN_MS = 3000L;
 
-    // Sala flotando en el vacio; interior de 11x11.
+    // Sala flotando en el vacio; interior de 15x15 y 6 de alto.
     private static final int OX = 0;
     private static final int FLOOR_Y = 100;
     private static final int OZ = 0;
-    private static final int R = 5;
-    private static final int WALL_H = 4;
+    private static final int R = 7;
+    private static final int WALL_H = 6;
 
-    // Posiciones (dx,dz) para cada portal, en las 4 direcciones cardinales.
-    private static final int[][] OFFSETS = { { 0, 3 }, { 0, -3 }, { 3, 0 }, { -3, 0 } };
+    // Posiciones (dx,dz) de los portales: primero a los lados (X), luego al fondo (Z).
+    private static final int[][] OFFSETS = { { 5, 0 }, { -5, 0 }, { 0, -5 }, { 0, 5 } };
 
-    /** Definicion de un portal leida de config. */
     public record PortalDef(String server, Material material, String label) {}
 
     private record PlacedPortal(String server, Location center) {}
@@ -73,7 +75,6 @@ public final class LobbyModule implements Listener {
         this.portalDefs = portalDefs;
     }
 
-    /** Lee los portales de config.yml (lobby.portals); si no hay, uno a 'main'. */
     public static List<PortalDef> readPortals(AetheriaPlugin plugin) {
         final List<PortalDef> defs = new ArrayList<>();
         for (Map<?, ?> raw : plugin.getConfig().getMapList("lobby.portals")) {
@@ -99,34 +100,59 @@ public final class LobbyModule implements Listener {
         final World world = Bukkit.getWorlds().get(0);
         configureWorld(world);
         buildRoom(world);
+        buildCenterpiece(world);
 
         for (int i = 0; i < portalDefs.size() && i < OFFSETS.length; i++) {
             placePortal(world, portalDefs.get(i), OFFSETS[i]);
         }
 
-        this.hubSpawn = new Location(world, OX + 0.5, FLOOR_Y + 1, OZ + 0.5);
-        world.setSpawnLocation(OX, FLOOR_Y + 1, OZ);
-        plugin.getLogger().info("Lobby: sala construida con " + portals.size() + " portal(es).");
+        // Aparece junto a la pared del fondo, mirando hacia el interior.
+        this.hubSpawn = new Location(world, OX + 0.5, FLOOR_Y + 1, OZ + 6.5, 180f, 0f);
+        world.setSpawnLocation(hubSpawn);
+        plugin.getLogger().info("Lobby: sala construida (" + (2 * R + 1) + "x" + (2 * R + 1)
+                + ", " + portals.size() + " portales).");
     }
 
     private void buildRoom(World world) {
         for (int dx = -R; dx <= R; dx++) {
             for (int dz = -R; dz <= R; dz++) {
-                setBlock(world, dx, 0, dz, Material.QUARTZ_BLOCK);          // suelo
-                setBlock(world, dx, WALL_H + 1, dz, Material.QUARTZ_BLOCK); // techo
+                final boolean edge = Math.abs(dx) == R || Math.abs(dz) == R;
+                final boolean corner = Math.abs(dx) == R && Math.abs(dz) == R;
+
+                setBlock(world, dx, 0, dz, Material.SMOOTH_QUARTZ);            // suelo
+                setBlock(world, dx, WALL_H + 1, dz, Material.SMOOTH_QUARTZ);   // techo
+
                 for (int dy = 1; dy <= WALL_H; dy++) {
-                    if (Math.abs(dx) == R || Math.abs(dz) == R) {
-                        final boolean window = (dy == 2 || dy == 3);
-                        setBlock(world, dx, dy, dz, window ? Material.GLASS : Material.QUARTZ_BLOCK);
+                    if (corner) {
+                        setBlock(world, dx, dy, dz, Material.QUARTZ_PILLAR);   // columnas
+                    } else if (edge) {
+                        final boolean band = (dy == 1 || dy == WALL_H);
+                        setBlock(world, dx, dy, dz, band ? Material.QUARTZ_BLOCK : Material.GLASS);
                     } else {
-                        setBlock(world, dx, dy, dz, Material.AIR);
+                        setBlock(world, dx, dy, dz, Material.AIR);             // interior vacio
                     }
                 }
             }
         }
-        for (int[] p : new int[][] { { -3, -3 }, { 3, -3 }, { -3, 3 }, { 3, 3 }, { 0, 0 } }) {
-            setBlock(world, p[0], WALL_H + 1, p[1], Material.SEA_LANTERN);
+        // Rejilla de sea lanterns en el techo.
+        for (int dx = -R + 1; dx <= R - 1; dx += 3) {
+            for (int dz = -R + 1; dz <= R - 1; dz += 3) {
+                setBlock(world, dx, WALL_H + 1, dz, Material.SEA_LANTERN);
+                setBlock(world, dx, WALL_H, dz, Material.END_ROD);            // "lampara" colgante
+            }
         }
+    }
+
+    private void buildCenterpiece(World world) {
+        // Base 3x3 de oro para activar el faro (haz de luz visible en el vacio).
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                setBlock(world, dx, 0, dz, Material.GOLD_BLOCK);
+            }
+        }
+        setBlock(world, 0, 1, 0, Material.BEACON);
+        // Hueco de cristal en el techo para que el haz escape al vacio.
+        setBlock(world, 0, WALL_H + 1, 0, Material.GLASS);
     }
 
     private void placePortal(World world, PortalDef def, int[] off) {
@@ -135,21 +161,26 @@ public final class LobbyModule implements Listener {
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
                 setBlock(world, cx + dx, 0, cz + dz, def.material());
-                for (int dy = 1; dy <= WALL_H; dy++) {
-                    setBlock(world, cx + dx, dy, cz + dz, Material.AIR);
-                }
             }
         }
-        setBlock(world, cx, 0, cz, Material.SEA_LANTERN); // centro luminoso
+        setBlock(world, cx, 0, cz, Material.SEA_LANTERN);         // centro luminoso
 
-        // Cartel al lado (perpendicular al eje del portal).
-        final int sx = Math.abs(cz) >= Math.abs(cx) ? cx + 2 : cx;
-        final int sz = Math.abs(cz) >= Math.abs(cx) ? cz : cz + 2;
-        placeSign(world.getBlockAt(OX + sx, FLOOR_Y + 1, OZ + sz),
-                "== AETHERIA ==", "Portal a", def.label(), "(pisa aqui)");
+        // Cartel entre el centro y el portal, MIRANDO al jugador que llega.
+        final int sx = cx - Integer.signum(cx) * 2;
+        final int sz = cz - Integer.signum(cz) * 2;
+        final BlockFace facing = towardCenter(cx, cz);
+        placeSign(world.getBlockAt(OX + sx, FLOOR_Y + 1, OZ + sz), facing,
+                "== " + def.label() + " ==", "Pisa el portal", "para viajar", "a " + def.label());
 
         portals.add(new PlacedPortal(def.server(),
                 new Location(world, OX + cx + 0.5, FLOOR_Y + 1, OZ + cz + 0.5)));
+    }
+
+    private static BlockFace towardCenter(int cx, int cz) {
+        if (Math.abs(cx) >= Math.abs(cz)) {
+            return cx > 0 ? BlockFace.WEST : BlockFace.EAST;
+        }
+        return cz > 0 ? BlockFace.NORTH : BlockFace.SOUTH;
     }
 
     private void configureWorld(World world) {
@@ -177,8 +208,12 @@ public final class LobbyModule implements Listener {
         world.getBlockAt(OX + dx, FLOOR_Y + dy, OZ + dz).setType(material, false);
     }
 
-    private void placeSign(Block block, String l0, String l1, String l2, String l3) {
+    private void placeSign(Block block, BlockFace facing, String l0, String l1, String l2, String l3) {
         block.setType(Material.OAK_SIGN);
+        if (block.getBlockData() instanceof Rotatable rot) {
+            rot.setRotation(facing);
+            block.setBlockData(rot);
+        }
         if (block.getState() instanceof Sign sign) {
             final var front = sign.getSide(Side.FRONT);
             front.line(0, Component.text(l0));

@@ -47,6 +47,15 @@ public final class AetheriaPlugin extends JavaPlugin {
             final HomeCommand homeCmd = new HomeCommand(homes);
             Objects.requireNonNull(getCommand("home")).setExecutor(homeCmd);
             Objects.requireNonNull(getCommand("sethome")).setExecutor(homeCmd);
+
+            // Portal de vuelta al lobby.
+            if (getConfig().getBoolean("return-portal.enabled", true)) {
+                getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
+                final ReturnPortalModule ret = new ReturnPortalModule(this,
+                        getConfig().getString("return-portal.target", "lobby"));
+                getServer().getPluginManager().registerEvents(ret, this);
+                ret.build();
+            }
         }
 
         getLogger().info("Aetheria habilitado (rol: " + role + "). Gateway: " + url);

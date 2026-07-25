@@ -66,9 +66,16 @@ services:
       SPAWN_ANIMALS: "false"
       VIEW_DISTANCE: "8"
       SIMULATION_DISTANCE: "6"
+      # El plugin corre aqui (rol distinto de lobby): /home + portal de vuelta al lobby.
+      AETHERIA_ROLE: "creative"
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-changeme-generate-a-long-random-secret}"
     volumes:
       - ./minecraft/.generated/creative/config:/data/config
+      - ./minecraft/.generated/creative/plugins:/data/plugins
       - creative-data:/data
+    depends_on:
+      plugin-build:
+        condition: service_completed_successfully
     restart: unless-stopped
     networks: [aetheria-net]
 

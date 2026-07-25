@@ -43,8 +43,9 @@ foreach ($d in $paperServers) {
     New-Item -ItemType Directory -Force -Path (Join-Path $gen "$d\config") | Out-Null
 }
 # Directorios de plugins (los rellena el servicio one-shot plugin-build).
-New-Item -ItemType Directory -Force -Path (Join-Path $gen "main\plugins") | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $gen "lobby\plugins") | Out-Null
+foreach ($d in @("main", "lobby", "creative")) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $gen "$d\plugins") | Out-Null
+}
 
 $enc = [System.Text.UTF8Encoding]::new($false)
 

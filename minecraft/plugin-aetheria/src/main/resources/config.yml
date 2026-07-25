@@ -13,6 +13,11 @@ default-npc: "arquitecto-01"
 # variable de entorno AETHERIA_ROLE (recomendado en docker-compose).
 role: "main"
 
+# En los mundos de juego (rol != lobby): portal de vuelta al lobby cerca del spawn.
+return-portal:
+  enabled: true
+  target: "lobby"
+
 # Solo aplica en rol 'lobby': portales fisicos del hub (cada uno a un servidor).
 lobby:
   portals:

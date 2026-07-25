@@ -14,7 +14,10 @@ services:
     build: ./services/api-gateway
     env_file: .env
     ports:
-      - "8080:8080"
+      # SOLO localhost. El plugin llega por la red interna de Docker
+      # (http://api-gateway:8080), no por el host: publicar en 0.0.0.0 solo servia
+      # para exponer la API a toda la LAN. Ver docs/seguridad.md.
+      - "127.0.0.1:8080:8080"
     depends_on:
       - ai-orchestrator
     restart: unless-stopped
@@ -24,7 +27,9 @@ services:
     build: ./services/ai-orchestrator
     env_file: .env
     ports:
-      - "8090:8090"
+      # SOLO localhost: las rutas /internal/* NO tienen autenticacion propia
+      # (confian en que solo el gateway las alcanza). Ver docs/seguridad.md.
+      - "127.0.0.1:8090:8090"
     depends_on:
       - world-state
     restart: unless-stopped
@@ -39,7 +44,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aetheria-local-dev}
       POSTGRES_DB: ${POSTGRES_DB:-aetheria}
     ports:
-      - "5432:5432"
+      # SOLO localhost. Publicado en 0.0.0.0 la base de datos entera quedaba
+      # accesible desde cualquier equipo de la red, con las credenciales del .env.
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -73,7 +80,8 @@ services:
       # Sobrescribe DATABASE_URL de .env para apuntar al servicio 'postgres'.
       DATABASE_URL: postgresql://${POSTGRES_USER:-aetheria}:${POSTGRES_PASSWORD:-aetheria-local-dev}@postgres:5432/${POSTGRES_DB:-aetheria}
     ports:
-      - "8070:8070"
+      # SOLO localhost: read-model interno, sin autenticacion propia.
+      - "127.0.0.1:8070:8070"
     depends_on:
       postgres:
         condition: service_healthy

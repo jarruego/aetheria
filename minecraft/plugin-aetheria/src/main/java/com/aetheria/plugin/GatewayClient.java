@@ -27,7 +27,17 @@ public final class GatewayClient {
         this.plugin = plugin;
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.token = token;
-        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+        // HTTP/1.1 FORZADO, no es cosmetico.
+        //
+        // HttpClient de Java negocia HTTP/2 por defecto y, sobre HTTP sin cifrar, manda
+        // una cabecera "Upgrade: h2c". Uvicorn (el servidor del gateway) no soporta ese
+        // upgrade y DESCARTA EL CUERPO de la peticion: FastAPI recibe body=null y
+        // responde 422, asi que toda llamada al gateway fallaba en silencio y los NPC
+        // contestaban "(no puedo responder ahora)".
+        this.http = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(Duration.ofSeconds(5))
+                .build();
     }
 
     private CompletableFuture<JsonObject> post(String path, JsonObject body) {

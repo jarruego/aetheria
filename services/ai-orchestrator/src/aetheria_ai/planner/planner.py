@@ -11,10 +11,13 @@ activa, tambien pasaria por el validador.
 
 from __future__ import annotations
 
+import logging
 import re
 
 from aetheria_ai.models.plan import ActionType, Plan, PlanAction, PlanRequest
 from aetheria_ai.world_state_client import get_world_summary
+
+logger = logging.getLogger(__name__)
 
 # Emparejado por palabra completa (tokens), no por subcadena, para evitar falsos
 # positivos como que "vender" dispare "ven".
@@ -41,7 +44,7 @@ def _context_text(summary: dict | None) -> str:
     )
 
 
-def _actions_for_goal(goal: str, context: str) -> list[PlanAction]:
+def _actions_for_goal(goal: str) -> list[PlanAction]:
     words = _tokens(goal)
     actions: list[PlanAction] = []
 
@@ -67,11 +70,19 @@ def _actions_for_goal(goal: str, context: str) -> list[PlanAction]:
             )
         )
 
-    # Siempre cerramos con una SAY que referencia el contexto real del mundo.
+    # Siempre cerramos con una SAY.
+    #
+    # SEGURIDAD: aqui NO se reemite el texto del jugador ni el resumen del mundo.
+    #   - Reemitir el objetivo convertia al NPC en un altavoz: cualquiera podia hacerle
+    #     decir lo que quisiera en el chat publico (inyeccion de salida).
+    #   - El resumen del world-state (ciudades, parcelas, jugadores) es telemetria
+    #     interna; anunciarlo es divulgacion de informacion.
+    # El validador sanea igualmente todo SAY, pero lo mas seguro es no meter ahi datos
+    # que no hagan falta. Ver docs/seguridad.md.
     actions.append(
         PlanAction(
             type=ActionType.SAY,
-            params={"text": f"Objetivo: {goal}. Contexto del mundo: {context}."},
+            params={"text": "Entendido, viajero. Me pongo a ello."},
         )
     )
     return actions
@@ -79,13 +90,16 @@ def _actions_for_goal(goal: str, context: str) -> list[PlanAction]:
 
 async def build_plan(request: PlanRequest) -> Plan:
     # 1) Contexto estructurado del mundo (barato, sin bloques, sin LLM).
+    #    Se queda del lado del servidor: alimenta al LLM y al log, NUNCA el chat.
     summary = await get_world_summary(request.world)
     context = _context_text(summary)
+    logger.debug("Contexto del mundo para el plan (%s): %s", request.world, context)
 
-    # --- Punto de enganche del LLM (opcional, de pago): podria proponer acciones ---
-    # Sea cual sea el resultado, el Plan pasa por el validador antes de ejecutarse.
+    # --- Punto de enganche del LLM (opcional): podria proponer acciones usando
+    # `context`. Sea cual sea el resultado, el Plan pasa por el validador —que ademas
+    # sanea el texto— antes de ejecutarse.
 
     # 2) Acciones deterministas segun el objetivo (coste cero).
-    actions = _actions_for_goal(request.goal, context)
+    actions = _actions_for_goal(request.goal)
 
     return Plan(actor=request.actor, actions=actions, reversible=True, estimated_cost=len(actions))

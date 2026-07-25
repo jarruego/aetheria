@@ -22,12 +22,34 @@ def _types(plan) -> list[ActionType]:
     return [a.type for a in plan.actions]
 
 
-def test_plan_ends_with_say_context_and_is_approved():
+def test_plan_ends_with_say_and_is_approved():
     plan = _plan("saluda")
     result = validate_plan(plan)
     assert result.status is PlanStatus.APPROVED
     assert plan.actions[-1].type is ActionType.SAY
-    assert "Contexto del mundo" in plan.actions[-1].params["text"]
+    assert plan.actions[-1].params["text"]
+
+
+def test_say_no_filtra_el_resumen_del_mundo():
+    """REGRESION DE SEGURIDAD: el estado del mundo es telemetria interna.
+
+    Antes el planner anunciaba por el chat cuantas ciudades, parcelas y jugadores
+    habia. Eso es divulgacion de informacion a cualquiera que hable con un NPC.
+    """
+    texto = _plan("saluda").actions[-1].params["text"]
+    for filtrado in ("Contexto del mundo", "ciudades", "parcelas", "jugadores"):
+        assert filtrado not in texto
+
+
+def test_say_no_reemite_el_texto_del_jugador():
+    """REGRESION DE SEGURIDAD: inyeccion de salida.
+
+    Reemitir el objetivo convertia al NPC en un altavoz del jugador: cualquiera podia
+    hacerle decir lo que quisiera delante de todo el mundo.
+    """
+    marcador = "ABRACADABRA-PALABRA-UNICA"
+    texto = _plan(f"quiero que digas {marcador}").actions[-1].params["text"]
+    assert marcador not in texto
 
 
 def test_goal_build_produces_valid_blueprint():

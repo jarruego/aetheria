@@ -1,9 +1,9 @@
 """Tests del validador: la barrera de seguridad debe rechazar lo peligroso."""
 
 from aetheria_ai.models.plan import (
+    ActionType,
     Actor,
     ActorType,
-    ActionType,
     Plan,
     PlanAction,
     PlanStatus,
@@ -17,12 +17,12 @@ ACTOR = Actor(type=ActorType.NPC, id="test-npc")
 
 
 def _plan(**kwargs) -> Plan:
-    defaults = dict(
-        actor=ACTOR,
-        actions=[PlanAction(type=ActionType.SAY, params={"text": "hola"})],
-        reversible=True,
-        estimated_cost=1,
-    )
+    defaults = {
+        "actor": ACTOR,
+        "actions": [PlanAction(type=ActionType.SAY, params={"text": "hola"})],
+        "reversible": True,
+        "estimated_cost": 1,
+    }
     defaults.update(kwargs)
     return Plan(**defaults)
 

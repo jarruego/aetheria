@@ -5,9 +5,14 @@ proponga algo peligroso, aqui se rechaza antes de que llegue al plugin.
 
 Reglas:
   1. Toda accion debe pertenecer a la lista blanca (garantizado por el tipo ActionType).
-  2. Cada accion valida sus PARAMETROS (material/cantidad, blueprint permitido, etc.).
-  3. Se rechazan planes irreversibles (hasta tener doble confirmacion).
-  4. Limites duros: numero de acciones y coste estimado.
+  2. El texto que ira al chat se SANEA antes de validarlo (ver text_safety).
+  3. Cada accion valida sus PARAMETROS (material/cantidad, blueprint permitido, etc.).
+  4. Se rechazan planes irreversibles (hasta tener doble confirmacion).
+  5. Limites duros: numero de acciones y coste estimado.
+
+Orden importante: se sanea ANTES de validar. Asi, un texto que sea solo codigos de
+formato queda vacio tras el saneo y lo rechaza la regla 'SAY sin texto' que ya existia,
+sin necesidad de una regla nueva.
 """
 
 from __future__ import annotations
@@ -15,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from aetheria_ai.models.plan import ActionType, Plan, PlanAction, PlanResponse, PlanStatus
+from aetheria_ai.validator.text_safety import sanitize_chat_text
 
 MAX_ACTIONS_PER_PLAN = 50
 MAX_ESTIMATED_COST = 10_000
@@ -91,8 +97,28 @@ def _check(plan: Plan) -> ValidationResult:
     return ValidationResult(True)
 
 
+def _sanitized_actions(actions: list[PlanAction]) -> list[PlanAction]:
+    """Copia las acciones saneando el texto que acabaria en el chat del juego.
+
+    Devuelve objetos NUEVOS: el plan original no se modifica, para que quede
+    constancia de lo que se propuso frente a lo que se aprobo.
+    """
+    limpias: list[PlanAction] = []
+    for action in actions:
+        if action.type is ActionType.SAY and isinstance((action.params or {}).get("text"), str):
+            params = dict(action.params)
+            params["text"] = sanitize_chat_text(params["text"])
+            limpias.append(PlanAction(type=action.type, params=params))
+        else:
+            limpias.append(action)
+    return limpias
+
+
 def validate_plan(plan: Plan) -> PlanResponse:
     """Devuelve un PlanResponse aprobado o rechazado. Nunca ejecuta nada."""
+    # SANEAR ANTES DE VALIDAR: lo que se valida es exactamente lo que se ejecutara.
+    plan = plan.model_copy(update={"actions": _sanitized_actions(plan.actions)})
+
     result = _check(plan)
     if result.ok:
         return PlanResponse(

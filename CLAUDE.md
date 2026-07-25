@@ -37,6 +37,8 @@ Un servidor de Minecraft persistente donde la IA es el "sistema operativo del mu
 | `minecraft/` | Velocity, Lobby, Main, plugin Java |
 | `infra/` | Terraform (Oracle Cloud) + Docker (Fase 4) |
 | `docs/infra/` | **Estado del despliegue cloud y traspaso entre sesiones** |
+| `docs/ia-local.md` | **IA real a coste cero** (Ollama): instalación, modelos, problemas |
+| `docs/seguridad.md` | **Qué protege el sistema y qué no** (comprobado atacándolo) |
 
 ## Comandos habituales
 
@@ -83,6 +85,41 @@ copia el jar a main/lobby/creative). Detalle: `minecraft/plugin-aetheria/README.
 
 **IA — coste:** por defecto `LLM_PROVIDER=stub` = 0 €. Nivel 3 real: `ollama` (local,
 gratis, ADR-0009) o `claude` (de pago). El Nivel 2 nunca gasta (ADR-0007).
+
+**IA local (ADR-0009): IMPLEMENTADA y verificada en real.** Proveedor `ollama` que habla
+el protocolo de OpenAI (`/v1/chat/completions`), así que vale también para LM Studio,
+vLLM o llama.cpp — cambiar de motor es cambiar `OLLAMA_BASE_URL`. Tres cosas que hay que
+saber antes de tocarlo:
+1. **Un modelo por nivel, de familia distinta a propósito** (medido, no estimado):
+   `gemma3:4b` (instruct) para el Nivel 2 y `qwen3:8b` (razonamiento) para el Nivel 3.
+   **No pongas un modelo de razonamiento en el Nivel 2**: divaga en la charla casual.
+2. **Se envía `reasoning_effort: "none"` siempre.** Sin eso, un modelo de razonamiento
+   gasta *todo* el presupuesto de tokens pensando y devuelve vacío. `enable_thinking`
+   NO funciona en Ollama; `reasoning_effort` sí.
+3. **Desde Docker la URL es `host.docker.internal`**, nunca `localhost`.
+→ Guía: `docs/ia-local.md`. No sirve en cloud (la instancia ARM no tiene GPU).
+
+**Blindaje de cartera reforzado:** `get_local_provider()` ahora **rechaza por código**
+`claude`/`openai` en el Nivel 2 (antes era solo una regla escrita). El Nivel 2 se dispara
+en cada frase de cada NPC: una variable mal puesta vaciaría la cuenta sin avisar.
+
+**Seguridad (auditado atacándolo, 2026-07-26 — `docs/seguridad.md`).** La lista blanca
+aguanta: pedir `/op` o borrar el mundo devuelve pan. Tres agujeros encontrados y cerrados:
+1. **Puertos internos publicados en `0.0.0.0`** — `/internal/*` respondía sin token desde
+   cualquier equipo de la LAN, y **Postgres entero** estaba expuesto. Ahora todo va a
+   `127.0.0.1:` en compose. **Regla: en `ports:` solo Velocity va sin prefijo de interfaz.**
+2. **El planner reemitía el texto del jugador** al chat (inyección de salida: un NPC como
+   altavoz) **y el resumen del world-state** (divulgación). Ya no: frase fija.
+3. **Sin saneo del chat** — nuevo `validator/text_safety.py` filtra códigos de formato
+   (`§c`, `&l`), saltos de línea y controles, y corta a 200 chars. Está **en el validador,
+   no en el planner**, para que proteja también los planes generados por LLM. Orden:
+   sanear → validar.
+
+**Trampa Java↔FastAPI (costó un rato):** `HttpClient.newBuilder()` usa **HTTP/2 por
+defecto** y manda `Upgrade: h2c`; uvicorn no lo soporta y **descarta el cuerpo** → 422 con
+`body: null` y los NPC decían *"(no puedo responder ahora)"*. Solución: forzar
+`.version(HttpClient.Version.HTTP_1_1)` en `GatewayClient`. Si alguna llamada al gateway
+da 422 con `loc: ["body"]`, es esto.
 
 **Fase 4 (Cloud/IaC): bloqueada por capacidad de Oracle** (`Out of host capacity`); la red
 ya existe (5/7 recursos), falta la instancia ARM → insistir con

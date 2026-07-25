@@ -1,22 +1,53 @@
 # Plugin Aetheria (Java / Paper)
 
-El único componente que **ejecuta** cambios en el mundo. Responsabilidades:
+El unico componente que **ejecuta** cambios en el mundo. La IA propone; el plugin dispone.
 
-- Capturar eventos (interacción con NPC, comandos permitidos) y enviarlos al backend
-  como **datos estructurados** (nunca comandos crudos).
-- Recibir **planes ya validados** del API Gateway y ejecutar **solo** acciones de la
-  lista blanca (`SAY`, `MOVE_TO`, `PLACE_BLUEPRINT`, ...), con logging y rollback.
-- Movimiento de NPC, pathfinding, horarios y rutinas: **código**, no IA.
+## Que hace hoy
 
-## Lo que el plugin NUNCA hace
+- Comando `/aetheria ask <mensaje>`: conversa con un NPC (el backend decide el nivel
+  1/2/3; sin coste por defecto).
+- Comando `/aetheria plan <objetivo>`: pide un plan al backend; si viene **aprobado** por
+  el validador, ejecuta sus acciones de la **lista blanca** (hoy: `SAY`; el resto se
+  registran sin tocar el mundo hasta implementarlas con NPC/entidades reales).
 
-- ❌ Llamar directamente a un LLM.
-- ❌ Ejecutar una acción que no esté en la lista blanca.
-- ❌ Ejecutar un plan que no venga con `status = approved`.
+## Reglas (defensa en profundidad)
 
-## Stack previsto
+- ❌ Nunca llama a un LLM ni a la base de datos: solo al **API Gateway** (`/v1/...`) con
+  `Authorization: Bearer <INTERNAL_SERVICE_TOKEN>`.
+- ❌ Nunca ejecuta un plan con `status != approved`.
+- ❌ Nunca ejecuta una accion fuera de la lista blanca del propio plugin
+  (`PlanExecutor.WHITELIST`), aunque el backend ya valida.
+- Todo el I/O de red es asincrono; las acciones sobre el mundo se ejecutan en el hilo
+  principal via el scheduler de Bukkit.
 
-- Java 21, API de Paper, Gradle.
-- Cliente HTTP hacia `API_GATEWAY` con `Authorization: Bearer <INTERNAL_SERVICE_TOKEN>`.
+## Configuracion (`config.yml`)
 
-Se implementa a partir de Fase 1 (esqueleto) y Fase 3 (integración IA completa).
+```yaml
+gateway:
+  url: "http://api-gateway:8080"     # nombre de servicio en la red docker
+  token: "changeme-..."               # o variable de entorno INTERNAL_SERVICE_TOKEN
+default-npc: "arquitecto-01"
+```
+
+## Compilar (sin instalar nada: contenedor Gradle)
+
+```bash
+cd minecraft/plugin-aetheria
+docker run --rm -v "$PWD:/work" -w /work gradle:8.10.2-jdk21 gradle build --no-daemon
+# jar -> build/libs/aetheria-plugin-0.1.0.jar
+```
+
+O con el wrapper incluido: `./gradlew build`.
+
+## Probar contra la red local
+
+1. Levanta el stack (`./scripts/dev-up.ps1`).
+2. Copia el jar al servidor main y reinicialo:
+   ```bash
+   docker cp build/libs/aetheria-plugin-0.1.0.jar aetheria-main-1:/data/plugins/
+   docker compose restart main
+   ```
+3. Entra al servidor, ve al mundo `main` (`/server main`) y prueba:
+   `/aetheria ask hola` y `/aetheria plan construir una plaza`.
+
+Stack: Java 21, API de Paper 1.21.4, `java.net.http.HttpClient` + Gson (del servidor).

@@ -32,8 +32,10 @@ Cada fase deja algo funcionando y verificable.
 - [x] Conversacion en 3 niveles (L1 codigo, L2 local/stub, L3 LLM), a prueba de gasto
 - [x] Planner usa contexto del world-state -> Plan JSON -> Validador (aprobado/rechazado)
 - [x] Verificacion end-to-end sin coste (3 niveles + plan con contexto real del mundo)
-- [ ] Ejecucion real de acciones (lista blanca) en el plugin Java -> pista Minecraft
+- [x] Plugin Java (Paper): /aetheria ask|plan, ejecuta plan aprobado por lista blanca
+      (SAY operativo; MOVE_TO/GIVE_ITEM/... registrados hasta implementarlos con NPC)
+- [ ] Acciones "fisicas" ricas (mover NPC, colocar blueprint, dar items) -> iteracion futura
 
 ## Fase 4 - Cloud (IaC)
-- Terraform sobre Oracle Cloud Always Free
+- Terraform sobre Oracle Cloud Always Free -> definido en `infra/terraform/` (ADR-0008), pendiente de `apply`
 - SSL, dominio, firewall, backups, monitorizacion

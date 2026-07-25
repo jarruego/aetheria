@@ -68,12 +68,14 @@ pip install -e ".[dev]" && pytest -q && ruff check src tests
 - **F2 Backend + DB**: Postgres + migraciones versionadas + world-state (read-model).
 - **F3 IA + Validador**: adaptador LLM (default `stub` = **coste cero**), conversación 3
   niveles, planner que usa el contexto del world-state → plan → validador.
+- **Plugin Java (Paper)**: `/aetheria ask|plan`; ejecuta planes aprobados por **lista
+  blanca** (SAY operativo). Cierra el bucle IA → mundo. Cargado y verificado en `main`.
 
 **Coste:** por defecto NO se gasta nada (`LLM_PROVIDER=stub`). Para IA real: `LLM_PROVIDER=claude`
 + `ANTHROPIC_API_KEY`. El Nivel 2 siempre usa proveedor local (nunca gasta). → ADR-0007.
 
-**Siguiente: ejecución en el plugin Java** (lista blanca) y/o **Fase 4** (Cloud/IaC).
-→ `docs/roadmap.md`
+**Siguiente: Fase 4** (Cloud/IaC en `infra/terraform/`) y acciones "físicas" ricas del
+plugin (mover NPC, blueprints). → `docs/roadmap.md`
 
 ## Convenciones
 

@@ -1,0 +1,15 @@
+name: Aetheria
+version: "${version}"
+main: com.aetheria.plugin.AetheriaPlugin
+api-version: "1.21"
+author: Aetheria
+description: Ejecuta planes validados de la IA (lista blanca). La IA propone; el plugin dispone.
+commands:
+  aetheria:
+    description: Interactua con la IA de Aetheria (conversacion y planes)
+    usage: /aetheria <ask|plan> <texto>
+    permission: aetheria.use
+permissions:
+  aetheria.use:
+    description: Permite usar los comandos de Aetheria
+    default: true

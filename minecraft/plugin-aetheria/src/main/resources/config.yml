@@ -1,0 +1,10 @@
+# Configuracion del plugin Aetheria.
+gateway:
+  # URL del API Gateway. En la red de docker-compose es el nombre del servicio.
+  url: "http://api-gateway:8080"
+  # Token de servicio. Puede sobreescribirse con la variable de entorno
+  # INTERNAL_SERVICE_TOKEN (recomendado en produccion).
+  token: "changeme-generate-a-long-random-secret"
+
+# NPC por defecto con el que se dirige la conversacion/planes desde los comandos.
+default-npc: "arquitecto-01"

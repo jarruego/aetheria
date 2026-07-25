@@ -26,11 +26,16 @@ coste). Ej.: *"construye una fuente"* -> `PLACE_BLUEPRINT`; *"dame pan y ven"* -
 El plugin lee su rol de la variable de entorno `AETHERIA_ROLE` (o `role` en `config.yml`):
 
 - **`main`** (por defecto): NPC, conversacion y ejecucion de planes.
-- **`lobby`**: activa el **modulo lobby** — construye un hub (plataforma de cuarzo +
-  cartel + **portal de esmeralda**), da la bienvenida e instrucciones al entrar, y al
-  pisar el portal envia al jugador a `main` mediante el mensaje BungeeCord "Connect" de
-  Velocity (destino configurable en `lobby.portal-target`). En docker-compose, el
-  servicio `lobby` (modo full) arranca con `AETHERIA_ROLE=lobby`.
+- **`lobby`**: activa el **modulo lobby** — un hub tipico de Minecraft:
+  - Mundo **void** (vacio; el servicio `lobby` usa `LEVEL_TYPE=minecraft:flat` +
+    `GENERATOR_SETTINGS` con `layers:[]`), donde solo existe una **sala cerrada** de
+    cuarzo con cristaleras que construye el plugin, flotando en el vacio.
+  - **Portal de esmeralda** al `main`: al pisarlo, envia al jugador via el mensaje
+    BungeeCord "Connect" de Velocity (destino en `lobby.portal-target`).
+  - Bienvenida + instrucciones al entrar; te teletransporta a la sala.
+  - **Protecciones de hub**: modo aventura, invulnerable, no puedes morir, atacar,
+    recibir dano ni pasar hambre; sin mobs; paz; hora y clima fijos. (Eventos cancelados
+    + gamerules + `MODE=adventure`/`DIFFICULTY=peaceful`/`PVP=false` en el compose.)
 
 Tambien funciona `/server main` · `/server lobby` (comando nativo de Velocity).
 

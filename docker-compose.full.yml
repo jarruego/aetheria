@@ -21,10 +21,21 @@ services:
       USE_AIKAR_FLAGS: "true"
       VIEW_DISTANCE: "6"
       SIMULATION_DISTANCE: "4"
+      # Mundo VOID (vacio): no hay terreno, solo existe la sala que construye el plugin.
+      LEVEL_TYPE: "minecraft:flat"
+      GENERATOR_SETTINGS: '{"layers":[],"biome":"minecraft:the_void","structure_overrides":[],"lakes":false,"features":false}'
+      GENERATE_STRUCTURES: "false"
+      # Hub: modo aventura forzado, paz, sin PVP ni mobs (el plugin remata: sin morir).
+      MODE: "adventure"
+      FORCE_GAMEMODE: "true"
+      DIFFICULTY: "peaceful"
+      PVP: "false"
       SPAWN_MONSTERS: "false"
       SPAWN_ANIMALS: "false"
-      LEVEL_TYPE: "FLAT"     # mundo llano: hub minimo, poco coste
-      # El plugin corre aqui con rol 'lobby' (hub + portales).
+      SPAWN_NPCS: "false"
+      SPAWN_PROTECTION: "0"
+      ALLOW_NETHER: "false"
+      # El plugin corre aqui con rol 'lobby' (hub + portales + protecciones).
       AETHERIA_ROLE: "lobby"
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-changeme-generate-a-long-random-secret}"
     volumes:

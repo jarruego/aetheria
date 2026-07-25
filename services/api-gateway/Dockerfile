@@ -7,10 +7,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# Con layout src, setuptools necesita que src/ exista al resolver el paquete.
 COPY pyproject.toml ./
-RUN pip install --upgrade pip && pip install .
-
 COPY src ./src
+RUN pip install --upgrade pip && pip install .
 
 EXPOSE 8080
 

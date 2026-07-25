@@ -7,12 +7,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Dependencias primero (mejor cacheo de capas)
+# Con layout src, setuptools necesita que src/ exista al resolver el paquete.
 COPY pyproject.toml ./
-RUN pip install --upgrade pip && pip install ".[anthropic]"
-
-# Código
 COPY src ./src
+RUN pip install --upgrade pip && pip install ".[anthropic]"
 
 EXPOSE 8090
 

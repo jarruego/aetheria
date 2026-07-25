@@ -36,6 +36,9 @@ public final class AetheriaPlugin extends JavaPlugin {
         final ConversationManager convo = new ConversationManager(this, gateway);
         getServer().getPluginManager().registerEvents(convo, this);
 
+        // Fase 5: registrar a los jugadores en la DB al entrar.
+        getServer().getPluginManager().registerEvents(new PlayerSyncListener(this, gateway), this);
+
         // Rol del servidor: 'lobby' activa el hub con portales; por defecto 'main'.
         final String role = System.getenv().getOrDefault("AETHERIA_ROLE",
                 getConfig().getString("role", "main")).toLowerCase();
@@ -46,9 +49,8 @@ public final class AetheriaPlugin extends JavaPlugin {
             // El mundo ya esta cargado cuando se habilitan los plugins.
             lobby.build();
         } else {
-            // En los mundos de juego: comandos de casa (/home, /sethome).
-            final HomeManager homes = new HomeManager(this);
-            final HomeCommand homeCmd = new HomeCommand(homes);
+            // En los mundos de juego: comandos de casa (/home, /sethome) sobre la DB.
+            final HomeCommand homeCmd = new HomeCommand(this, gateway, role);
             Objects.requireNonNull(getCommand("home")).setExecutor(homeCmd);
             Objects.requireNonNull(getCommand("sethome")).setExecutor(homeCmd);
 

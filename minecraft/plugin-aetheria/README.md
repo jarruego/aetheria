@@ -9,7 +9,8 @@ El unico componente que **ejecuta** cambios en el mundo. La IA propone; el plugi
 - `/aetheria npc <spawn|remove> [clave]`: crea/elimina un NPC como **entidad real**
   (Villager persistente) en tu posicion.
 - `/sethome` / `/home`: guarda tu posicion y te teletransporta a tu casa (en los mundos
-  de juego; persistencia local v1, migrara a la base de datos con economia/parcelas).
+  de juego; **persistida en la base de datos** via el gateway, una casa por servidor).
+  Al entrar, el jugador se registra en la DB (Fase 5).
 - `/aetheria plan <objetivo>`: pide un plan; si viene **aprobado** por el validador,
   ejecuta sus acciones de la **lista blanca** sobre el mundo real:
   - `SAY` — el NPC habla.

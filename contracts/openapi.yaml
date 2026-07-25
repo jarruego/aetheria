@@ -79,6 +79,60 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/ValidationError" }
 
+  /v1/players:
+    post:
+      tags: [players]
+      summary: Registrar/actualizar un jugador (al entrar al servidor)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlayerUpsert" }
+      responses:
+        "200":
+          description: Jugador registrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { id: { type: string, format: uuid } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/homes:
+    put:
+      tags: [players]
+      summary: Guardar la casa del jugador (para un servidor)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HomeUpsert" }
+      responses:
+        "200": { description: Casa guardada }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/homes/{player_uuid}:
+    get:
+      tags: [players]
+      summary: Obtener la casa del jugador en un servidor
+      parameters:
+        - name: player_uuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: server
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Casa del jugador
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Home" }
+        "404": { description: El jugador no tiene casa en ese servidor }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
 components:
   securitySchemes:
     internalToken:
@@ -179,6 +233,39 @@ components:
       properties:
         error: { type: string }
         message: { type: string }
+
+    PlayerUpsert:
+      type: object
+      required: [uuid, username]
+      properties:
+        uuid: { type: string, format: uuid }
+        username: { type: string }
+
+    HomeUpsert:
+      type: object
+      required: [uuid, server, world, x, y, z]
+      properties:
+        uuid: { type: string, format: uuid }
+        username: { type: string }
+        server: { type: string }
+        world: { type: string }
+        x: { type: number }
+        y: { type: number }
+        z: { type: number }
+        yaw: { type: number, default: 0 }
+        pitch: { type: number, default: 0 }
+
+    Home:
+      type: object
+      required: [server, world, x, y, z, yaw, pitch]
+      properties:
+        server: { type: string }
+        world: { type: string }
+        x: { type: number }
+        y: { type: number }
+        z: { type: number }
+        yaw: { type: number }
+        pitch: { type: number }
 
 security:
   - internalToken: []

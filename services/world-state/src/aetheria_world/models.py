@@ -21,3 +21,32 @@ class WorldSummary(BaseModel):
     plots_owned: int
     npcs: int
     players_total: int
+
+
+# --- Escritura (Fase 5) ---
+
+class PlayerUpsert(BaseModel):
+    uuid: str
+    username: str
+
+
+class HomeUpsert(BaseModel):
+    uuid: str
+    username: str | None = None
+    server: str
+    world: str
+    x: float
+    y: float
+    z: float
+    yaw: float = 0.0
+    pitch: float = 0.0
+
+
+class HomeOut(BaseModel):
+    server: str
+    world: str
+    x: float
+    y: float
+    z: float
+    yaw: float
+    pitch: float

@@ -47,10 +47,10 @@ Cada fase deja algo funcionando y verificable.
 - [x] Comandos /sethome y /home (persistencia local v1)
 - [x] Servidor creativo (superflat) como backend de Velocity
 
-## Fase 5 - El mundo recuerda (camino de escritura a la DB)  (PENDIENTE)
-Hoy solo se LEE de la DB (world-state). Falta el camino de ESCRITURA para que el mundo
-persista lo aprendido/hecho:
-- [ ] Endpoint(s) de escritura (gateway/servicio) hacia Postgres/Supabase
-- [ ] Persistir jugadores, casas (migrar /home a la DB), `npc_memory`, `plan_audit`, economia
-- [ ] El plugin envia eventos del juego (join, encargos, acciones) al backend
-- [ ] NPC con memoria real leida del world-state
+## Fase 5 - El mundo recuerda (camino de escritura a la DB)  (EN CURSO)
+- [x] Camino de escritura: plugin -> gateway -> world-state -> Postgres (ADR-0010)
+- [x] Registrar jugadores al entrar (tabla players deja de ser solo la semilla)
+- [x] Casas (/home) migradas a la DB (migracion 0002, una por servidor)
+- [ ] Persistir `npc_memory` (memoria de conversacion de NPC) y `plan_audit`
+- [ ] Persistir economia / encargos (`contracts`)
+- [ ] El NPC lee su memoria del world-state (conversacion con contexto)

@@ -71,4 +71,63 @@ public final class GatewayClient {
         body.addProperty("world", "main");
         return post("/v1/plans", body);
     }
+
+    // --- Jugadores y casas (Fase 5: escritura a la DB) ---
+
+    /** Registra/actualiza al jugador. */
+    public CompletableFuture<JsonObject> upsertPlayer(String uuid, String username) {
+        final JsonObject body = new JsonObject();
+        body.addProperty("uuid", uuid);
+        body.addProperty("username", username);
+        return post("/v1/players", body);
+    }
+
+    /** Guarda la casa del jugador en este servidor. */
+    public CompletableFuture<Void> setHome(String uuid, String username, String server, String world,
+            double x, double y, double z, float yaw, float pitch) {
+        final JsonObject body = new JsonObject();
+        body.addProperty("uuid", uuid);
+        body.addProperty("username", username);
+        body.addProperty("server", server);
+        body.addProperty("world", world);
+        body.addProperty("x", x);
+        body.addProperty("y", y);
+        body.addProperty("z", z);
+        body.addProperty("yaw", yaw);
+        body.addProperty("pitch", pitch);
+        final HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/v1/homes"))
+                .timeout(Duration.ofSeconds(20))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + token)
+                .PUT(HttpRequest.BodyPublishers.ofString(gson.toJson(body)))
+                .build();
+        return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(resp -> {
+                    if (resp.statusCode() / 100 != 2) {
+                        throw new RuntimeException("Gateway HTTP " + resp.statusCode() + ": " + resp.body());
+                    }
+                    return null;
+                });
+    }
+
+    /** Devuelve la casa del jugador en este servidor, o null si no tiene. */
+    public CompletableFuture<JsonObject> getHome(String uuid, String server) {
+        final HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/v1/homes/" + uuid + "?server=" + server))
+                .timeout(Duration.ofSeconds(20))
+                .header("Authorization", "Bearer " + token)
+                .GET()
+                .build();
+        return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(resp -> {
+                    if (resp.statusCode() == 404) {
+                        return null;
+                    }
+                    if (resp.statusCode() / 100 != 2) {
+                        throw new RuntimeException("Gateway HTTP " + resp.statusCode() + ": " + resp.body());
+                    }
+                    return JsonParser.parseString(resp.body()).getAsJsonObject();
+                });
+    }
 }

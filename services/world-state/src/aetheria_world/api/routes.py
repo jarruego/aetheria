@@ -5,10 +5,18 @@ Los consume el API Gateway (y en Fase 3 el planner). Nunca devuelven bloques.
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, HTTPException
 
 from aetheria_world.db import is_ready, pool
-from aetheria_world.models import WorldRef, WorldSummary
+from aetheria_world.models import (
+    HomeOut,
+    HomeUpsert,
+    PlayerUpsert,
+    WorldRef,
+    WorldSummary,
+)
 
 router = APIRouter(prefix="/internal", tags=["world-state"])
 
@@ -53,3 +61,58 @@ async def world_summary(key: str) -> WorldSummary:
         npcs=npcs,
         players_total=players,
     )
+
+
+# --- Escritura (Fase 5): el mundo empieza a recordar ---
+
+_UPSERT_PLAYER = """
+    insert into players (java_uuid, username)
+    values ($1, $2)
+    on conflict (java_uuid) do update set username = excluded.username, last_seen = now()
+    returning id
+"""
+
+
+@router.post("/players/upsert")
+async def upsert_player(body: PlayerUpsert) -> dict:
+    _require_db()
+    async with pool().acquire() as conn:
+        pid = await conn.fetchval(_UPSERT_PLAYER, uuid.UUID(body.uuid), body.username)
+    return {"id": str(pid)}
+
+
+@router.put("/homes")
+async def set_home(body: HomeUpsert) -> dict:
+    _require_db()
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            pid = await conn.fetchval(_UPSERT_PLAYER, uuid.UUID(body.uuid), body.username or "desconocido")
+            await conn.execute(
+                """
+                insert into player_homes (player_id, server, world, x, y, z, yaw, pitch, updated_at)
+                values ($1, $2, $3, $4, $5, $6, $7, $8, now())
+                on conflict (player_id, server) do update set
+                    world = excluded.world, x = excluded.x, y = excluded.y, z = excluded.z,
+                    yaw = excluded.yaw, pitch = excluded.pitch, updated_at = now()
+                """,
+                pid, body.server, body.world, body.x, body.y, body.z, body.yaw, body.pitch,
+            )
+    return {"status": "ok"}
+
+
+@router.get("/homes/{player_uuid}", response_model=HomeOut)
+async def get_home(player_uuid: str, server: str) -> HomeOut:
+    _require_db()
+    async with pool().acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            select h.server, h.world, h.x, h.y, h.z, h.yaw, h.pitch
+            from player_homes h
+            join players p on p.id = h.player_id
+            where p.java_uuid = $1 and h.server = $2
+            """,
+            uuid.UUID(player_uuid), server,
+        )
+    if row is None:
+        raise HTTPException(status_code=404, detail="El jugador no tiene casa en este servidor")
+    return HomeOut(**dict(row))

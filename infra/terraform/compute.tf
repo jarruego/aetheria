@@ -121,6 +121,23 @@ resource "oci_core_instance" "this" {
       # /usr/local/bin/aetheria-bootstrap.sh por SSH.
       metadata["user_data"],
     ]
+
+    # SEGURO CONTRA EL ERROR MAS CARO DE ESTE PROYECTO.
+    #
+    # Conseguir un hueco ARM en el Always Free cuesta horas o dias de
+    # reintentos ("Out of host capacity"). Si un `apply` futuro decidiera
+    # REEMPLAZAR la instancia (cambio de subred, de dominio de disponibilidad,
+    # reduccion del boot volume...), Terraform la destruiria primero y luego
+    # intentaria crear la nueva: si en ese momento no hay capacidad, el
+    # servidor desaparece y puede tardar dias en volver. Ademas se pierden
+    # los mundos, porque preserve_boot_volume = false.
+    #
+    # Con esto, cualquier plan que implique destruir la instancia FALLA en
+    # seco en vez de ejecutarse.
+    #
+    # Contrapartida: `terraform destroy` tambien queda bloqueado. Para
+    # desmontar el entorno a proposito hay que comentar esta linea primero.
+    prevent_destroy = true
   }
 
   timeouts {

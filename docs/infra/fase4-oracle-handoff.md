@@ -87,6 +87,51 @@ Conviene borrarlo antes de cada intento en cualquier bucle de reintentos.
 
 ---
 
+## 2-bis. Una vez creada la instancia: cómo NO perderla
+
+Conseguir el hueco ARM cuesta horas o días. Perderlo es instantáneo. Estas son las
+reglas para no volver a pasar por la cola.
+
+### La instancia está protegida contra destrucción
+
+`infra/terraform/compute.tf` tiene `prevent_destroy = true` en el bloque `lifecycle`.
+Cualquier plan que implique **destruir o reemplazar** la instancia **falla en seco** en
+vez de ejecutarse. Es el seguro contra el error más caro del proyecto: un reemplazo
+destruye primero y crea después, así que si en ese instante no hay capacidad, el
+servidor desaparece y puede tardar días en volver — y además se pierden los mundos,
+porque `preserve_boot_volume = false`.
+
+Junto con los dos `ignore_changes` ya presentes (imagen de Ubuntu y `user_data`), los
+disparadores habituales de recreación quedan cubiertos.
+
+### ⚠️ NUNCA pares la instancia
+
+Un **Stop** desde la consola libera el host físico. Al arrancarla de nuevo tienes que
+competir otra vez por capacidad, y es un problema muy frecuente con las ARM del free
+tier: gente que apaga "un rato" y tarda días en poder encender.
+
+**Reiniciar sí es seguro** (`sudo reboot`, o *Reboot* en la consola): no suelta el host.
+
+### Oracle reclama instancias Always Free inactivas
+
+Si el servidor pasa semanas con CPU y red prácticamente a cero, Oracle puede
+reclamarlo. Con los contenedores corriendo hay actividad de sobra, pero si el proyecto
+queda parado meses, tenlo presente.
+
+### Qué cambios son seguros y cuáles no
+
+| Cambio | ¿Riesgo de capacidad? |
+|---|---|
+| `git pull`, `docker compose up -d --build`, configs de Paper, plugin | ❌ Ninguno: no toca Terraform |
+| Abrir un puerto, cambiar `ssh_allowed_cidr` | ❌ Ninguno: se aplica en sitio |
+| Redimensionar OCPU/RAM de `A1.Flex` | ⚠️ Se actualiza en sitio, pero el nuevo tamaño necesita capacidad |
+| Cambiar subred, dominio de disponibilidad o reducir boot volume | 🛑 Fuerza reemplazo → **bloqueado por `prevent_destroy`** |
+
+**Regla de oro**: antes de cualquier `terraform apply` futuro, lee el plan y busca
+`must be replaced` o `-/+` sobre `oci_core_instance`. Si aparece, para y piensa.
+
+---
+
 ## 3. Credenciales y ficheros locales (NO están en git)
 
 | Qué | Dónde |
@@ -344,3 +389,12 @@ terraform destroy
 
 Elimina los 7 recursos. **Se pierden los mundos** si la instancia ya existía y no se
 hizo backup del volumen.
+
+> ⚠️ **`terraform destroy` fallará mientras `prevent_destroy = true`** esté activo en
+> `compute.tf` (ver §2-bis). Es deliberado: obliga a un paso consciente antes de tirar
+> una instancia que costó días de reintentos. Para desmontar el entorno a propósito,
+> comenta esa línea, ejecuta el `destroy`, y **vuelve a ponerla** si piensas recrear.
+>
+> Recuerda además que destruir la instancia te devuelve a la cola de capacidad: si solo
+> quieres ahorrar recursos, **no la destruyas ni la pares** — no cuesta nada tenerla
+> encendida.

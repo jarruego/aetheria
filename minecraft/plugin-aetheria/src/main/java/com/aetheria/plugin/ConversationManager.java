@@ -51,6 +51,17 @@ public final class ConversationManager implements Listener {
                 .forEach(org.bukkit.entity.Entity::remove);
     }
 
+    // Apariencias distintas: cada guia viste segun su bioma + profesion (deterministico).
+    private static final Villager.Type[] TYPES = {
+        Villager.Type.PLAINS, Villager.Type.DESERT, Villager.Type.SAVANNA,
+        Villager.Type.JUNGLE, Villager.Type.TAIGA, Villager.Type.SNOW, Villager.Type.SWAMP,
+    };
+    private static final Villager.Profession[] PROFS = {
+        Villager.Profession.ARMORER, Villager.Profession.LIBRARIAN, Villager.Profession.CARTOGRAPHER,
+        Villager.Profession.CLERIC, Villager.Profession.MASON, Villager.Profession.TOOLSMITH,
+        Villager.Profession.WEAPONSMITH, Villager.Profession.FLETCHER, Villager.Profession.SHEPHERD,
+    };
+
     /** Crea un aldeano-guia conversable, quieto e invulnerable, en la ubicacion dada. */
     public Villager spawnGuide(Location loc, String npcId, String name) {
         final Villager v = (Villager) loc.getWorld().spawnEntity(loc, EntityType.VILLAGER);
@@ -64,8 +75,17 @@ public final class ConversationManager implements Listener {
         v.setSilent(true);
         v.setCollidable(false);
         v.addScoreboardTag(GUIDE_TAG);
+        applyLook(v, npcId);
         npcs.put(v.getUniqueId(), new NpcInfo(npcId, name));
         return v;
+    }
+
+    /** Da a cada guia una apariencia distinta (bioma + profesion) segun su clave. */
+    private void applyLook(Villager v, String npcId) {
+        final int h = npcId.hashCode() & 0x7fffffff;
+        v.setVillagerType(TYPES[h % TYPES.length]);
+        v.setProfession(PROFS[(h / TYPES.length) % PROFS.length]);
+        v.setVillagerLevel(5);   // maestro: atuendo completo con distintivo
     }
 
     @EventHandler

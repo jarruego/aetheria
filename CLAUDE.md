@@ -62,40 +62,39 @@ pip install -e ".[dev]" && pytest -q && ruff check src tests
 
 ## Estado actual
 
-**Fases 0–3: COMPLETAS** (F3 backend; ejecución en plugin pendiente), en GitHub
-(`https://github.com/jarruego/aetheria`).
-- **F0 Fundación**: monorepo, backend (gateway + orchestrator + validador), CI.
-- **F1 Red Minecraft**: Velocity + Lobby + Main + Geyser/Floodgate en docker-compose.
-- **F2 Backend + DB**: Postgres + migraciones versionadas + world-state (read-model).
-- **F3 IA + Validador**: adaptador LLM (default `stub` = **coste cero**), conversación 3
-  niveles, planner que usa el contexto del world-state → plan → validador.
-- **Plugin Java (Paper)**: `/aetheria ask|plan|npc`; ejecuta planes aprobados por **lista
-  blanca** con acciones reales (SAY, MOVE_TO por pathfinding, GIVE_ITEM, PLACE_BLUEPRINT,
-  OPEN_TRADE; NPC como Villager). Se **compila y despliega solo** vía compose (servicio
-  one-shot `plugin-build`), local y cloud. Cierra el bucle IA → mundo.
-- **Arranque sin lobby** (recorte Always Free): Velocity → `main`, End desactivado,
-  Chunky para pregeneración. Reactivar lobby = descomentar en compose. → handoff §4-5.
+En GitHub (`https://github.com/jarruego/aetheria`), verificado en local.
 
-**Coste:** por defecto NO se gasta nada (`LLM_PROVIDER=stub`). Para IA real: `LLM_PROVIDER=claude`
-+ `ANTHROPIC_API_KEY`. El Nivel 2 siempre usa proveedor local (nunca gasta). → ADR-0007.
+**Backend (Fases 0–3): COMPLETO.** F0 Fundación · F1 Red Minecraft · F2
+Postgres+migraciones+world-state · F3 IA (adaptador LLM, conversación 3 niveles,
+planner→plan→**validador**).
 
-**Fase 4 (Cloud/IaC): EN CURSO, bloqueada por capacidad de Oracle.** El módulo Terraform
-está escrito y validado; la red ya existe en Oracle (5 recursos), pero la instancia ARM
-falla con `Out of host capacity` (free tier saturado). Hay que insistir con
-`infra/terraform/retry-apply.sh`.
-→ **Estado, decisiones y pendientes: `docs/infra/fase4-oracle-handoff.md`** (leerlo antes
-de tocar nada de cloud).
+**Plugin Java (Paper): funcional.** `/aetheria ask|plan|npc` ejecuta planes aprobados por
+lista blanca (SAY, MOVE_TO, GIVE_ITEM, PLACE_BLUEPRINT, OPEN_TRADE; NPC Villager).
+`/sethome`+`/home`. Se compila y despliega solo vía compose (one-shot `plugin-build`,
+copia el jar a main/lobby/creative). Detalle: `minecraft/plugin-aetheria/README.md`.
 
-Tres cosas de ese documento que afectan al repo fuera de `infra/`:
-1. **Se arranca sin lobby** (solo `main`: overworld + nether, sin End) por el recorte de
-   Oracle a 2 OCPU / 12 GB. Los cambios exactos en `velocity.toml` y `docker-compose.yml`
-   están en la sección 5, sin aplicar.
-2. **El plugin Java no se despliega**: no está montado en `docker-compose.yml` ni lo
-   compila el `cloud-init`. En la nube `main` arrancaría sin el puente IA↔mundo (sección 6).
-3. **Desactivar el End** requiere un `bukkit.yml.template` nuevo + línea en
-   `gen-mc-config.sh`; no hay variable de entorno para ello.
+**Red Minecraft — dos perfiles, mismo repo:**
+- **lean** (`dev-up.ps1`; y lo que corre en cloud): solo `main`, sin lobby, End off,
+  Chunky. Es `docker-compose.yml` a secas.
+- **full** (`dev-up-full.ps1`): lobby + main + creative + End, con `docker-compose.full.yml`.
+  El **lobby** es un hub *void* (sala con faro y cristaleras) con **portales** a main
+  (esmeralda) y creativo (diamante), en aventura/invulnerable/sin mobs; los mundos de
+  juego tienen **portal de vuelta** al lobby. `gen-mc-config -Mode lean|full`.
 
-**Siguiente además**: acciones "físicas" ricas del plugin (mover NPC, blueprints).
+**IA — coste:** por defecto `LLM_PROVIDER=stub` = 0 €. Nivel 3 real: `ollama` (local,
+gratis, ADR-0009) o `claude` (de pago). El Nivel 2 nunca gasta (ADR-0007).
+
+**Fase 4 (Cloud/IaC): bloqueada por capacidad de Oracle** (`Out of host capacity`); la red
+ya existe (5/7 recursos), falta la instancia ARM → insistir con
+`infra/terraform/retry-apply.sh`. Los ajustes cloud (arranque sin lobby, End off, plugin
+autodesplegado) YA están aplicados en el repo. Detalle: `docs/infra/fase4-oracle-handoff.md`
+(leerlo antes de tocar nada de cloud).
+
+**Pendiente clave — el mundo aún no "recuerda":** no existe todavía un **camino de
+escritura a la base de datos** desde el juego. `world-state` es de solo lectura; las casas
+(`/home`) se guardan en un fichero local del plugin; las tablas `npc_memory`, `plan_audit`,
+`contracts` existen pero nadie escribe en ellas. Construir ese camino (plugin/gateway →
+DB) es el siguiente paso grande para memoria de NPC, economía y persistencia real.
 → `docs/roadmap.md`
 
 ## Convenciones

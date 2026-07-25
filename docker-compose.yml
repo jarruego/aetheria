@@ -25,6 +25,8 @@ services:
     env_file: .env
     ports:
       - "8090:8090"
+    depends_on:
+      - world-state
     restart: unless-stopped
     networks: [aetheria-net]
 

@@ -17,8 +17,12 @@ class Settings(BaseSettings):
     ai_orchestrator_host: str = "0.0.0.0"
     ai_orchestrator_port: int = 8090
 
-    # Proveedor LLM desacoplado (ver ADR-0004).
-    llm_provider: str = "claude"  # claude | openai | local
+    # World-State (contexto para el planner). En Docker, nombre de servicio.
+    world_state_url: str = "http://world-state:8070"
+
+    # Proveedor LLM desacoplado (ver ADR-0004, ADR-0007).
+    # Por defecto 'stub' = coste cero. Cambiar a 'claude' (con API key) para real.
+    llm_provider: str = "stub"  # stub | claude | openai | local
     llm_model_l3: str = "claude-sonnet-4-6"
     llm_model_l2: str = "claude-haiku-4-5-20251001"
 

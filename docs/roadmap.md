@@ -27,10 +27,12 @@ Cada fase deja algo funcionando y verificable.
 - [x] API Gateway conectado a la DB via world-state (proxy /v1/worlds, /v1/world/{key}/summary)
 - [x] Verificacion: migracion aplicada, seed, resumenes correctos end-to-end, tests
 
-## Fase 3 - IA + Validador
-- Adaptador LLM intercambiable
-- Conversacion en tres niveles
-- Planner, Plan JSON, Validador, ejecucion por lista blanca
+## Fase 3 - IA + Validador  (backend COMPLETO; ejecucion en plugin pendiente)
+- [x] Adaptador LLM intercambiable (stub por defecto = coste cero; claude listo con key)
+- [x] Conversacion en 3 niveles (L1 codigo, L2 local/stub, L3 LLM), a prueba de gasto
+- [x] Planner usa contexto del world-state -> Plan JSON -> Validador (aprobado/rechazado)
+- [x] Verificacion end-to-end sin coste (3 niveles + plan con contexto real del mundo)
+- [ ] Ejecucion real de acciones (lista blanca) en el plugin Java -> pista Minecraft
 
 ## Fase 4 - Cloud (IaC)
 - Terraform sobre Oracle Cloud Always Free

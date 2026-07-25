@@ -13,6 +13,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 public final class AetheriaPlugin extends JavaPlugin {
 
     private GatewayClient gateway;
+    private NpcManager npcs;
 
     @Override
     public void onEnable() {
@@ -25,8 +26,9 @@ public final class AetheriaPlugin extends JavaPlugin {
         final String defaultNpc = getConfig().getString("default-npc", "arquitecto-01");
 
         this.gateway = new GatewayClient(this, url, token);
+        this.npcs = new NpcManager();
 
-        final AetheriaCommand command = new AetheriaCommand(this, gateway, defaultNpc);
+        final AetheriaCommand command = new AetheriaCommand(this, gateway, npcs, defaultNpc);
         Objects.requireNonNull(getCommand("aetheria"), "comando 'aetheria' no declarado en plugin.yml")
                 .setExecutor(command);
 

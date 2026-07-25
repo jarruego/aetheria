@@ -56,3 +56,35 @@ def test_too_many_actions_is_rejected():
 def test_excessive_cost_is_rejected():
     result = validate_plan(_plan(estimated_cost=999_999))
     assert result.status is PlanStatus.REJECTED
+
+
+# --- Validacion de parametros por accion ---
+
+def test_give_item_bad_amount_is_rejected():
+    action = PlanAction(type=ActionType.GIVE_ITEM, params={"material": "BREAD", "amount": 999})
+    result = validate_plan(_plan(actions=[action]))
+    assert result.status is PlanStatus.REJECTED
+
+
+def test_give_item_valid_is_approved():
+    action = PlanAction(type=ActionType.GIVE_ITEM, params={"material": "BREAD", "amount": 3})
+    result = validate_plan(_plan(actions=[action]))
+    assert result.status is PlanStatus.APPROVED
+
+
+def test_unknown_blueprint_is_rejected():
+    action = PlanAction(type=ActionType.PLACE_BLUEPRINT, params={"blueprint": "estrella-de-la-muerte"})
+    result = validate_plan(_plan(actions=[action]))
+    assert result.status is PlanStatus.REJECTED
+
+
+def test_move_to_bad_target_is_rejected():
+    action = PlanAction(type=ActionType.MOVE_TO, params={"target": "el-vacio"})
+    result = validate_plan(_plan(actions=[action]))
+    assert result.status is PlanStatus.REJECTED
+
+
+def test_open_trade_without_offers_is_rejected():
+    action = PlanAction(type=ActionType.OPEN_TRADE, params={"offers": []})
+    result = validate_plan(_plan(actions=[action]))
+    assert result.status is PlanStatus.REJECTED

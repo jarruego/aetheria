@@ -11,21 +11,25 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * Comando /aetheria: puente entre el jugador y el backend.
- *   /aetheria ask  &lt;mensaje&gt;   -> conversacion con un NPC (3 niveles en el backend)
- *   /aetheria plan &lt;objetivo&gt;  -> pide un plan; si se aprueba, se ejecuta (lista blanca)
+ *   /aetheria ask  &lt;mensaje&gt;      -> conversacion con un NPC (3 niveles en el backend)
+ *   /aetheria plan &lt;objetivo&gt;     -> pide un plan; si se aprueba, se ejecuta (lista blanca)
+ *   /aetheria npc  spawn|remove [k] -> gestiona el NPC (entidad real) con esa clave
  */
 public final class AetheriaCommand implements CommandExecutor {
 
     private final AetheriaPlugin plugin;
     private final GatewayClient gateway;
+    private final NpcManager npcs;
     private final PlanExecutor executor;
     private final String defaultNpc;
 
-    public AetheriaCommand(AetheriaPlugin plugin, GatewayClient gateway, String defaultNpc) {
+    public AetheriaCommand(AetheriaPlugin plugin, GatewayClient gateway, NpcManager npcs,
+            String defaultNpc) {
         this.plugin = plugin;
         this.gateway = gateway;
+        this.npcs = npcs;
         this.defaultNpc = defaultNpc;
-        this.executor = new PlanExecutor(plugin);
+        this.executor = new PlanExecutor(plugin, npcs);
     }
 
     @Override
@@ -35,20 +39,47 @@ public final class AetheriaCommand implements CommandExecutor {
             sender.sendMessage("Solo los jugadores pueden usar Aetheria.");
             return true;
         }
-        if (args.length < 2) {
-            player.sendMessage("Uso: /aetheria <ask|plan> <texto>");
+        if (args.length < 1) {
+            player.sendMessage("Uso: /aetheria <ask|plan|npc> ...");
             return true;
         }
 
         final String sub = args[0].toLowerCase();
-        final String text = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
-
         switch (sub) {
-            case "ask" -> handleAsk(player, text);
-            case "plan" -> handlePlan(player, text);
-            default -> player.sendMessage("Subcomando desconocido: " + sub + " (usa ask|plan)");
+            case "ask" -> {
+                if (args.length < 2) { player.sendMessage("Uso: /aetheria ask <mensaje>"); return true; }
+                handleAsk(player, join(args, 1));
+            }
+            case "plan" -> {
+                if (args.length < 2) { player.sendMessage("Uso: /aetheria plan <objetivo>"); return true; }
+                handlePlan(player, join(args, 1));
+            }
+            case "npc" -> handleNpc(player, args);
+            default -> player.sendMessage("Subcomando desconocido: " + sub + " (usa ask|plan|npc)");
         }
         return true;
+    }
+
+    private void handleNpc(Player player, String[] args) {
+        if (args.length < 2) {
+            player.sendMessage("Uso: /aetheria npc <spawn|remove> [clave]");
+            return;
+        }
+        final String op = args[1].toLowerCase();
+        final String key = args.length >= 3 ? args[2] : defaultNpc;
+        switch (op) {
+            case "spawn" -> {
+                npcs.spawn(key, player.getLocation());
+                player.sendMessage("§a[Aetheria] NPC '" + key + "' creado aqui.");
+            }
+            case "remove" -> {
+                final boolean removed = npcs.remove(key);
+                player.sendMessage(removed
+                        ? "§a[Aetheria] NPC '" + key + "' eliminado."
+                        : "§e[Aetheria] no existe el NPC '" + key + "'.");
+            }
+            default -> player.sendMessage("Uso: /aetheria npc <spawn|remove> [clave]");
+        }
     }
 
     private void handleAsk(Player player, String message) {
@@ -82,8 +113,12 @@ public final class AetheriaCommand implements CommandExecutor {
                         player.sendMessage("§c[Aetheria] plan RECHAZADO: " + reason);
                         return;
                     }
-                    executor.execute(player, json.getAsJsonArray("actions"));
+                    executor.execute(player, defaultNpc, json.getAsJsonArray("actions"));
                 }));
+    }
+
+    private static String join(String[] args, int from) {
+        return String.join(" ", Arrays.copyOfRange(args, from, args.length));
     }
 
     private static String rootMessage(Throwable err) {

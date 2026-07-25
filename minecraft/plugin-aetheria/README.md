@@ -4,11 +4,22 @@ El unico componente que **ejecuta** cambios en el mundo. La IA propone; el plugi
 
 ## Que hace hoy
 
-- Comando `/aetheria ask <mensaje>`: conversa con un NPC (el backend decide el nivel
-  1/2/3; sin coste por defecto).
-- Comando `/aetheria plan <objetivo>`: pide un plan al backend; si viene **aprobado** por
-  el validador, ejecuta sus acciones de la **lista blanca** (hoy: `SAY`; el resto se
-  registran sin tocar el mundo hasta implementarlas con NPC/entidades reales).
+- `/aetheria ask <mensaje>`: conversa con un NPC (el backend decide el nivel 1/2/3; sin
+  coste por defecto).
+- `/aetheria npc <spawn|remove> [clave]`: crea/elimina un NPC como **entidad real**
+  (Villager persistente) en tu posicion.
+- `/aetheria plan <objetivo>`: pide un plan; si viene **aprobado** por el validador,
+  ejecuta sus acciones de la **lista blanca** sobre el mundo real:
+  - `SAY` — el NPC habla.
+  - `MOVE_TO` — el NPC hace *pathfinding* hacia el jugador.
+  - `GIVE_ITEM` — entrega items (material real, cantidad acotada).
+  - `PLACE_BLUEPRINT` — coloca una estructura de un catalogo acotado (`platform`,
+    `fountain`) unos bloques por delante.
+  - `OPEN_TRADE` — abre un mercader con ofertas.
+
+El objetivo determina las acciones (heuristica por palabras clave en el backend, sin
+coste). Ej.: *"construye una fuente"* -> `PLACE_BLUEPRINT`; *"dame pan y ven"* ->
+`GIVE_ITEM` + `MOVE_TO`.
 
 ## Reglas (defensa en profundidad)
 

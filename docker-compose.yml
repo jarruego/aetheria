@@ -101,27 +101,32 @@ services:
       - ./minecraft/.generated/velocity/forwarding.secret:/server/forwarding.secret
       - velocity-data:/server
     depends_on:
-      - lobby
       - main
     restart: unless-stopped
     networks: [aetheria-net]
 
-  # Lobby: bienvenida/portales, SIN economia. Solo accesible via Velocity.
-  lobby:
-    image: itzg/minecraft-server
-    environment:
-      EULA: "TRUE"          # usar este servicio implica aceptar el EULA de Minecraft
-      TYPE: "PAPER"
-      VERSION: "${MINECRAFT_VERSION:-1.21.4}"
-      ONLINE_MODE: "FALSE"  # Velocity autentica; su puerto NUNCA se publica
-      MEMORY: "${PAPER_MEMORY:-2G}"
-      USE_AIKAR_FLAGS: "true"
-    volumes:
-      # Directorio config completo (no un archivo suelto) para que Paper pueda escribir.
-      - ./minecraft/.generated/lobby/config:/data/config
-      - lobby-data:/data
-    restart: unless-stopped
-    networks: [aetheria-net]
+  # Lobby: DESACTIVADO en el arranque sin lobby (recorte Always Free 2 OCPU/12 GB).
+  # Reactivar = descomentar este servicio, su volumen 'lobby-data', anadirlo al try de
+  # velocity.toml y al depends_on de velocity. Ver docs/infra/fase4-oracle-handoff.md.
+  # lobby:
+  #   image: itzg/minecraft-server
+  #   environment:
+  #     EULA: "TRUE"
+  #     TYPE: "PAPER"
+  #     VERSION: "${MINECRAFT_VERSION:-1.21.4}"
+  #     ONLINE_MODE: "FALSE"
+  #     MEMORY: "${LOBBY_MEMORY:-1G}"
+  #     USE_AIKAR_FLAGS: "true"
+  #     VIEW_DISTANCE: "4"
+  #     SIMULATION_DISTANCE: "3"
+  #     SPAWN_MONSTERS: "false"
+  #     SPAWN_ANIMALS: "false"
+  #     SPAWN_NPCS: "false"
+  #   volumes:
+  #     - ./minecraft/.generated/lobby/config:/data/config
+  #     - lobby-data:/data
+  #   restart: unless-stopped
+  #   networks: [aetheria-net]
 
   # One-shot: compila el plugin Java en un contenedor Gradle (sin JDK en el host ni en la
   # VM) y deja el jar en minecraft/.generated/main/plugins, que 'main' monta como plugins.
@@ -149,13 +154,20 @@ services:
       TYPE: "PAPER"
       VERSION: "${MINECRAFT_VERSION:-1.21.4}"
       ONLINE_MODE: "FALSE"
-      MEMORY: "${PAPER_MEMORY:-2G}"
+      MEMORY: "${MAIN_MEMORY:-4G}"      # 4G es el punto dulce en 2 nucleos (no subir a 8G)
       USE_AIKAR_FLAGS: "true"
+      VIEW_DISTANCE: "8"
+      SIMULATION_DISTANCE: "5"
+      ALLOW_NETHER: "true"
+      # Chunky: pregeneracion de mundos (evita tirones de generacion en caliente en la VM).
+      MODRINTH_PROJECTS: "chunky"
       # El plugin Aetheria usa este token para autenticarse contra el API Gateway.
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-changeme-generate-a-long-random-secret}"
     volumes:
       # Directorio config completo (no un archivo suelto) para que Paper pueda escribir.
       - ./minecraft/.generated/main/config:/data/config
+      # bukkit.yml (desactiva el End; no hay variable de entorno para ello).
+      - ./minecraft/.generated/main/bukkit.yml:/data/bukkit.yml
       # Plugins: el jar lo genera el servicio one-shot 'plugin-build'.
       - ./minecraft/.generated/main/plugins:/data/plugins
       - main-data:/data
@@ -172,6 +184,6 @@ networks:
 volumes:
   postgres-data:
   velocity-data:
-  lobby-data:
+  # lobby-data:   # reactivar junto con el servicio 'lobby'
   main-data:
   gradle-cache:

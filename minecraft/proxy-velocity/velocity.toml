@@ -21,10 +21,11 @@ ping-passthrough = "DISABLED"
 
 [servers]
 # Los nombres resuelven por la red de docker-compose (nombre de servicio).
-lobby = "lobby:25565"
+# Arranque SIN lobby (recorte Always Free 2 OCPU/12 GB). Reactivar el lobby = anadir
+# de nuevo su linea y "lobby" al try. Ver docs/infra/fase4-oracle-handoff.md, seccion 4.
 main = "main:25565"
 # A donde va el jugador al conectar.
-try = ["lobby"]
+try = ["main"]
 
 [forced-hosts]
 

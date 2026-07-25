@@ -38,4 +38,8 @@ foreach ($s in @("lobby", "main")) {
     [System.IO.File]::WriteAllText((Join-Path $gen "$s\config\paper-global.yml"), $out, $enc)
 }
 
+# bukkit.yml de 'main' (desactiva el End; sin secreto)
+$bukkit = (Get-Content (Join-Path $root "minecraft\bukkit.yml.template") -Raw) -replace "`r`n", "`n"
+[System.IO.File]::WriteAllText((Join-Path $gen "main\bukkit.yml"), $bukkit, $enc)
+
 Write-Host "Config de Minecraft generada en minecraft/.generated/ (velocity, lobby, main)." -ForegroundColor Green

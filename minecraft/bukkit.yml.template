@@ -1,0 +1,8 @@
+# Plantilla de bukkit.yml. gen-mc-config la copia a minecraft/.generated/main/bukkit.yml
+# y el compose la monta en 'main' como /data/bukkit.yml.
+#
+# Desactiva el End: no existe variable de entorno ni clave de server.properties para
+# esto; el unico sitio es settings.allow-end. Ahorra el tick de un mundo entero en la VM
+# Always Free (2 OCPU). Ver docs/infra/fase4-oracle-handoff.md, seccion 5.5.
+settings:
+  allow-end: false

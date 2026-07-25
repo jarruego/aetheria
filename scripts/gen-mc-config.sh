@@ -27,4 +27,7 @@ for s in lobby main; do
   sed "s|%%FORWARDING_SECRET%%|$SECRET|g" "$ROOT/minecraft/paper-global.yml.template" > "$GEN/$s/config/paper-global.yml"
 done
 
+# bukkit.yml de 'main' (desactiva el End; sin secreto)
+cp "$ROOT/minecraft/bukkit.yml.template" "$GEN/main/bukkit.yml"
+
 echo "Config de Minecraft generada en minecraft/.generated/ (velocity, lobby, main)."

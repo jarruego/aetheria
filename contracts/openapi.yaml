@@ -1,0 +1,184 @@
+openapi: 3.1.0
+info:
+  title: Aetheria API Gateway
+  version: 0.1.0
+  description: >
+    Contrato REST entre el plugin de Minecraft (Java/Paper) y el backend de Aetheria.
+    El plugin NUNCA recibe comandos ejecutables directamente: recibe planes ya
+    validados. El LLM nunca aparece en este contrato; queda detrás del AI Orchestrator.
+servers:
+  - url: http://localhost:8080
+    description: Desarrollo local (docker-compose)
+
+tags:
+  - name: system
+    description: Salud y metadatos
+  - name: conversation
+    description: Conversación con NPC (enrutado en 3 niveles)
+  - name: planning
+    description: Solicitud y validación de planes de acción
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      summary: Liveness/readiness del API Gateway
+      security: []
+      responses:
+        "200":
+          description: Servicio operativo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /v1/conversation:
+    post:
+      tags: [conversation]
+      summary: Enviar un mensaje a un NPC y recibir su respuesta
+      description: >
+        El backend decide el nivel (1=código, 2=modelo local, 3=LLM potente) antes de
+        gastar tokens. El plugin no sabe qué nivel se usó.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationRequest"
+      responses:
+        "200":
+          description: Respuesta del NPC
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /v1/plans:
+    post:
+      tags: [planning]
+      summary: Solicitar un plan de acción para un actor (p.ej. un NPC arquitecto)
+      description: >
+        El AI Orchestrator genera un plan y el validador lo aprueba o rechaza ANTES de
+        devolverlo. El plugin solo recibe planes cuyo estado es "approved" y ejecuta
+        exclusivamente acciones de la lista blanca.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanRequest"
+      responses:
+        "200":
+          description: Plan aprobado o rechazado (con motivo)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+components:
+  securitySchemes:
+    internalToken:
+      type: http
+      scheme: bearer
+      description: Token compartido servicio-a-servicio (INTERNAL_SERVICE_TOKEN)
+
+  responses:
+    Unauthorized:
+      description: Token ausente o inválido
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationError:
+      description: Cuerpo de la petición inválido
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Health:
+      type: object
+      required: [status, service, version]
+      properties:
+        status: { type: string, enum: [ok], example: ok }
+        service: { type: string, example: api-gateway }
+        version: { type: string, example: "0.1.0" }
+
+    Actor:
+      type: object
+      required: [type, id]
+      properties:
+        type: { type: string, enum: [npc, player, system] }
+        id: { type: string, example: arquitecto-01 }
+
+    ConversationRequest:
+      type: object
+      required: [npc_id, player_id, message]
+      properties:
+        npc_id: { type: string }
+        player_id: { type: string }
+        message: { type: string, maxLength: 2000 }
+        world: { type: string, default: main }
+
+    ConversationResponse:
+      type: object
+      required: [reply, level]
+      properties:
+        reply: { type: string }
+        level:
+          type: integer
+          enum: [1, 2, 3]
+          description: Nivel que resolvió la respuesta (1=código, 2=local, 3=LLM)
+
+    PlanRequest:
+      type: object
+      required: [actor, goal]
+      properties:
+        actor: { $ref: "#/components/schemas/Actor" }
+        goal: { type: string, description: Objetivo en lenguaje natural o intent }
+        world: { type: string, default: main }
+        context_ref:
+          type: string
+          description: Id del snapshot del world-state sobre el que planificar
+
+    PlanAction:
+      type: object
+      required: [type, params]
+      properties:
+        type:
+          type: string
+          description: Debe pertenecer a la lista blanca del validador
+          example: PLACE_BLUEPRINT
+        params:
+          type: object
+          additionalProperties: true
+
+    PlanResponse:
+      type: object
+      required: [plan_id, status, actions, reversible]
+      properties:
+        plan_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [approved, rejected]
+        rejection_reason:
+          type: string
+          description: Presente solo si status=rejected
+        actions:
+          type: array
+          items: { $ref: "#/components/schemas/PlanAction" }
+        reversible: { type: boolean }
+        estimated_cost: { type: integer }
+
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string }
+        message: { type: string }
+
+security:
+  - internalToken: []

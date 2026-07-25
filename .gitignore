@@ -1,0 +1,57 @@
+# --- Aetheria: root .gitignore ---
+aetheria.code-workspace
+
+# Secrets / entornos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Java / Gradle / Maven
+minecraft/**/target/
+minecraft/**/build/
+minecraft/**/.gradle/
+*.class
+
+# Minecraft runtime
+minecraft/**/world/
+minecraft/**/world_nether/
+minecraft/**/world_the_end/
+minecraft/**/logs/
+minecraft/**/cache/
+minecraft/**/plugins/*.jar
+minecraft/**/libraries/
+minecraft/**/versions/
+
+# Terraform
+infra/terraform/**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+
+# Docker / datos locales
+data/
+volumes/
+*.log
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

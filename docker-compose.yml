@@ -1,0 +1,41 @@
+# ============================================================
+# Aetheria AI - Topologia local (Fase 0/1)
+# Levanta la red completa en una sola maquina. Cada servicio
+# es independiente: manana pueden vivir en maquinas distintas.
+#   docker compose up -d
+# ============================================================
+name: aetheria
+
+services:
+  api-gateway:
+    build: ./services/api-gateway
+    env_file: .env
+    ports:
+      - "8080:8080"
+    depends_on:
+      - ai-orchestrator
+    restart: unless-stopped
+    networks: [aetheria-net]
+
+  ai-orchestrator:
+    build: ./services/ai-orchestrator
+    env_file: .env
+    ports:
+      - "8090:8090"
+    restart: unless-stopped
+    networks: [aetheria-net]
+
+  # --- Minecraft (se activan en Fase 1) ---
+  # velocity:
+  #   image: itzg/mc-proxy:latest
+  #   ...
+  # lobby:
+  #   image: itzg/minecraft-server:latest
+  #   ...
+  # main:
+  #   image: itzg/minecraft-server:latest
+  #   ...
+
+networks:
+  aetheria-net:
+    driver: bridge

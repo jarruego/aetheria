@@ -44,6 +44,42 @@ public final class SchematicModule {
         player.performCommand("/schematic list");
     }
 
+    /** Vacia (pone AIRE) una caja del mundo via FAWE por reflexion. Para limpiar antes de pegar. */
+    public boolean fillAir(org.bukkit.World bukkitWorld, int minX, int minY, int minZ,
+            int maxX, int maxY, int maxZ) {
+        try {
+            final Class<?> adapter = Class.forName("com.sk89q.worldedit.bukkit.BukkitAdapter");
+            final Object weWorld =
+                    adapter.getMethod("adapt", org.bukkit.World.class).invoke(null, bukkitWorld);
+            final Class<?> weCls = Class.forName("com.sk89q.worldedit.WorldEdit");
+            final Object we = weCls.getMethod("getInstance").invoke(null);
+            final Class<?> weWorldCls = Class.forName("com.sk89q.worldedit.world.World");
+            final Object editSession = weCls.getMethod("newEditSession", weWorldCls).invoke(we, weWorld);
+            final Class<?> bv3 = Class.forName("com.sk89q.worldedit.math.BlockVector3");
+            final Object min = bv3.getMethod("at", int.class, int.class, int.class)
+                    .invoke(null, minX, minY, minZ);
+            final Object max = bv3.getMethod("at", int.class, int.class, int.class)
+                    .invoke(null, maxX, maxY, maxZ);
+            final Class<?> cuboid = Class.forName("com.sk89q.worldedit.regions.CuboidRegion");
+            final Object region = cuboid.getConstructor(weWorldCls, bv3, bv3)
+                    .newInstance(weWorld, min, max);
+            final Class<?> blockTypes = Class.forName("com.sk89q.worldedit.world.block.BlockTypes");
+            final Object airType = blockTypes.getField("AIR").get(null);
+            final Object airState = airType.getClass().getMethod("getDefaultState").invoke(airType);
+            final Class<?> regionCls = Class.forName("com.sk89q.worldedit.regions.Region");
+            final Class<?> patternCls = Class.forName("com.sk89q.worldedit.function.pattern.Pattern");
+            editSession.getClass().getMethod("setBlocks", regionCls, patternCls)
+                    .invoke(editSession, region, airState);
+            if (editSession instanceof AutoCloseable ac) {
+                ac.close();
+            }
+            return true;
+        } catch (Throwable t) {
+            plugin.getLogger().warning("[Aetheria] fillAir: " + t);
+            return false;
+        }
+    }
+
     /**
      * Pega un .schem en (x,y,z) del mundo usando la API de WorldEdit por REFLEXION (FAWE la
      * aporta en runtime, sin dependencia de compilacion). Sirve desde consola/RCON, sin jugador.

@@ -252,6 +252,10 @@ public final class AetheriaCommand implements CommandExecutor {
         final int baseX = sp.getBlockX() + 40;   // calle al este del spawn (lejos del showroom)
         final int z = sp.getBlockZ() + 40;
         final int y = sp.getBlockY();
+        // DE CERO: limpia la banda de la calle (por encima del suelo, se conserva el cesped).
+        schematics.fillAir(w, baseX - 30, y, z - 30,
+                baseX + (files.length - 1) * 80 + 70, y + 70, z + 90);
+        sender.sendMessage("§7Calle limpiada; pegando " + files.length + " esquematicos...");
         int i = 0;
         for (final java.io.File f : files) {
             final int x = baseX + i * 80;

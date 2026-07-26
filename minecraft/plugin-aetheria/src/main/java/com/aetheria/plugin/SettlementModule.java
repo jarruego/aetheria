@@ -36,6 +36,7 @@ public final class SettlementModule {
     private final VillageModule village;
     private final NpcRoutineModule routines;
     private final World world;
+    private int farmRadius = 2;   // los cultivos del pueblo se amplian con el tiempo
 
     public SettlementModule(AetheriaPlugin plugin, GatewayClient gateway, VillageModule village,
             NpcRoutineModule routines, World world) {
@@ -69,7 +70,45 @@ public final class SettlementModule {
             } else if (current > targetExtra) {
                 shrink();
             }
+            final String level = json.has("level") ? json.get("level").getAsString() : "estable";
+            worldWork(level);   // los NPC mejoran el mundo (amplian cultivos) con el tiempo
         }));
+    }
+
+    /** Los granjeros amplian los cultivos del pueblo cuando prospera (solo sobre suelo libre). */
+    private void worldWork(String level) {
+        if (!level.equals("prospero") && !level.equals("floreciente")) {
+            return;
+        }
+        if (farmRadius >= 7 || ThreadLocalRandom.current().nextInt(100) >= 45) {
+            return;
+        }
+        farmRadius++;
+        final int fx = village.spawnX() + 14;
+        final int fz = village.spawnZ() + 22;
+        final int fy = village.baseY();
+        final int r = farmRadius;
+        int planted = 0;
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dz = -r; dz <= r; dz++) {
+                if (Math.max(Math.abs(dx), Math.abs(dz)) != r) {
+                    continue;   // solo el anillo nuevo
+                }
+                final var ground = world.getBlockAt(fx + dx, fy, fz + dz);
+                final var above = world.getBlockAt(fx + dx, fy + 1, fz + dz);
+                // No romper construcciones: solo sobre cesped/tierra con aire encima.
+                if (above.getType().isAir()
+                        && (ground.getType() == Material.GRASS_BLOCK || ground.getType() == Material.DIRT)) {
+                    ground.setType(Material.FARMLAND, false);
+                    above.setType(Material.WHEAT, false);
+                    planted++;
+                }
+            }
+        }
+        if (planted > 0) {
+            Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
+                    "§7[Pueblo] Los granjeros han ampliado los cultivos del pueblo."));
+        }
     }
 
     private void grow(int index) {

@@ -53,6 +53,13 @@ _NPCS: dict[str, dict[str, str]] = {
         "where": "junto al portal de vuelta al lobby, en los mundos de juego",
         "help": "ayudar a los viajeros a volver al lobby",
     },
+    # Conserje del lobby: conoce TODO el server y orienta a quien llega.
+    "conserje-lobby": {
+        "name": "Aeon",
+        "trait": "el conserje del lobby, cordial, atento y servicial, con chaqueta elegante",
+        "where": "en el lobby, el vestibulo flotante desde el que se viaja a los mundos por portales",
+        "help": "recibir a los viajeros y explicarles TODO lo que pueden hacer en Aetheria",
+    },
     # Fase 7: vecinos con rutina diaria (trabajan de dia, plaza al atardecer, casa de noche).
     "vecina-nara": {
         "name": "Nara",
@@ -80,9 +87,27 @@ _WORLD = (
     "economia) y un MUNDO CREATIVO (para construir libremente). Entre ellos se viaja por PORTALES."
 )
 _ROSTER = (
-    "Conoces a los demas del pueblo: Bruno (herrero, junto al portal al mundo principal), "
-    "Mila (arquitecta, junto al portal al creativo) y Tobias (cartografo, junto al portal de "
-    "vuelta al lobby)."
+    "Conoces a los demas: Aeon (el conserje del lobby, orienta a los recien llegados), "
+    "Nara (granjera del pueblo) y Pol (vigilante del pueblo)."
+)
+
+# Todo lo que un jugador puede hacer en el server (para que el conserje oriente de verdad).
+_FEATURES = (
+    "COSAS QUE PUEDE HACER UN JUGADOR EN AETHERIA:\n"
+    "- Viajar: en el lobby, pisar un portal lleva al mundo principal o al creativo; en los "
+    "mundos hay un portal de vuelta al lobby.\n"
+    "- Dinero (moneda AET): '/balance' ver saldo, '/pay <jugador> <cantidad>' pagar a otro.\n"
+    "- Trabajos (se cobra por hacerlos): minar, talar, cosechar cultivos maduros y cazar "
+    "monstruos dan AET automaticamente.\n"
+    "- Mercado: '/sell' vende lo que llevas en la mano ('/sell all' todo el tipo), '/worth' "
+    "mira su valor, '/shop' ve precios.\n"
+    "- Servicios de la IA (de pago): '/aetheria servicio arquitecto|decorador|urbanista <que "
+    "quieres>'; la IA construye y solo cobra si lo logra.\n"
+    "- Hogar: '/sethome' guardar casa, '/home' volver a ella.\n"
+    "- Tierras: '/claim' reclama la parcela donde estas (cuesta AET y queda protegida), "
+    "'/unclaim' la suelta.\n"
+    "- El pueblo: hablar con los vecinos, y '/aetheria cronica' para ver que ha pasado en el "
+    "mundo (la economia evoluciona sola). '/guia' da un libro con todo esto."
 )
 _LIMITS = (
     "PUEDES: charlar, orientar, contar cosas del pueblo y de sus mundos, y senalar los portales. "
@@ -112,6 +137,13 @@ def _system_prompt(npc_id: str, profile: str) -> str:
         f"eficiencia, algoritmos ni simulaciones. Si te preguntan como te llamas, eres {n['name']}. "
         "Responde SIEMPRE en espanol y en 1 o 2 frases."
     )
+    # El conserje conoce TODO el server y puede dar instrucciones concretas si se lo piden.
+    if npc_id == "conserje-lobby":
+        base += (
+            f"\n\n{_FEATURES}\n\nSi te piden ayuda, orienta con naturalidad y, cuando venga a "
+            "cuento, di el comando exacto. No sueltes toda la lista de golpe: responde a lo que "
+            "preguntan. Puedes dar varias frases si te piden ayuda o instrucciones."
+        )
     if profile:
         base += f"\n\nLo que recuerdas de este jugador (puede ser difuso): {profile}"
     return base

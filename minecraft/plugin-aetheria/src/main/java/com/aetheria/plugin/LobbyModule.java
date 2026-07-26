@@ -177,12 +177,13 @@ public final class LobbyModule implements Listener {
 
         portals.add(new PlacedPortal(def.server(),
                 new Location(world, OX + cx + 0.5, FLOOR_Y + 1, OZ + cz + 0.5)));
+        // Los portales ya no llevan guia propio: el lobby tiene UN solo conserje que ronda
+        // la sala (LobbyGuideModule).
+    }
 
-        // Guia conversable un bloque hacia el centro, mirando al jugador que llega.
-        final int gx = cx - Integer.signum(cx);
-        final int gz = cz - Integer.signum(cz);
-        convo.spawnGuide(new Location(world, OX + gx + 0.5, FLOOR_Y + 1, OZ + gz + 0.5, guideYaw(cx, cz), 0f),
-                "guia-" + def.server(), "§bGuia de " + def.label());
+    /** Centro interior del lobby, a la altura del suelo (para el conserje). */
+    public Location interiorCenter() {
+        return new Location(Bukkit.getWorlds().get(0), OX + 0.5, FLOOR_Y + 1, OZ + 0.5);
     }
 
     private static BlockFace towardCenter(int cx, int cz) {
@@ -190,13 +191,6 @@ public final class LobbyModule implements Listener {
             return cx > 0 ? BlockFace.WEST : BlockFace.EAST;
         }
         return cz > 0 ? BlockFace.NORTH : BlockFace.SOUTH;
-    }
-
-    private static float guideYaw(int cx, int cz) {
-        if (Math.abs(cx) >= Math.abs(cz)) {
-            return cx > 0 ? 90f : 270f;   // mira al centro por el eje X
-        }
-        return cz > 0 ? 180f : 0f;        // mira al centro por el eje Z
     }
 
     private void configureWorld(World world) {

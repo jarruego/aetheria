@@ -48,6 +48,9 @@ public final class AetheriaPlugin extends JavaPlugin {
             getServer().getPluginManager().registerEvents(lobby, this);
             // El mundo ya esta cargado cuando se habilitan los plugins.
             lobby.build();
+
+            // Un unico conserje que ronda el lobby y conoce todo el server.
+            new LobbyGuideModule(this, convo, lobby.interiorCenter()).start();
         } else {
             // En los mundos de juego: comandos de casa (/home, /sethome) sobre la DB.
             final HomeCommand homeCmd = new HomeCommand(this, gateway, role);

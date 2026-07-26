@@ -39,6 +39,8 @@ public final class NpcRoutineModule {
         Location last;      // ultima posicion vista (para detectar atascos)
         int stuck;          // ticks de rutina seguidos sin avanzar
         long lastRemark;    // ultima vez que solto un comentario curioso
+        Location wander;    // destino de paseo actual (o null si esta trabajando)
+        long wanderUntil;   // hasta cuando dura el paseo
 
         Worker(String npcId, String name, Location home, Location work, Location plaza) {
             this.npcId = npcId;
@@ -240,7 +242,7 @@ public final class NpcRoutineModule {
             maybeRemark(w);                   // comentario curioso si hay alguien cerca
             final Location target;
             if (time < 12000L) {
-                target = w.work;
+                target = workOrWander(w);   // trabaja, y de vez en cuando pasea por el pueblo
             } else if (time < 13500L) {
                 target = w.plaza;
             } else {
@@ -266,6 +268,35 @@ public final class NpcRoutineModule {
             }
             w.last = at;
         }
+    }
+
+    /**
+     * De dia el vecino trabaja, pero a ratos se va a PASEAR por el pueblo (o a explorar un poco
+     * mas lejos) y luego vuelve. Da sensacion de vida en vez de estar clavado en el puesto.
+     */
+    private Location workOrWander(Worker w) {
+        final long now = System.currentTimeMillis();
+        if (w.wander != null && now < w.wanderUntil) {
+            // ¿ya llego al punto de paseo? entonces que descanse ahi hasta que acabe el paseo.
+            if (w.entity.getLocation().distanceSquared(w.wander) <= ARRIVE_SQ) {
+                return w.entity.getLocation();
+            }
+            return w.wander;
+        }
+        if (java.util.concurrent.ThreadLocalRandom.current().nextInt(1000) < 7) {
+            final var rng = java.util.concurrent.ThreadLocalRandom.current();
+            final Location p = village.plaza();
+            final double ang = rng.nextDouble() * Math.PI * 2;
+            final int dist = 6 + rng.nextInt(rng.nextInt(100) < 20 ? 34 : 16);   // a veces explora lejos
+            final int wx = (int) Math.round(p.getX() + Math.cos(ang) * dist);
+            final int wz = (int) Math.round(p.getZ() + Math.sin(ang) * dist);
+            final int wy = world.getHighestBlockYAt(wx, wz) + 1;
+            w.wander = new Location(world, wx + 0.5, wy, wz + 0.5);
+            w.wanderUntil = now + (12 + rng.nextInt(20)) * 1000L;
+            return w.wander;
+        }
+        w.wander = null;
+        return w.work;
     }
 
     private static final String[] REMARKS = {

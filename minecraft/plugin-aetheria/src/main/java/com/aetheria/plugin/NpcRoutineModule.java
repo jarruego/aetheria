@@ -23,8 +23,8 @@ public final class NpcRoutineModule {
 
     private static final String WORKER_TAG = "aetheria_worker";
     private static final double ARRIVE_SQ = 4.0;   // 2 bloques: se considera "ha llegado"
-    private static final double SPEED = 0.9;
-    private static final long PERIOD_TICKS = 100L; // reevalua la rutina cada 5 s
+    private static final double SPEED = 1.1;       // multiplicador de velocidad del aldeano
+    private static final long PERIOD_TICKS = 10L;  // reevalua/reemite el camino 2 veces/seg
 
     /** Un vecino: su entidad, su persona y sus tres puntos de la jornada. */
     private static final class Worker {
@@ -34,6 +34,8 @@ public final class NpcRoutineModule {
         final Location work;
         final Location plaza;
         Mob entity;
+        Location last;      // ultima posicion vista (para detectar atascos)
+        int stuck;          // ticks de rutina seguidos sin avanzar
 
         Worker(String npcId, String name, Location home, Location work, Location plaza) {
             this.npcId = npcId;
@@ -60,11 +62,12 @@ public final class NpcRoutineModule {
     public void start() {
         clearOld();
         final Location spawn = world.getSpawnLocation();
-        // Puntos relativos al spawn: casa, trabajo y plaza para cada vecino.
+        // Puntos relativos al spawn: casa, trabajo y plaza. Distancias moderadas para que
+        // sean alcanzables a pie sobre terreno generado (los muy lejanos se vuelven inaccesibles).
         workers.add(new Worker("vecina-nara", "Nara",
-                offset(spawn, 8, 6), offset(spawn, 20, -4), offset(spawn, 2, 2)));
+                offset(spawn, 6, 5), offset(spawn, 13, -3), offset(spawn, 2, 2)));
         workers.add(new Worker("vecino-pol", "Pol",
-                offset(spawn, -8, 6), offset(spawn, -18, -6), offset(spawn, -2, 2)));
+                offset(spawn, -6, 5), offset(spawn, -12, -4), offset(spawn, -2, 2)));
 
         for (final Worker w : workers) {
             w.entity = spawnWorker(w);
@@ -113,6 +116,12 @@ public final class NpcRoutineModule {
                 w.entity = spawnWorker(w);    // resucita si algo lo elimino
                 continue;
             }
+            if (convo.isBusy(w.entity.getUniqueId())) {
+                continue;                     // esta hablando: quieto (su IA esta pausada)
+            }
+            if (!w.entity.hasAI()) {
+                w.entity.setAI(true);         // red de seguridad: reanuda si quedo pausado
+            }
             final Location target;
             if (time < 12000L) {
                 target = w.work;
@@ -122,9 +131,24 @@ public final class NpcRoutineModule {
                 target = w.home;
             }
             final Location at = w.entity.getLocation();
-            if (at.getWorld().equals(target.getWorld()) && at.distanceSquared(target) > ARRIVE_SQ) {
-                w.entity.getPathfinder().moveTo(target, SPEED);
+            if (!at.getWorld().equals(target.getWorld()) || at.distanceSquared(target) <= ARRIVE_SQ) {
+                w.stuck = 0;
+                w.last = at;
+                continue;   // ha llegado (o no aplica): nada que hacer
             }
+            w.entity.getPathfinder().moveTo(target, SPEED);
+
+            // Anti-atasco: si esta PRACTICAMENTE congelado varios ciclos (terreno, cerebro del
+            // aldeano peleando con el pathfinding...), se le teletransporta al destino y sigue.
+            if (w.last != null && at.distanceSquared(w.last) < 0.01) {
+                if (++w.stuck >= 6) {   // ~3 s sin moverse
+                    w.entity.teleport(target);
+                    w.stuck = 0;
+                }
+            } else {
+                w.stuck = 0;
+            }
+            w.last = at;
         }
     }
 

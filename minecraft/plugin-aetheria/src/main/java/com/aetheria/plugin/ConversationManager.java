@@ -8,8 +8,10 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Villager;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
@@ -38,6 +40,13 @@ public final class ConversationManager implements Listener {
     private final GatewayClient gateway;
     private final Map<UUID, NpcInfo> npcs = new ConcurrentHashMap<>();   // entidad -> info
     private final Map<UUID, UUID> talking = new ConcurrentHashMap<>();   // jugador -> entidad NPC
+    // NPC con rutina cuya IA hemos pausado por estar hablando (para reanudarla al terminar).
+    private final java.util.Set<UUID> paused = ConcurrentHashMap.newKeySet();
+
+    /** True si algun jugador esta hablando con este NPC (su rutina debe detenerlo). */
+    public boolean isBusy(UUID npcId) {
+        return talking.containsValue(npcId);
+    }
 
     public ConversationManager(AetheriaPlugin plugin, GatewayClient gateway) {
         this.plugin = plugin;
@@ -98,15 +107,44 @@ public final class ConversationManager implements Listener {
 
     @EventHandler
     public void onInteract(PlayerInteractEntityEvent event) {
-        final NpcInfo info = npcs.get(event.getRightClicked().getUniqueId());
+        if (event.getHand() != EquipmentSlot.HAND) {
+            return;   // el evento se dispara por ambas manos: solo atendemos la principal
+        }
+        final var entity = event.getRightClicked();
+        final NpcInfo info = npcs.get(entity.getUniqueId());
         if (info == null) {
             return;
         }
         event.setCancelled(true);   // evita el GUI de comercio del aldeano
         final Player player = event.getPlayer();
-        talking.put(player.getUniqueId(), event.getRightClicked().getUniqueId());
+        talking.put(player.getUniqueId(), entity.getUniqueId());
+        // Si es un vecino con rutina, se DETIENE y te mira mientras dura la charla.
+        if (entity instanceof Mob mob && mob.hasAI()) {
+            mob.getPathfinder().stopPathfinding();
+            mob.setAI(false);
+            paused.add(entity.getUniqueId());
+        }
+        faceToward(entity, player);
         player.sendMessage("§e[" + info.name() + "] §fHola, viajero. Preguntame lo que quieras.");
         player.sendMessage("§7(escribe en el chat; di §fadios§7 para terminar)");
+    }
+
+    /** Gira al NPC para que mire al jugador (funciona aunque tenga la IA pausada). */
+    private void faceToward(org.bukkit.entity.Entity npc, Player player) {
+        final Location nl = npc.getLocation();
+        final double dx = player.getLocation().getX() - nl.getX();
+        final double dz = player.getLocation().getZ() - nl.getZ();
+        nl.setYaw((float) Math.toDegrees(Math.atan2(-dx, dz)));
+        nl.setPitch(0f);
+        npc.teleport(nl);
+    }
+
+    /** Cierra la conversacion de un jugador y reanuda la rutina del NPC si la habiamos pausado. */
+    private void endConversation(UUID playerUuid) {
+        final UUID npcUuid = talking.remove(playerUuid);
+        if (npcUuid != null && paused.remove(npcUuid) && Bukkit.getEntity(npcUuid) instanceof Mob mob) {
+            mob.setAI(true);   // vuelve a su rutina diaria
+        }
     }
 
     @EventHandler
@@ -122,8 +160,10 @@ public final class ConversationManager implements Listener {
 
         if (info == null || msg.equalsIgnoreCase("adios") || msg.equalsIgnoreCase("adiós")
                 || msg.equalsIgnoreCase("salir")) {
-            talking.remove(player.getUniqueId());
-            runSync(() -> player.sendMessage("§7Terminas la conversacion."));
+            runSync(() -> {
+                endConversation(player.getUniqueId());
+                player.sendMessage("§7Terminas la conversacion.");
+            });
             return;
         }
 
@@ -151,14 +191,14 @@ public final class ConversationManager implements Listener {
         final Player player = event.getPlayer();
         if (npc == null || !npc.getWorld().equals(player.getWorld())
                 || npc.getLocation().distanceSquared(player.getLocation()) > LEAVE_DISTANCE_SQ) {
-            talking.remove(player.getUniqueId());
+            endConversation(player.getUniqueId());
             player.sendMessage("§7Te alejas y terminas la conversacion.");
         }
     }
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        talking.remove(event.getPlayer().getUniqueId());
+        endConversation(event.getPlayer().getUniqueId());
     }
 
     private void runSync(Runnable task) {

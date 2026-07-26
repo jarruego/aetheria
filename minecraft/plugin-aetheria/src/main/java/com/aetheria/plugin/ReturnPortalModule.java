@@ -19,8 +19,13 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 
 import com.google.common.io.ByteArrayDataOutput;
@@ -39,7 +44,9 @@ public final class ReturnPortalModule implements Listener {
 
     private static final String CHANNEL = "BungeeCord";
     private static final long COOLDOWN_MS = 3000L;
-    private static final int SAFE_RADIUS = 2;   // 2 -> zona segura de 5x5 alrededor del portal
+    // Zona segura de 10x10 alrededor del portal (10 casillas: de -5 a +4 desde el centro).
+    private static final int SAFE_MIN = -5;
+    private static final int SAFE_MAX = 4;
 
     private final AetheriaPlugin plugin;
     private final String targetServer;
@@ -66,16 +73,21 @@ public final class ReturnPortalModule implements Listener {
         convo.clearGuides(world);                  // evita guias duplicados al reiniciar
         this.safeCenter = new Location(world, cx, baseY, cz);
 
-        // Suelo decorado de 5x5 (tema geoda de amatista): nucleo de amatista con centro
-        // luminoso y borde de calcita/basalto. Bien iluminado = zona sin monstruos.
-        for (int dx = -SAFE_RADIUS; dx <= SAFE_RADIUS; dx++) {
-            for (int dz = -SAFE_RADIUS; dz <= SAFE_RADIUS; dz++) {
-                final int ring = Math.max(Math.abs(dx), Math.abs(dz));
-                final Material floor = switch (ring) {
-                    case 0 -> Material.GLOWSTONE;        // centro: se pisa para viajar
-                    case 1 -> Material.AMETHYST_BLOCK;   // nucleo del portal
-                    default -> Math.floorMod(dx + dz, 2) == 0 ? Material.CALCITE : Material.SMOOTH_BASALT;
-                };
+        // Suelo decorado de todo el 10x10 (tema geoda de amatista): nucleo de amatista con
+        // centro luminoso, marco exterior de amatista y relleno de calcita/basalto en tablero.
+        for (int dx = SAFE_MIN; dx <= SAFE_MAX; dx++) {
+            for (int dz = SAFE_MIN; dz <= SAFE_MAX; dz++) {
+                final boolean center = dx == 0 && dz == 0;
+                final boolean core = Math.abs(dx) <= 1 && Math.abs(dz) <= 1;
+                final boolean edge = dx == SAFE_MIN || dx == SAFE_MAX || dz == SAFE_MIN || dz == SAFE_MAX;
+                final Material floor;
+                if (center) {
+                    floor = Material.GLOWSTONE;          // se pisa para viajar
+                } else if (core || edge) {
+                    floor = Material.AMETHYST_BLOCK;      // nucleo del portal + marco exterior
+                } else {
+                    floor = Math.floorMod(dx + dz, 2) == 0 ? Material.CALCITE : Material.SMOOTH_BASALT;
+                }
                 world.getBlockAt(cx + dx, baseY, cz + dz).setType(floor, false);
                 for (int dy = 1; dy <= 3; dy++) {
                     world.getBlockAt(cx + dx, baseY + dy, cz + dz).setType(Material.AIR, false);
@@ -83,18 +95,28 @@ public final class ReturnPortalModule implements Listener {
             }
         }
 
-        // Cuatro pilares de amatista en las esquinas, coronados con lampara marina (luz).
-        for (final int[] c : new int[][] {{-2, -2}, {-2, 2}, {2, -2}, {2, 2}}) {
+        // Cuatro faroles (lampara marina) empotrados en el suelo iluminan todo el 10x10.
+        for (final int[] p : new int[][] {{-3, -3}, {-3, 3}, {3, -3}, {3, 3}}) {
+            world.getBlockAt(cx + p[0], baseY, cz + p[1]).setType(Material.SEA_LANTERN, false);
+        }
+
+        // Pilares de amatista en las cuatro esquinas, coronados con lampara marina.
+        for (final int[] c : new int[][] {{SAFE_MIN, SAFE_MIN}, {SAFE_MIN, SAFE_MAX},
+                {SAFE_MAX, SAFE_MIN}, {SAFE_MAX, SAFE_MAX}}) {
             world.getBlockAt(cx + c[0], baseY + 1, cz + c[1]).setType(Material.AMETHYST_BLOCK, false);
             world.getBlockAt(cx + c[0], baseY + 2, cz + c[1]).setType(Material.AMETHYST_BLOCK, false);
             world.getBlockAt(cx + c[0], baseY + 3, cz + c[1]).setType(Material.SEA_LANTERN, false);
         }
 
-        // Cartel mirando al jugador (que llega desde el spawn, a menor Z).
+        // Cartel mirando al jugador (que llega desde el norte del portal).
         placeSign(world.getBlockAt(cx, baseY + 1, cz - 1), BlockFace.NORTH,
                 "== LOBBY ==", "Pisa aqui", "para volver", "al lobby");
 
         this.portalCenter = new Location(world, cx + 0.5, baseY + 1, cz + 0.5);
+
+        // El jugador aparece 3 casillas al norte del portal (dentro de la zona decorada),
+        // mirando hacia el, para no volver a entrar por accidente nada mas llegar.
+        world.setSpawnLocation(new Location(world, cx + 0.5, baseY + 1, cz - 3 + 0.5, 0f, 0f));
 
         // Barrido periodico: mantiene la zona libre de monstruos (los que ya haya y los que
         // logren aparecer pese al bloqueo de spawn). Cada 2 s, coste minimo (area pequena).
@@ -105,7 +127,7 @@ public final class ReturnPortalModule implements Listener {
         convo.spawnGuide(new Location(world, cx + 2 + 0.5, baseY + 1, cz + 0.5, 90f, 0f),
                 "guia-vuelta", "§bGuia del Lobby");
 
-        plugin.getLogger().info("Portal de vuelta al lobby construido cerca del spawn.");
+        plugin.getLogger().info("Portal de vuelta al lobby construido cerca del spawn (zona 10x10).");
     }
 
     private void placeSign(Block block, BlockFace facing, String l0, String l1, String l2, String l3) {
@@ -141,14 +163,52 @@ public final class ReturnPortalModule implements Listener {
         }
     }
 
+    // --- Indestructibilidad: la zona segura y el portal no se pueden alterar ---
+
+    @EventHandler(ignoreCancelled = true)
+    public void onBreak(BlockBreakEvent event) {
+        if (inSafeZone(event.getBlock().getLocation())) {
+            event.setCancelled(true);
+            event.getPlayer().sendMessage("§cEsto es zona protegida del portal: no se puede modificar.");
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onPlace(BlockPlaceEvent event) {
+        if (inSafeZone(event.getBlock().getLocation())) {
+            event.setCancelled(true);
+            event.getPlayer().sendMessage("§cEsto es zona protegida del portal: no se puede construir aqui.");
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onBucket(PlayerBucketEmptyEvent event) {
+        if (inSafeZone(event.getBlock().getLocation())) {
+            event.setCancelled(true);
+            event.getPlayer().sendMessage("§cEsto es zona protegida del portal.");
+        }
+    }
+
+    /** Protege la zona de explosiones (TNT, creepers): no se destruyen sus bloques. */
+    @EventHandler(ignoreCancelled = true)
+    public void onEntityExplode(EntityExplodeEvent event) {
+        event.blockList().removeIf(b -> inSafeZone(b.getLocation()));
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onBlockExplode(BlockExplodeEvent event) {
+        event.blockList().removeIf(b -> inSafeZone(b.getLocation()));
+    }
+
     /** Elimina los monstruos que haya dentro de la zona segura del portal. */
     private void sweepMonsters() {
         if (portalCenter == null || portalCenter.getWorld() == null) {
             return;
         }
-        portalCenter.getWorld()
-                .getNearbyEntities(portalCenter, SAFE_RADIUS + 0.5, 5, SAFE_RADIUS + 0.5).stream()
+        // Consulta una caja algo mayor y filtra por la zona exacta (10x10).
+        portalCenter.getWorld().getNearbyEntities(portalCenter, 8, 6, 8).stream()
                 .filter(e -> e instanceof Monster)
+                .filter(e -> inSafeZone(e.getLocation()))
                 .forEach(Entity::remove);
     }
 
@@ -159,13 +219,14 @@ public final class ReturnPortalModule implements Listener {
         return damager instanceof Projectile proj && proj.getShooter() instanceof Monster;
     }
 
-    /** True si la ubicacion cae dentro del 5x5 (y una banda vertical) del portal. */
+    /** True si la ubicacion cae dentro del 10x10 (y una banda vertical) del portal. */
     private boolean inSafeZone(Location loc) {
         if (safeCenter == null || loc.getWorld() == null || !loc.getWorld().equals(safeCenter.getWorld())) {
             return false;
         }
-        return Math.abs(loc.getBlockX() - safeCenter.getBlockX()) <= SAFE_RADIUS
-                && Math.abs(loc.getBlockZ() - safeCenter.getBlockZ()) <= SAFE_RADIUS
+        final int dx = loc.getBlockX() - safeCenter.getBlockX();
+        final int dz = loc.getBlockZ() - safeCenter.getBlockZ();
+        return dx >= SAFE_MIN && dx <= SAFE_MAX && dz >= SAFE_MIN && dz <= SAFE_MAX
                 && Math.abs(loc.getBlockY() - safeCenter.getBlockY()) <= 4;
     }
 

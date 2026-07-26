@@ -46,9 +46,12 @@ Cada fase deja algo funcionando y verificable.
 - [x] Portales del lobby a main (esmeralda) y creativo (diamante); vuelta al lobby en cada mundo
 - [x] Comandos /sethome y /home (persistencia local v1)
 - [x] Servidor creativo (superflat) como backend de Velocity
-- [x] Portal de vuelta del main: zona segura 5x5 (sin spawns de mobs, barrido periodico
-      de hostiles y sin dano de monstruos al jugador) + decoracion tema geoda de amatista
-      (nucleo de amatista, borde calcita/basalto, pilares con lampara marina)
+- [x] Portal de vuelta del main: zona segura 10x10 (sin spawns de mobs, barrido periodico
+      de hostiles y sin dano de monstruos al jugador), INDESTRUCTIBLE (no se rompe/pone/
+      inunda/explota), decorada (tema geoda: amatista + calcita/basalto + faroles de lampara
+      marina) y el jugador aparece 3 casillas al norte para no reentrar sin querer
+- [x] NPC con rutina: se detienen y te miran al hablarles; movimiento fiable (reemision de
+      camino 2x/seg + rescate anti-atasco) por casa(~7)/trabajo(~13)/plaza(~3) desde el spawn
 
 ## Fase 5 - El mundo recuerda (camino de escritura a la DB)  (COMPLETA)
 - [x] Camino de escritura: plugin -> gateway -> world-state -> Postgres (ADR-0010)

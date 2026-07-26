@@ -54,18 +54,18 @@ public final class ArchitectModule implements CommandExecutor, Listener {
         this.undo = undo;
     }
 
-    // --- Precio y estilo ---
+    // --- Precio y estilo ---  (half = mitad del ancho: 3->7x7, 4->9x9, 5->11x11)
     private static int basePrice(int half) {
         return switch (half) {
-            case 2 -> 80;    // 1 planta
-            case 3 -> 200;   // 2 plantas
-            case 4 -> 400;   // 3 plantas
+            case 3 -> 80;    // pequena: 7x7, 1 planta
+            case 4 -> 200;   // mediana: 9x9, 2 plantas
+            case 5 -> 400;   // grande: 11x11, 3 plantas
             default -> 0;
         };
     }
 
     private static int floors(int half) {
-        return half - 1;   // 2->1, 3->2, 4->3
+        return half - 2;   // 3->1, 4->2, 5->3
     }
 
     private static double matMult(String mat) {
@@ -142,9 +142,9 @@ public final class ArchitectModule implements CommandExecutor, Listener {
         final Order o = orders.get(player.getUniqueId());
         if (o == null) { start(player); return; }
         o.half = switch (s.toLowerCase()) {
-            case "small", "pequena", "pequeña" -> 2;
-            case "medium", "mediana" -> 3;
-            case "large", "grande" -> 4;
+            case "small", "pequena", "pequeña" -> 3;
+            case "medium", "mediana" -> 4;
+            case "large", "grande" -> 5;
             default -> 0;
         };
         if (o.half == 0) { start(player); return; }
@@ -295,10 +295,10 @@ public final class ArchitectModule implements CommandExecutor, Listener {
     }
 
     private static String sizeName(int half) {
-        return half == 2 ? "small" : half == 3 ? "medium" : "large";
+        return half == 3 ? "small" : half == 4 ? "medium" : "large";
     }
 
     private static String sizeLabel(int half) {
-        return half == 2 ? "pequena" : half == 3 ? "mediana" : "grande";
+        return half == 3 ? "pequena" : half == 4 ? "mediana" : "grande";
     }
 }

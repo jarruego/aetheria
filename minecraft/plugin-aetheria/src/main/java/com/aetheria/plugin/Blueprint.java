@@ -106,19 +106,33 @@ public final class Blueprint {
     /** Caja que abarca una casa (para fotografiar el terreno antes de construir). */
     public static int[] houseRegion(int cx, int cz, int floorY, int half, int floors) {
         return new int[] {cx - half - 1, floorY - 8, cz - half - 1,
-                cx + half + 1, floorY + floors * 4 + 3, cz + half + 1};
+                cx + half + 1, floorY + floors * 4 + half + 2, cz + half + 1};
     }
+
+    private static final Material[] FLOWERS = {Material.POPPY, Material.DANDELION,
+            Material.BLUE_ORCHID, Material.ALLIUM, Material.OXEYE_DAISY, Material.CORNFLOWER};
+    private static final Material[] DOORS = {Material.OAK_DOOR, Material.SPRUCE_DOOR,
+            Material.DARK_OAK_DOOR, Material.BIRCH_DOOR, Material.ACACIA_DOOR};
 
     /**
      * Construye una CASA a medida en (cx,cz) con la planta baja en floorY y la puerta en el
-     * lado {@code door}. Multiplanta con forjados, escalera de mano, TERRAZA con barandilla,
-     * puerta y ventanas de verdad, chimenea, mobiliario por estancias y un toque unico.
+     * lado {@code door}. Multiplanta y ANCHA segun `half`, con forjados, escalera, tejado
+     * (terraza o a dos aguas), puerta y ventanas de verdad, chimenea y mobiliario. Cada casa
+     * es DISTINTA: se eligen al azar el tejado, la puerta, las ventanas, la entrada y detalles.
      */
     public static int buildHouse(World world, int cx, int cz, int floorY, BlockFace door,
             int half, int floors, Material wall, Material corner, Material roof, Material accent,
             boolean furniture) {
+        final java.util.Random rng = new java.util.Random();
         final int fh = 4;                          // altura por planta (3 muro + 1 forjado)
-        final int topY = floorY + floors * fh;     // nivel de la terraza
+        final int topY = floorY + floors * fh;     // nivel del tejado
+        // --- Variedad aleatoria ---
+        final Material doorMat = DOORS[rng.nextInt(DOORS.length)];
+        final boolean pitched = rng.nextBoolean();     // tejado a dos aguas (true) o terraza (false)
+        final int winStyle = rng.nextInt(3);           // 0 cristal, 1 contraventanas, 2 jardineras
+        final boolean cornice = rng.nextBoolean();     // cornisa de acento bajo el tejado
+        final boolean chimney = rng.nextBoolean() || floors >= 3;
+        final int entrance = rng.nextInt(3);           // 0 marquesina, 1 faroles, 2 porche
         int n = 0;
 
         // Cimentacion: suelo firme, hueco despejado y relleno inferior para que no flote.
@@ -126,7 +140,7 @@ public final class Blueprint {
             for (int dz = -half; dz <= half; dz++) {
                 set(world, cx + dx, floorY, cz + dz, Material.STONE_BRICKS);
                 n++;
-                for (int dy = 1; dy <= floors * fh + 3; dy++) {
+                for (int dy = 1; dy <= floors * fh + half + 2; dy++) {
                     set(world, cx + dx, floorY + dy, cz + dz, Material.AIR);
                 }
                 for (int dy = floorY - 1; dy >= floorY - 8; dy--) {
@@ -140,7 +154,7 @@ public final class Blueprint {
             }
         }
 
-        // Plantas: muros (con zocalo de acento), forjados y ventanas.
+        // Plantas: muros (zocalo + cornisa de acento), forjados y ventanas con estilo.
         for (int fl = 0; fl < floors; fl++) {
             final int by = floorY + fl * fh;
             for (int y = by + 1; y <= by + fh - 1; y++) {
@@ -150,32 +164,32 @@ public final class Blueprint {
                             continue;
                         }
                         final boolean isCorner = Math.abs(dx) == half && Math.abs(dz) == half;
-                        set(world, cx + dx, y, cz + dz, isCorner ? corner : (y == by + 1 ? accent : wall));
+                        final boolean band = y == by + 1 || (cornice && y == by + fh - 1);
+                        set(world, cx + dx, y, cz + dz, isCorner ? corner : (band ? accent : wall));
                         n++;
                     }
                 }
             }
-            if (fl < floors - 1) {   // forjado de la planta de arriba (la ultima lleva terraza)
+            if (fl < floors - 1) {   // forjado de la planta de arriba
                 for (int dx = -half + 1; dx <= half - 1; dx++) {
                     for (int dz = -half + 1; dz <= half - 1; dz++) {
                         set(world, cx + dx, by + fh, cz + dz, Material.SPRUCE_PLANKS);
                     }
                 }
             }
-            windows(world, cx, cz, by + 2, half, door);
+            windows(world, cx, cz, by, half, door, winStyle, accent, rng);
         }
 
-        // Puerta de verdad en la planta baja + escalon y faroles de entrada.
+        // Puerta de verdad + entrada aleatoria.
         final int dgx = cx + door.getModX() * half;
         final int dgz = cz + door.getModZ() * half;
         set(world, dgx, floorY + 1, dgz, Material.AIR);
         set(world, dgx, floorY + 2, dgz, Material.AIR);
-        placeDoor(world, dgx, floorY + 1, dgz, door.getOppositeFace());
+        placeDoor(world, dgx, floorY + 1, dgz, door.getOppositeFace(), doorMat);
         placeStair(world, dgx + door.getModX(), floorY, dgz + door.getModZ(), door);
-        set(world, dgx + door.getModZ(), floorY + 2, dgz + door.getModX(), Material.LANTERN);
-        set(world, dgx - door.getModZ(), floorY + 2, dgz - door.getModX(), Material.LANTERN);
+        entrance(world, dgx, floorY, dgz, door, entrance);
 
-        // Escalera de mano entre plantas + huecos en los forjados (esquina trasera-interior).
+        // Escalera de mano entre plantas + huecos en los forjados.
         if (floors > 1) {
             final int lx = cx - half + 1;
             final int lz = cz - half + 1;
@@ -189,42 +203,59 @@ public final class Blueprint {
             }
         }
 
-        // Terraza: suelo, barandilla de valla y un farol.
-        for (int dx = -half; dx <= half; dx++) {
-            for (int dz = -half; dz <= half; dz++) {
-                set(world, cx + dx, topY, cz + dz, roof);
-                n++;
-                if ((Math.abs(dx) == half || Math.abs(dz) == half) && floors > 1) {
-                    set(world, cx + dx, topY + 1, cz + dz, Material.OAK_FENCE);
+        // Tejado: a dos aguas (escalonado) o terraza con barandilla.
+        if (pitched) {
+            for (int layer = 0; layer <= half; layer++) {
+                final int r = half - layer;
+                for (int dx = -r; dx <= r; dx++) {
+                    for (int dz = -r; dz <= r; dz++) {
+                        if (Math.max(Math.abs(dx), Math.abs(dz)) == r || layer == half) {
+                            set(world, cx + dx, topY + layer, cz + dz, roof);
+                            n++;
+                        }
+                    }
                 }
             }
-        }
-        if (floors > 1) {
-            set(world, cx + half - 1, topY + 1, cz - half + 2, Material.LANTERN);
-            set(world, cx - half + 1, topY, cz - half + 1, Material.AIR);   // salida de la escalera
+        } else {
+            for (int dx = -half; dx <= half; dx++) {
+                for (int dz = -half; dz <= half; dz++) {
+                    set(world, cx + dx, topY, cz + dz, roof);
+                    n++;
+                    if (Math.abs(dx) == half || Math.abs(dz) == half) {
+                        set(world, cx + dx, topY + 1, cz + dz, Material.OAK_FENCE);   // barandilla
+                    }
+                }
+            }
+            if (floors > 1) {
+                set(world, cx - half + 1, topY, cz - half + 1, Material.AIR);   // salida escalera
+                set(world, cx + half - 1, topY + 1, cz - half + 2, Material.LANTERN);
+                set(world, cx, topY + 1, cz, FLOWERS[rng.nextInt(FLOWERS.length)]);
+            }
         }
 
-        // Chimenea de ladrillo (toque unico: el lado depende de un seed simple).
-        final int chx = ((cx * 31 + cz) & 1) == 0 ? cx + half - 1 : cx - half + 1;
-        for (int y = floorY + 1; y <= topY + 1; y++) {
-            set(world, chx, y, cz + half - 1, Material.BRICKS);
+        // Chimenea (posicion y material al azar).
+        if (chimney) {
+            final int chx = rng.nextBoolean() ? cx + half - 1 : cx - half + 1;
+            final Material brick = rng.nextBoolean() ? Material.BRICKS : Material.COBBLESTONE;
+            for (int y = floorY + 1; y <= topY + half; y++) {
+                set(world, chx, y, cz + half - 1, brick);
+            }
+            set(world, chx, topY + half + 1, cz + half - 1, Material.CAMPFIRE);
         }
-        set(world, chx, topY + 2, cz + half - 1, Material.CAMPFIRE);
 
         // Mobiliario por estancias.
-        set(world, cx + 1, floorY + 1, cz + 1, Material.LANTERN);   // luz de la planta baja
+        set(world, cx + 1, floorY + 1, cz + 1, Material.LANTERN);
         if (furniture) {
             set(world, cx - half + 1, floorY + 1, cz - half + 1, Material.CRAFTING_TABLE);
             set(world, cx - half + 1, floorY + 1, cz - half + 2, Material.FURNACE);
             set(world, cx + half - 1, floorY + 1, cz - half + 1, Material.CHEST);
-            set(world, cx + half - 1, floorY + 1, cz + half - 1, Material.OAK_FENCE);      // mesa
+            set(world, cx + half - 1, floorY + 1, cz + half - 1, Material.OAK_FENCE);
             set(world, cx + half - 1, floorY + 2, cz + half - 1, Material.OAK_PRESSURE_PLATE);
-            final int bedY = floorY + (floors - 1) * fh + 1;                                // dormitorio arriba
+            final int bedY = floorY + (floors - 1) * fh + 1;
             placeBed(world, cx, bedY, cz + half - 1, BlockFace.NORTH);
             set(world, cx - half + 1, bedY, cz + half - 1, Material.LANTERN);
         }
 
-        // Cartel en la fachada, junto a la puerta.
         final int sx = door.getModX() != 0 ? 0 : 1;
         final int sz = door.getModZ() != 0 ? 0 : 1;
         placeSign(world.getBlockAt(dgx + sx + door.getModX(), floorY + 2, dgz + sz + door.getModZ()),
@@ -236,29 +267,53 @@ public final class Blueprint {
         w.getBlockAt(x, y, z).setType(m, false);
     }
 
-    private static void windows(World w, int cx, int cz, int y, int half, BlockFace door) {
+    /** Pequena marquesina, faroles o porche sobre la puerta (variedad de entrada). */
+    private static void entrance(World w, int dgx, int floorY, int dgz, BlockFace door, int style) {
+        final int ox = door.getModX();
+        final int oz = door.getModZ();
+        if (style == 0) {          // marquesina: losa sobre la puerta
+            set(w, dgx + ox, floorY + 3, dgz + oz, Material.DARK_OAK_SLAB);
+        } else if (style == 1) {   // faroles a los lados
+            set(w, dgx + oz, floorY + 2, dgz + ox, Material.LANTERN);
+            set(w, dgx - oz, floorY + 2, dgz - ox, Material.LANTERN);
+        } else {                   // porche: postes de valla y farol
+            set(w, dgx + ox + oz, floorY + 1, dgz + oz + ox, Material.OAK_FENCE);
+            set(w, dgx + ox - oz, floorY + 1, dgz + oz - ox, Material.OAK_FENCE);
+            set(w, dgx + ox, floorY + 3, dgz + oz, Material.LANTERN);
+        }
+    }
+
+    private static void windows(World w, int cx, int cz, int by, int half, BlockFace door,
+            int style, Material accent, java.util.Random rng) {
+        final int y = by + 2;
         for (final BlockFace s : new BlockFace[] {BlockFace.NORTH, BlockFace.SOUTH,
                 BlockFace.EAST, BlockFace.WEST}) {
             if (s == door) {
                 continue;
             }
-            final int wx = cx + s.getModX() * half;
-            final int wz = cz + s.getModZ() * half;
-            set(w, wx, y, wz, Material.GLASS_PANE);
-            if (half >= 3) {   // fachadas grandes: una ventana mas a cada lado
-                final int ox = s.getModX() != 0 ? 0 : 1;
-                final int oz = s.getModZ() != 0 ? 0 : 1;
-                set(w, wx + ox, y, wz + oz, Material.GLASS_PANE);
-                set(w, wx - ox, y, wz - oz, Material.GLASS_PANE);
+            final int ox = s.getModX() != 0 ? 0 : 1;   // a lo largo del muro
+            final int oz = s.getModZ() != 0 ? 0 : 1;
+            final int base = half >= 3 ? 1 : 0;         // fachadas grandes: varias ventanas
+            for (int k = -base; k <= base; k++) {
+                final int wx = cx + s.getModX() * half + ox * k;
+                final int wz = cz + s.getModZ() * half + oz * k;
+                set(w, wx, y, wz, style == 0 ? Material.GLASS : Material.GLASS_PANE);
+                if (style == 1) {   // contraventanas de acento a los lados
+                    set(w, wx + ox, y, wz + oz, accent);
+                    set(w, wx - ox, y, wz - oz, accent);
+                } else if (style == 2) {   // jardinera con flor bajo la ventana
+                    set(w, wx + s.getModX(), y - 1, wz + s.getModZ(), Material.SPRUCE_TRAPDOOR);
+                    set(w, wx, y - 1, wz, FLOWERS[rng.nextInt(FLOWERS.length)]);
+                }
             }
         }
     }
 
-    private static void placeDoor(World w, int x, int y, int z, BlockFace facing) {
-        final Door lower = (Door) Bukkit.createBlockData(Material.OAK_DOOR);
+    private static void placeDoor(World w, int x, int y, int z, BlockFace facing, Material mat) {
+        final Door lower = (Door) Bukkit.createBlockData(mat);
         lower.setFacing(facing);
         lower.setHalf(Bisected.Half.BOTTOM);
-        final Door upper = (Door) Bukkit.createBlockData(Material.OAK_DOOR);
+        final Door upper = (Door) Bukkit.createBlockData(mat);
         upper.setFacing(facing);
         upper.setHalf(Bisected.Half.TOP);
         w.getBlockAt(x, y, z).setBlockData(lower, false);

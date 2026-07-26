@@ -43,4 +43,63 @@ public final class SchematicModule {
     public void list(Player player) {
         player.performCommand("/schematic list");
     }
+
+    /**
+     * Pega un .schem en (x,y,z) del mundo usando la API de WorldEdit por REFLEXION (FAWE la
+     * aporta en runtime, sin dependencia de compilacion). Sirve desde consola/RCON, sin jugador.
+     * Devuelve true si se pego.
+     */
+    public boolean pasteAt(org.bukkit.World bukkitWorld, java.io.File file, int x, int y, int z) {
+        try {
+            final Class<?> formats =
+                    Class.forName("com.sk89q.worldedit.extent.clipboard.io.ClipboardFormats");
+            final Object format = formats.getMethod("findByFile", java.io.File.class).invoke(null, file);
+            if (format == null) {
+                return false;
+            }
+            // Ojo: format/reader son clases NO publicas (constantes de enum). Hay que invocar sus
+            // metodos a traves de la INTERFAZ (publica), no de getClass() (clase concreta).
+            final Class<?> formatIface =
+                    Class.forName("com.sk89q.worldedit.extent.clipboard.io.ClipboardFormat");
+            final Class<?> readerIface =
+                    Class.forName("com.sk89q.worldedit.extent.clipboard.io.ClipboardReader");
+            final Object clipboard;
+            try (java.io.InputStream in = new java.io.FileInputStream(file)) {
+                final Object reader = formatIface
+                        .getMethod("getReader", java.io.InputStream.class).invoke(format, in);
+                clipboard = readerIface.getMethod("read").invoke(reader);
+                if (reader instanceof AutoCloseable ac) {
+                    ac.close();
+                }
+            }
+            final Class<?> adapter = Class.forName("com.sk89q.worldedit.bukkit.BukkitAdapter");
+            final Object weWorld =
+                    adapter.getMethod("adapt", org.bukkit.World.class).invoke(null, bukkitWorld);
+            final Class<?> weCls = Class.forName("com.sk89q.worldedit.WorldEdit");
+            final Object we = weCls.getMethod("getInstance").invoke(null);
+            final Class<?> weWorldCls = Class.forName("com.sk89q.worldedit.world.World");
+            final Object editSession = weCls.getMethod("newEditSession", weWorldCls).invoke(we, weWorld);
+            final Class<?> bv3 = Class.forName("com.sk89q.worldedit.math.BlockVector3");
+            final Object to = bv3.getMethod("at", int.class, int.class, int.class).invoke(null, x, y, z);
+            final Class<?> holderCls = Class.forName("com.sk89q.worldedit.session.ClipboardHolder");
+            final Class<?> clipboardCls =
+                    Class.forName("com.sk89q.worldedit.extent.clipboard.Clipboard");
+            final Object holder = holderCls.getConstructor(clipboardCls).newInstance(clipboard);
+            final Class<?> extentCls = Class.forName("com.sk89q.worldedit.extent.Extent");
+            Object pb = holderCls.getMethod("createPaste", extentCls).invoke(holder, editSession);
+            pb = pb.getClass().getMethod("to", bv3).invoke(pb, to);
+            pb = pb.getClass().getMethod("ignoreAirBlocks", boolean.class).invoke(pb, true);
+            final Object operation = pb.getClass().getMethod("build").invoke(pb);
+            final Class<?> ops = Class.forName("com.sk89q.worldedit.function.operation.Operations");
+            final Class<?> opCls = Class.forName("com.sk89q.worldedit.function.operation.Operation");
+            ops.getMethod("complete", opCls).invoke(null, operation);
+            if (editSession instanceof AutoCloseable ac) {
+                ac.close();
+            }
+            return true;
+        } catch (Throwable t) {
+            plugin.getLogger().warning("[Aetheria] pasteAt " + file.getName() + ": " + t);
+            return false;
+        }
+    }
 }

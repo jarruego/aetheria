@@ -53,6 +53,11 @@ public final class AetheriaCommand implements CommandExecutor {
             handleSaveCatalog(sender);
             return true;
         }
+        if (args.length >= 2 && args[0].equalsIgnoreCase("schem")
+                && args[1].equalsIgnoreCase("pastestreet")) {
+            handlePasteStreet(sender);
+            return true;
+        }
         if (!(sender instanceof Player player)) {
             sender.sendMessage("Solo los jugadores pueden usar Aetheria.");
             return true;
@@ -226,6 +231,58 @@ public final class AetheriaCommand implements CommandExecutor {
                 "plugins/FastAsyncWorldEdit/schematics", name + ".schem");
         SchematicWriter.save(w, cx - r, floorY - 1, cz - r, 2 * r + 1, 2 * r + 2, 2 * r + 1, file);
         sender.sendMessage("§7  guardado §f" + name + "§7 (celda " + i + ")");
+    }
+
+    /** Consola: pega TODOS los esquematicos del catalogo en una "calle de muestra" con carteles. */
+    private void handlePasteStreet(CommandSender sender) {
+        if (schematics == null) {
+            sender.sendMessage("§cFAWE no disponible.");
+            return;
+        }
+        final org.bukkit.World w = plugin.getServer().getWorlds().get(0);
+        final org.bukkit.Location sp = w.getSpawnLocation();
+        final java.io.File dir = new java.io.File("plugins/FastAsyncWorldEdit/schematics");
+        final java.io.File[] files = dir.listFiles(
+                (d, n) -> n.endsWith(".schem") || n.endsWith(".schematic"));
+        if (files == null || files.length == 0) {
+            sender.sendMessage("§7Catalogo vacio.");
+            return;
+        }
+        java.util.Arrays.sort(files, java.util.Comparator.comparing(java.io.File::getName));
+        final int baseX = sp.getBlockX() + 40;   // calle al este del spawn (lejos del showroom)
+        final int z = sp.getBlockZ() + 40;
+        final int y = sp.getBlockY();
+        int i = 0;
+        for (final java.io.File f : files) {
+            final int x = baseX + i * 80;
+            final String name = f.getName().replaceFirst("\\.(schem|schematic)$", "");
+            if (schematics.pasteAt(w, f, x, y, z)) {
+                streetSign(w, x, y, z - 6, name);
+                sender.sendMessage("§7  pegado §f" + name);
+            } else {
+                sender.sendMessage("§c  fallo §f" + name + " (revisa la consola)");
+            }
+            i++;
+        }
+        sender.sendMessage("§a[Esquematico] calle de muestra pegada al este del spawn (" + i + ").");
+    }
+
+    private void streetSign(org.bukkit.World w, int x, int y, int z, String name) {
+        final org.bukkit.block.Block below = w.getBlockAt(x, y, z);
+        if (below.getType().isAir()) {
+            below.setType(org.bukkit.Material.GRASS_BLOCK, false);
+        }
+        final org.bukkit.block.Block b = w.getBlockAt(x, y + 1, z);
+        b.setType(org.bukkit.Material.OAK_SIGN, false);
+        if (b.getBlockData() instanceof org.bukkit.block.data.Rotatable rot) {
+            rot.setRotation(org.bukkit.block.BlockFace.SOUTH);
+            b.setBlockData(rot, false);
+        }
+        if (b.getState() instanceof org.bukkit.block.Sign s) {
+            s.getSide(org.bukkit.block.sign.Side.FRONT).line(1,
+                    net.kyori.adventure.text.Component.text("§6" + name));
+            s.update(true);
+        }
     }
 
     private void handleSchem(Player player, String[] args) {

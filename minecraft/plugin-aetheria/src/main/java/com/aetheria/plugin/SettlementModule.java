@@ -460,11 +460,18 @@ public final class SettlementModule implements Listener {
         final var rng = ThreadLocalRandom.current();
         final Villager.Profession prof = PROFS[rng.nextInt(PROFS.length)];
         final Material[] pal = COMBOS[rng.nextInt(COMBOS.length)];
-        final int floors = 1 + rng.nextInt(2);
+        // Planta RECTANGULAR (no siempre cuadrada): ancho y fondo independientes.
+        final int halfX = 3 + rng.nextInt(3);              // 3..5
+        final int halfZ = 3 + rng.nextInt(3);              // 3..5
+        final int area = (2 * halfX + 1) * (2 * halfZ + 1);
+        // Las casas grandes suelen ser de UNA planta (anchas); las medianas, a veces de dos.
+        final int floors = rng.nextInt(100) < (area >= 81 ? 25 : 60) ? 2 : 1;
+        // Retranqueo: planta baja mas ancha que la alta (solo en casas amplias de dos plantas).
+        final boolean setback = floors == 2 && Math.min(halfX, halfZ) >= 4 && rng.nextInt(100) < 60;
         final BlockFace door = towardPlaza(cx, cz);        // la puerta mira al pueblo
 
         prepareTerrain(cx, cz, fy);                        // tala arboles + nivela SUAVE al suelo real
-        Blueprint.buildHouse(world, cx, cz, fy, door, 3, floors,
+        Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, floors, setback,
                 pal[0], pal[1], pal[2], pal[3], true, name);
         professionFeature(cx, cz, fy, prof, rng);
         pathTo(cx, cz, village.plaza());                   // sendero que sigue el relieve al pueblo
@@ -577,8 +584,8 @@ public final class SettlementModule implements Listener {
 
     /** Tala arboles del hueco y nivela SUAVE (poco) el terreno al nivel del suelo real. */
     private void prepareTerrain(int cx, int cz, int fy) {
-        for (int dx = -5; dx <= 5; dx++) {
-            for (int dz = -5; dz <= 5; dz++) {
+        for (int dx = -6; dx <= 6; dx++) {
+            for (int dz = -6; dz <= 6; dz++) {
                 final int x = cx + dx;
                 final int z = cz + dz;
                 for (int y = fy + 1; y <= fy + 14; y++) {   // despeja/tala por encima
@@ -647,7 +654,7 @@ public final class SettlementModule implements Listener {
         for (final Colono c : colonos) {
             final int fy = c.y - 1;
             if (b.getX() >= c.x - 6 && b.getX() <= c.x + 7 && b.getZ() >= c.z - 6 && b.getZ() <= c.z + 6
-                    && b.getY() >= fy && b.getY() <= fy + c.floors * 4 + 6) {
+                    && b.getY() >= fy && b.getY() <= fy + c.floors * 6 + 8) {
                 return c;
             }
         }
@@ -696,7 +703,7 @@ public final class SettlementModule implements Listener {
         final int fy = c.y - 1;
         for (int dx = -6; dx <= 7; dx++) {
             for (int dz = -6; dz <= 6; dz++) {
-                for (int y = fy + 1; y <= fy + c.floors * 4 + 7; y++) {
+                for (int y = fy + 1; y <= fy + c.floors * 6 + 8; y++) {
                     if (!world.getBlockAt(c.x + dx, y, c.z + dz).getType().isAir()) {
                         world.getBlockAt(c.x + dx, y, c.z + dz).setType(Material.AIR, false);
                     }

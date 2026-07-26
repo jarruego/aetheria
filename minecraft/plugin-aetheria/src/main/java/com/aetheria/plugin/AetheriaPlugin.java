@@ -32,6 +32,13 @@ public final class AetheriaPlugin extends JavaPlugin {
         Objects.requireNonNull(getCommand("aetheria"), "comando 'aetheria' no declarado en plugin.yml")
                 .setExecutor(command);
 
+        // Catalogo de esquematicos: solo si FAWE/WorldEdit esta instalado (si no, queda inactivo).
+        if (getServer().getPluginManager().getPlugin("FastAsyncWorldEdit") != null
+                || getServer().getPluginManager().getPlugin("WorldEdit") != null) {
+            command.setSchematics(new SchematicModule(this));
+            getLogger().info("Aetheria: catalogo de esquematicos activo (FAWE/WorldEdit detectado).");
+        }
+
         // NPC guias conversables (junto a los portales, en cualquier servidor).
         final ConversationManager convo = new ConversationManager(this, gateway);
         getServer().getPluginManager().registerEvents(convo, this);

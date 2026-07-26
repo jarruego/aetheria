@@ -22,6 +22,7 @@ public final class AetheriaCommand implements CommandExecutor {
     private final NpcManager npcs;
     private final PlanExecutor executor;
     private final String defaultNpc;
+    private SchematicModule schematics;   // null si FAWE/WorldEdit no esta instalado
 
     public AetheriaCommand(AetheriaPlugin plugin, GatewayClient gateway, NpcManager npcs,
             String defaultNpc) {
@@ -30,6 +31,11 @@ public final class AetheriaCommand implements CommandExecutor {
         this.npcs = npcs;
         this.defaultNpc = defaultNpc;
         this.executor = new PlanExecutor(plugin, npcs);
+    }
+
+    /** Activa las ordenes de esquematicos (solo si FAWE esta presente). */
+    public void setSchematics(SchematicModule schematics) {
+        this.schematics = schematics;
     }
 
     @Override
@@ -63,8 +69,9 @@ public final class AetheriaCommand implements CommandExecutor {
                 handleService(player, args[1].toLowerCase(), join(args, 2));
             }
             case "cronica", "crónica" -> handleCronica(player);
+            case "schem", "esquematico" -> handleSchem(player, args);
             default -> player.sendMessage(
-                    "Subcomando desconocido: " + sub + " (usa ask|plan|npc|servicio|cronica)");
+                    "Subcomando desconocido: " + sub + " (usa ask|plan|npc|servicio|cronica|schem)");
         }
         return true;
     }
@@ -153,6 +160,32 @@ public final class AetheriaCommand implements CommandExecutor {
                             charged));
                     executor.execute(player, "servicio-" + service, data.getAsJsonArray("actions"));
                 }));
+    }
+
+    private void handleSchem(Player player, String[] args) {
+        if (schematics == null) {
+            player.sendMessage("§cLos esquematicos necesitan FAWE instalado (aun no disponible aqui).");
+            return;
+        }
+        final String action = args.length >= 2 ? args[1].toLowerCase() : "list";
+        switch (action) {
+            case "list" -> schematics.list(player);
+            case "paste", "pegar" -> {
+                if (args.length < 3) {
+                    player.sendMessage("Uso: /aetheria schem paste <nombre>");
+                    return;
+                }
+                schematics.paste(player, args[2]);
+            }
+            case "save", "guardar" -> {
+                if (args.length < 3) {
+                    player.sendMessage("Uso: /aetheria schem save <nombre> (con una seleccion de //wand)");
+                    return;
+                }
+                schematics.save(player, args[2]);
+            }
+            default -> player.sendMessage("Uso: /aetheria schem <list|paste <n>|save <n>>");
+        }
     }
 
     private void handleCronica(Player player) {

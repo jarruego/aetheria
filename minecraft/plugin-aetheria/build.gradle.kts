@@ -16,6 +16,8 @@ repositories {
 
 dependencies {
     // La API de Paper la aporta el servidor en runtime (incluye Gson en el classpath).
+    // Los esquematicos se manejan DESPACHANDO comandos de WorldEdit/FAWE (sin dependencia
+    // de compilacion): asi no hace falta enlazar con la API de WorldEdit al construir.
     compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
 }
 

@@ -68,6 +68,8 @@ services:
       SIMULATION_DISTANCE: "6"
       # El plugin corre aqui (rol distinto de lobby): /home + portal de vuelta al lobby.
       AETHERIA_ROLE: "creative"
+      # FAWE: para pegar/guardar esquematicos del catalogo en el creativo.
+      MODRINTH_PROJECTS: "fastasyncworldedit"
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-changeme-generate-a-long-random-secret}"
     volumes:
       - ./minecraft/.generated/creative/config:/data/config

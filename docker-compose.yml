@@ -171,8 +171,8 @@ services:
       VIEW_DISTANCE: "8"
       SIMULATION_DISTANCE: "5"
       ALLOW_NETHER: "true"
-      # Chunky: pregeneracion de mundos (evita tirones de generacion en caliente en la VM).
-      MODRINTH_PROJECTS: "chunky"
+      # Chunky: pregeneracion de mundos. FAWE: pegar esquematicos del catalogo (WorldEdit API).
+      MODRINTH_PROJECTS: "chunky,fastasyncworldedit"
       # El plugin Aetheria usa este token para autenticarse contra el API Gateway.
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-changeme-generate-a-long-random-secret}"
     volumes:

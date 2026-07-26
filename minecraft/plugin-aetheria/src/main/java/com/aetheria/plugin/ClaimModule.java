@@ -32,8 +32,8 @@ public final class ClaimModule implements CommandExecutor, Listener {
     // que se reclamo (no toda la columna): asi se puede minar muy por debajo o volar por encima.
     private static final int PROTECT_VERTICAL = 25;
 
-    /** Una parcela en la cache: quien es el dueno y a que altura se reclamo. */
-    private record Claim(UUID owner, int baseY) {}
+    /** Una parcela en la cache: dueno, altura de referencia y su caja (para liberar y solapes). */
+    private record Claim(UUID owner, int baseY, int minX, int minZ, int maxX, int maxZ) {}
 
     private final AetheriaPlugin plugin;
     private final GatewayClient gateway;
@@ -60,12 +60,19 @@ public final class ClaimModule implements CommandExecutor, Listener {
                 if (o.get("owner_uuid").isJsonNull()) {
                     return;
                 }
-                final int chunkX = o.get("min_x").getAsInt() >> 4;
-                final int chunkZ = o.get("min_z").getAsInt() >> 4;
                 final int baseY = o.has("base_y") && !o.get("base_y").isJsonNull()
                         ? o.get("base_y").getAsInt() : 64;
-                owners.put(key(chunkX, chunkZ),
-                        new Claim(UUID.fromString(o.get("owner_uuid").getAsString()), baseY));
+                final int minX = o.get("min_x").getAsInt();
+                final int minZ = o.get("min_z").getAsInt();
+                final int maxX = o.get("max_x").getAsInt();
+                final int maxZ = o.get("max_z").getAsInt();
+                final Claim c = new Claim(UUID.fromString(o.get("owner_uuid").getAsString()),
+                        baseY, minX, minZ, maxX, maxZ);
+                for (int chx = minX >> 4; chx <= maxX >> 4; chx++) {
+                    for (int chz = minZ >> 4; chz <= maxZ >> 4; chz++) {
+                        owners.put(key(chx, chz), c);
+                    }
+                }
             });
             plugin.getLogger().info("[Aetheria] Fase 9: " + owners.size()
                     + " parcelas cargadas en '" + worldKey + "'.");
@@ -101,25 +108,45 @@ public final class ClaimModule implements CommandExecutor, Listener {
             return true;
         }
         if (args.length >= 1 && args[0].equalsIgnoreCase("comprar")) {
-            doClaim(player, chunkX, chunkZ, false);
+            doClaim(player, chunkX, chunkZ, size(args), false);
         } else if (args.length >= 1 && args[0].equalsIgnoreCase("alquilar")) {
-            doClaim(player, chunkX, chunkZ, true);
+            doClaim(player, chunkX, chunkZ, size(args), true);
         } else {
             showClaimMenu(player, chunkX, chunkZ);
         }
         return true;
     }
 
+    /** Lado de la parcela en chunks segun el argumento (pequena=1, mediana=2, grande=3). */
+    private static int size(String[] args) {
+        if (args.length < 2) {
+            return 1;
+        }
+        return switch (args[1].toLowerCase()) {
+            case "mediana", "2" -> 2;
+            case "grande", "3" -> 3;
+            default -> 1;
+        };
+    }
+
     private void showClaimMenu(Player player, int chunkX, int chunkZ) {
         if (owners.containsKey(key(chunkX, chunkZ))) {
-            player.sendMessage("§eEsta parcela ya esta reclamada.");
+            player.sendMessage("§eEsta parcela (o parte de ella) ya esta reclamada.");
             return;
         }
-        player.sendMessage("§6[Parcela] §f¿Como quieres esta parcela? Elige:");
-        player.sendMessage(net.kyori.adventure.text.Component.text("  ")
-                .append(opt("§a[Comprar (50 AET, para siempre)]", "/claim comprar"))
-                .append(net.kyori.adventure.text.Component.text("   "))
-                .append(opt("§b[Alquilar (10 AET + renta)]", "/claim alquilar")));
+        player.sendMessage("§6[Parcela] §fElige tamano y modo (compra fija o alquiler):");
+        addLine(player, "Pequena", "1x1 chunk", 1);
+        addLine(player, "Mediana", "2x2 chunks", 2);
+        addLine(player, "Grande", "3x3 chunks", 3);
+    }
+
+    private void addLine(Player player, String name, String desc, int n) {
+        final int buy = 50 * n * n;
+        player.sendMessage(net.kyori.adventure.text.Component.text(
+                        String.format("§e%s §7(%s): ", name, desc))
+                .append(opt("§a[Comprar " + buy + "]", "/claim comprar " + n))
+                .append(net.kyori.adventure.text.Component.text("  "))
+                .append(opt("§b[Alquilar]", "/claim alquilar " + n)));
     }
 
     private net.kyori.adventure.text.Component opt(String label, String cmd) {
@@ -127,15 +154,29 @@ public final class ClaimModule implements CommandExecutor, Listener {
                 .clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand(cmd));
     }
 
-    private void doClaim(Player player, int chunkX, int chunkZ, boolean rental) {
-        if (owners.containsKey(key(chunkX, chunkZ))) {
-            player.sendMessage("§eEsta parcela ya esta reclamada.");
-            return;
+    private void doClaim(Player player, int chunkX, int chunkZ, int n, boolean rental) {
+        // Caja de NxN chunks centrada en el jugador (grande centra; mediana ancla al SO).
+        final int startX = chunkX - (n - 1) / 2;
+        final int startZ = chunkZ - (n - 1) / 2;
+        final int endX = startX + n - 1;
+        final int endZ = startZ + n - 1;
+        for (int chx = startX; chx <= endX; chx++) {
+            for (int chz = startZ; chz <= endZ; chz++) {
+                if (owners.containsKey(key(chx, chz))) {
+                    player.sendMessage("§eNo cabe: se solapa con una parcela ya reclamada.");
+                    return;
+                }
+            }
         }
-        final int baseY = player.getLocation().getBlockY();   // altura de referencia de la parcela
-        player.sendMessage("§7[Aetheria] " + (rental ? "alquilando" : "comprando") + " esta parcela...");
+        final int minX = startX * 16;
+        final int minZ = startZ * 16;
+        final int maxX = endX * 16 + 15;
+        final int maxZ = endZ * 16 + 15;
+        final int baseY = player.getLocation().getBlockY();
+        player.sendMessage("§7[Aetheria] " + (rental ? "alquilando" : "comprando") + " una parcela de "
+                + n + "x" + n + " chunks...");
         gateway.claimPlot(player.getUniqueId().toString(), player.getName(), worldKey,
-                        chunkX * 16, chunkZ * 16, chunkX * 16 + 15, chunkZ * 16 + 15, baseY, rental)
+                        minX, minZ, maxX, maxZ, baseY, rental)
                 .whenComplete((json, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
                     if (err != null) {
                         player.sendMessage("§c[Aetheria] error: " + err.getMessage());
@@ -145,7 +186,12 @@ public final class ClaimModule implements CommandExecutor, Listener {
                         player.sendMessage("§c[Aetheria] " + json.get("error").getAsString());
                         return;
                     }
-                    owners.put(key(chunkX, chunkZ), new Claim(player.getUniqueId(), baseY));
+                    final Claim c = new Claim(player.getUniqueId(), baseY, minX, minZ, maxX, maxZ);
+                    for (int chx = startX; chx <= endX; chx++) {
+                        for (int chz = startZ; chz <= endZ; chz++) {
+                            owners.put(key(chx, chz), c);
+                        }
+                    }
                     final var data = json.has("data") ? json.getAsJsonObject("data") : null;
                     final double price = data != null && data.has("price") ? data.get("price").getAsDouble() : 0.0;
                     if (rental) {
@@ -166,13 +212,17 @@ public final class ClaimModule implements CommandExecutor, Listener {
             player.sendMessage("§eNo tienes una parcela aqui.");
             return;
         }
-        gateway.unclaimPlot(player.getUniqueId().toString(), worldKey, chunkX * 16, chunkZ * 16)
+        gateway.unclaimPlot(player.getUniqueId().toString(), worldKey, c.minX(), c.minZ())
                 .whenComplete((json, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
                     if (err != null || !json.get("ok").getAsBoolean()) {
                         player.sendMessage("§c[Aetheria] no se pudo liberar la parcela.");
                         return;
                     }
-                    owners.remove(key(chunkX, chunkZ));
+                    for (int chx = c.minX() >> 4; chx <= c.maxX() >> 4; chx++) {
+                        for (int chz = c.minZ() >> 4; chz <= c.maxZ() >> 4; chz++) {
+                            owners.remove(key(chx, chz));
+                        }
+                    }
                     player.sendMessage("§aParcela liberada. Ya no esta protegida.");
                 }));
     }

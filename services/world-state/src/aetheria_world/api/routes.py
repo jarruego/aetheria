@@ -406,13 +406,15 @@ async def _player_id(conn, java_uuid: str, name: str | None):
 async def claim_plot(body: PlotClaimIn) -> dict:
     """Reclama una parcela (un chunk), en compra fija o en alquiler. Cobra en AET."""
     _require_db()
+    # El precio escala con el area (numero de chunks de la parcela).
+    chunks = max(1, ((body.max_x - body.min_x + 1) // 16) * ((body.max_z - body.min_z + 1) // 16))
     if body.rental:
-        up_front = decimal.Decimal(str(settings.claim_rent_deposit))
-        rent = decimal.Decimal(str(settings.claim_rent))
+        up_front = decimal.Decimal(str(settings.claim_rent_deposit)) * chunks
+        rent = decimal.Decimal(str(settings.claim_rent)) * chunks
         rent_due = datetime.now(timezone.utc) + timedelta(seconds=settings.rent_interval_seconds)
         reason = "deposito alquiler parcela"
     else:
-        up_front = decimal.Decimal(str(settings.claim_price))
+        up_front = decimal.Decimal(str(settings.claim_price)) * chunks
         rent = decimal.Decimal(0)
         rent_due = None
         reason = "comprar parcela"

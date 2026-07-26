@@ -41,6 +41,18 @@ public final class AetheriaCommand implements CommandExecutor {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,
             @NotNull String label, @NotNull String[] args) {
+        // Guardar un cubo del mundo como .schem SIN jugador (consola/RCON): para nutrir el
+        // catalogo con muestras del showroom. Uso: /aetheria schem savecube <nombre> <x> <y> <z> [r]
+        if (args.length >= 6 && args[0].equalsIgnoreCase("schem")
+                && args[1].equalsIgnoreCase("savecube")) {
+            handleSaveCube(sender, args);
+            return true;
+        }
+        if (args.length >= 2 && args[0].equalsIgnoreCase("schem")
+                && args[1].equalsIgnoreCase("savecatalog")) {
+            handleSaveCatalog(sender);
+            return true;
+        }
         if (!(sender instanceof Player player)) {
             sender.sendMessage("Solo los jugadores pueden usar Aetheria.");
             return true;
@@ -160,6 +172,60 @@ public final class AetheriaCommand implements CommandExecutor {
                             charged));
                     executor.execute(player, "servicio-" + service, data.getAsJsonArray("actions"));
                 }));
+    }
+
+    /** Consola/RCON: guarda un cubo del mundo principal de ESTE servidor como .schem. */
+    private void handleSaveCube(CommandSender sender, String[] args) {
+        try {
+            final String name = args[2];
+            final int x = Integer.parseInt(args[3]);
+            final int y = Integer.parseInt(args[4]);
+            final int z = Integer.parseInt(args[5]);
+            final int r = args.length >= 7 ? Integer.parseInt(args[6]) : 8;
+            final org.bukkit.World w = plugin.getServer().getWorlds().get(0);
+            final int width = 2 * r + 1;
+            final int length = 2 * r + 1;
+            final int height = 2 * r + 2;
+            final java.io.File dir = new java.io.File(
+                    "plugins/FastAsyncWorldEdit/schematics");   // el catalogo de FAWE
+            final java.io.File file = new java.io.File(dir, name + ".schem");
+            SchematicWriter.save(w, x - r, y - 1, z - r, width, height, length, file);
+            sender.sendMessage("§a[Esquematico] guardado §f" + name + "§a en el catalogo ("
+                    + width + "x" + height + "x" + length + ").");
+        } catch (Exception e) {
+            sender.sendMessage("§c[Esquematico] no pude guardar: " + e.getMessage());
+            plugin.getLogger().warning("[Aetheria] savecube: " + e);
+        }
+    }
+
+    /** Consola: guarda un par de muestras del showroom del creativo como .schem del catalogo.
+     *  Usa el mismo layout que CatalogModule (rejilla al norte del spawn). */
+    private void handleSaveCatalog(CommandSender sender) {
+        try {
+            final org.bukkit.World w = plugin.getServer().getWorlds().get(0);
+            final org.bukkit.Location sp = w.getSpawnLocation();
+            final int baseX = sp.getBlockX() - 24;
+            final int baseZ = sp.getBlockZ() - 52;
+            final int floorY = sp.getBlockY() - 1;
+            // (indice de celda en CatalogModule, nombre) -> casa mediana y herreria
+            saveCell(w, baseX, baseZ, floorY, 1, "casa_mediana", sender);
+            saveCell(w, baseX, baseZ, floorY, 7, "herreria", sender);
+            sender.sendMessage("§a[Esquematico] muestras del showroom guardadas en el catalogo.");
+        } catch (Exception e) {
+            sender.sendMessage("§c[Esquematico] savecatalog: " + e.getMessage());
+            plugin.getLogger().warning("[Aetheria] savecatalog: " + e);
+        }
+    }
+
+    private void saveCell(org.bukkit.World w, int baseX, int baseZ, int floorY, int i, String name,
+            CommandSender sender) throws java.io.IOException {
+        final int cx = baseX + (i % 4) * 16;
+        final int cz = baseZ + (i / 4) * 16;
+        final int r = 8;
+        final java.io.File file = new java.io.File(
+                "plugins/FastAsyncWorldEdit/schematics", name + ".schem");
+        SchematicWriter.save(w, cx - r, floorY - 1, cz - r, 2 * r + 1, 2 * r + 2, 2 * r + 1, file);
+        sender.sendMessage("§7  guardado §f" + name + "§7 (celda " + i + ")");
     }
 
     private void handleSchem(Player player, String[] args) {

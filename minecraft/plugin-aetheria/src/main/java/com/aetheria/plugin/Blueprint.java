@@ -243,17 +243,9 @@ public final class Blueprint {
             set(world, chx, topY + half + 1, cz + half - 1, Material.CAMPFIRE);
         }
 
-        // Mobiliario por estancias.
-        set(world, cx + 1, floorY + 1, cz + 1, Material.LANTERN);
-        if (furniture) {
-            set(world, cx - half + 1, floorY + 1, cz - half + 1, Material.CRAFTING_TABLE);
-            set(world, cx - half + 1, floorY + 1, cz - half + 2, Material.FURNACE);
-            set(world, cx + half - 1, floorY + 1, cz - half + 1, Material.CHEST);
-            set(world, cx + half - 1, floorY + 1, cz + half - 1, Material.OAK_FENCE);
-            set(world, cx + half - 1, floorY + 2, cz + half - 1, Material.OAK_PRESSURE_PLATE);
-            final int bedY = floorY + (floors - 1) * fh + 1;
-            placeBed(world, cx, bedY, cz + half - 1, BlockFace.NORTH);
-            set(world, cx - half + 1, bedY, cz + half - 1, Material.LANTERN);
+        // Estancias: tabiques con puerta y mobiliario por habitacion, planta a planta.
+        for (int fl = 0; fl < floors; fl++) {
+            furnishFloor(world, cx, cz, floorY + fl * fh, half, fl, door, wall, furniture);
         }
 
         final int sx = door.getModX() != 0 ? 0 : 1;
@@ -281,6 +273,89 @@ public final class Blueprint {
             set(w, dgx + ox - oz, floorY + 1, dgz + oz - ox, Material.OAK_FENCE);
             set(w, dgx + ox, floorY + 3, dgz + oz, Material.LANTERN);
         }
+    }
+
+    /**
+     * Divide una planta en DOS habitaciones con un tabique PERPENDICULAR a la puerta (con
+     * hueco de paso en el centro) y las amuebla: planta baja = salon (junto a la puerta) +
+     * cocina; plantas altas = estudio + dormitorio. El eje se adapta a la orientacion.
+     */
+    private static void furnishFloor(World w, int cx, int cz, int by, int half, int fl,
+            BlockFace door, Material wall, boolean furniture) {
+        final int inner = half - 1;
+        final int ax = door.getModX();
+        final int az = door.getModZ();
+        final int px = ax != 0 ? 0 : 1;   // el tabique corre perpendicular a la puerta
+        final int pz = az != 0 ? 0 : 1;
+
+        // Tabique con hueco de paso en el centro.
+        for (int d = -inner; d <= inner; d++) {
+            if (d == 0) {
+                continue;
+            }
+            for (int y = by + 1; y <= by + 3; y++) {
+                set(w, cx + px * d, y, cz + pz * d, wall);
+            }
+        }
+
+        // Centros de las dos habitaciones: "cerca" (hacia la puerta) y "lejos".
+        final int nx = cx + ax * (inner - 1);
+        final int nz = cz + az * (inner - 1);
+        final int fx = cx - ax * (inner - 1);
+        final int fz = cz - az * (inner - 1);
+        set(w, nx, by + 3, nz, Material.LANTERN);   // farol colgante en cada habitacion
+        set(w, fx, by + 3, fz, Material.LANTERN);
+        if (!furniture) {
+            return;
+        }
+
+        if (fl == 0) {
+            // Salon junto a la puerta: mesa con dos sillas y una libreria.
+            set(w, nx, by + 1, nz, Material.OAK_FENCE);
+            set(w, nx, by + 2, nz, Material.OAK_PRESSURE_PLATE);
+            placeStairSeat(w, nx + px, by + 1, nz + pz, faceFrom(-px, -pz));
+            placeStairSeat(w, nx - px, by + 1, nz - pz, faceFrom(px, pz));
+            set(w, nx + px, by + 1, nz + pz + 0, Material.BOOKSHELF);
+            // Cocina al fondo.
+            set(w, fx + px, by + 1, fz + pz, Material.CRAFTING_TABLE);
+            set(w, fx, by + 1, fz, Material.FURNACE);
+            set(w, fx - px, by + 1, fz - pz, Material.SMOKER);
+            set(w, fx + px, by + 1, fz - pz, Material.BARREL);
+        } else {
+            // Estudio junto a la escalera; dormitorio al fondo.
+            set(w, nx + px, by + 1, nz + pz, Material.BOOKSHELF);
+            set(w, nx - px, by + 1, nz - pz, Material.CRAFTING_TABLE);
+            placeBedAt(w, fx, by + 1, fz, door);          // cabecera hacia el centro
+            set(w, fx + px, by + 1, fz + pz, Material.CHEST);
+            set(w, fx - px, by + 1, fz - pz, Material.CHEST);
+        }
+    }
+
+    private static BlockFace faceFrom(int mx, int mz) {
+        if (mx > 0) {
+            return BlockFace.EAST;
+        }
+        if (mx < 0) {
+            return BlockFace.WEST;
+        }
+        return mz > 0 ? BlockFace.SOUTH : BlockFace.NORTH;
+    }
+
+    private static void placeStairSeat(World w, int x, int y, int z, BlockFace facing) {
+        final Stairs s = (Stairs) Bukkit.createBlockData(Material.OAK_STAIRS);
+        s.setFacing(facing);
+        w.getBlockAt(x, y, z).setBlockData(s, false);
+    }
+
+    private static void placeBedAt(World w, int x, int y, int z, BlockFace facing) {
+        final Bed foot = (Bed) Bukkit.createBlockData(Material.RED_BED);
+        foot.setPart(Bed.Part.FOOT);
+        foot.setFacing(facing);
+        final Bed head = (Bed) Bukkit.createBlockData(Material.RED_BED);
+        head.setPart(Bed.Part.HEAD);
+        head.setFacing(facing);
+        w.getBlockAt(x, y, z).setBlockData(foot, false);
+        w.getBlockAt(x + facing.getModX(), y, z + facing.getModZ()).setBlockData(head, false);
     }
 
     private static void windows(World w, int cx, int cz, int by, int half, BlockFace door,

@@ -90,11 +90,18 @@ public final class HudModule implements Listener, CommandExecutor {
         final Objective obj = board.registerNewObjective("aetheria", "dummy",
                 Component.text("§6✦ §eAetheria §6✦"));
         obj.setDisplaySlot(DisplaySlot.SIDEBAR);
+        // Habitantes de Aetheria = aldeanos vivos del mundo (con etiqueta de vecino o bebe).
+        final long habitantes = player.getWorld().getEntitiesByClass(org.bukkit.entity.Villager.class)
+                .stream()
+                .filter(v -> v.getScoreboardTags().contains("aetheria_worker")
+                        || v.getScoreboardTags().contains("aetheria_baby"))
+                .count();
         // Lineas de mayor (arriba) a menor (abajo).
-        line(obj, "§eTu saldo:", 7);
-        line(obj, String.format("§a%.2f AET", balance), 6);
-        line(obj, "§0", 5);
-        line(obj, "§ePueblo: §f" + prosperity, 4);
+        line(obj, "§eTu saldo:", 8);
+        line(obj, String.format("§a%.2f AET", balance), 7);
+        line(obj, "§0", 6);
+        line(obj, "§ePueblo: §f" + prosperity, 5);
+        line(obj, "§eHabitantes: §f" + habitantes, 4);
         line(obj, "§eJugadores: §f" + Bukkit.getOnlinePlayers().size(), 3);
         line(obj, "§1", 2);
         line(obj, "§7gana AET: /sell · ayuda: /guia", 1);

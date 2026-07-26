@@ -22,7 +22,9 @@ import org.bukkit.entity.Villager;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 
 /**
  * Pueblo VIVO: reconcilia el mundo fisico con la poblacion objetivo de la simulacion (crece
@@ -33,8 +35,32 @@ import org.bukkit.event.block.BlockPlaceEvent;
 public final class SettlementModule implements Listener {
 
     private static final long PERIOD = 1200L;   // reconcilia cada 60 s (una casa por vez)
-    private static final String[] NAMES = {"Bruno", "Lena", "Tobias", "Mila", "Ada", "Iker",
-        "Noa", "Gala", "Hugo", "Vera", "Leo", "Sol", "Dario", "Enara", "Cloe", "Nil"};
+    private static final String[] MALE_NAMES = {
+        "Alejandro", "Alvaro", "Adrian", "Aitor", "Alberto", "Alfonso", "Andres", "Angel",
+        "Antonio", "Arnau", "Asier", "Bruno", "Carlos", "Cesar", "Cristian", "Dario", "David",
+        "Diego", "Domingo", "Eduardo", "Emilio", "Enrique", "Ernesto", "Esteban", "Fabian",
+        "Felipe", "Fernando", "Francisco", "Gabriel", "Gael", "German", "Gonzalo", "Guillermo",
+        "Hector", "Hugo", "Ignacio", "Iker", "Ismael", "Ivan", "Jaime", "Javier", "Jesus",
+        "Joaquin", "Jorge", "Jose", "Juan", "Julian", "Julio", "Leo", "Lorenzo", "Lucas", "Luis",
+        "Manuel", "Marc", "Marcos", "Mario", "Martin", "Mateo", "Matias", "Miguel", "Nacho",
+        "Nicolas", "Nil", "Noe", "Oscar", "Oriol", "Pablo", "Pau", "Pedro", "Pol", "Rafael",
+        "Ramon", "Raul", "Ricardo", "Roberto", "Rodrigo", "Ruben", "Salvador", "Samuel",
+        "Santiago", "Saul", "Sergio", "Simon", "Tomas", "Unai", "Vicente", "Victor", "Xavier",
+        "Aaron", "Abel", "Adan", "Alan", "Alonso", "Anton", "Bautista", "Benito", "Bernardo",
+        "Biel", "Teo", "Marco"};
+    private static final String[] FEMALE_NAMES = {
+        "Adriana", "Alba", "Alejandra", "Alicia", "Alma", "Amaia", "Amelia", "Ana", "Andrea",
+        "Angela", "Aitana", "Ainhoa", "Aurora", "Beatriz", "Berta", "Blanca", "Carla", "Carlota",
+        "Carmen", "Carolina", "Catalina", "Cecilia", "Celia", "Clara", "Claudia", "Cloe",
+        "Cristina", "Daniela", "Diana", "Dolores", "Elena", "Elisa", "Elsa", "Emma", "Enara",
+        "Esther", "Eva", "Fatima", "Gabriela", "Gala", "Gema", "Gloria", "Greta", "Helena",
+        "Ines", "Irene", "Iris", "Isabel", "Jimena", "Judith", "Julia", "Laia", "Lara", "Laura",
+        "Leire", "Leonor", "Lidia", "Lorena", "Lucia", "Luisa", "Luz", "Maite", "Malena",
+        "Manuela", "Marcela", "Margarita", "Maria", "Marina", "Marta", "Martina", "Mireia",
+        "Miriam", "Monica", "Nadia", "Naia", "Natalia", "Nayara", "Nerea", "Noa", "Noelia",
+        "Nora", "Nuria", "Olga", "Olivia", "Paloma", "Patricia", "Paula", "Pilar", "Raquel",
+        "Rebeca", "Rocio", "Rosa", "Sara", "Sofia", "Sol", "Sonia", "Teresa", "Vega", "Vera",
+        "Victoria", "Violeta", "Yaiza", "Zoe"};
     private static final Villager.Profession[] PROFS = {Villager.Profession.FARMER,
         Villager.Profession.FISHERMAN, Villager.Profession.SHEPHERD, Villager.Profession.MASON,
         Villager.Profession.LIBRARIAN, Villager.Profession.TOOLSMITH, Villager.Profession.BUTCHER,
@@ -69,12 +95,14 @@ public final class SettlementModule implements Listener {
         final Villager baby;
         final String name;
         final String parent;
+        final String gender;
         final long matureAt;
 
-        Child(Villager baby, String name, String parent, long matureAt) {
+        Child(Villager baby, String name, String parent, String gender, long matureAt) {
             this.baby = baby;
             this.name = name;
             this.parent = parent;
+            this.gender = gender;
             this.matureAt = matureAt;
         }
     }
@@ -93,6 +121,7 @@ public final class SettlementModule implements Listener {
         boolean retired;
         int floors = 1;      // plantas de su casa (para saber que region ocupa)
         String spouse;       // nombre del conyuge, o null si esta soltero/a
+        String gender = "m"; // "m" o "f" (dos hombres no tienen hijos biologicos)
 
         double age(long now) {
             return initialAge + (now - bornMillis) * YEARS_PER_DAY / DAY_MS;
@@ -101,7 +130,7 @@ public final class SettlementModule implements Listener {
         String toLine() {
             return name + ";" + profKey + ";" + x + ";" + y + ";" + z + ";" + bornMillis + ";"
                     + initialAge + ";" + deathAge + ";" + (parent == null ? "" : parent) + ";"
-                    + retired + ";" + floors + ";" + (spouse == null ? "" : spouse);
+                    + retired + ";" + floors + ";" + (spouse == null ? "" : spouse) + ";" + gender;
         }
     }
 
@@ -179,9 +208,11 @@ public final class SettlementModule implements Listener {
         final int pz = plaza.getBlockZ();
         int[] best = null;
         int bestFlat = Integer.MAX_VALUE;
-        for (int t = 0; t < 24; t++) {
+        // Banda COMPACTA alrededor de la plaza (no crece con la poblacion): la aldea se agrupa
+        // en anillos en vez de ensancharse sin fin. Los caminos a la plaza las conectan.
+        for (int t = 0; t < 48; t++) {
             final double ang = rng.nextDouble() * Math.PI * 2;
-            final int dist = 20 + index * 2 + rng.nextInt(34);
+            final int dist = 16 + rng.nextInt(26);
             final int cx = px + (int) Math.round(Math.cos(ang) * dist);
             final int cz = pz + (int) Math.round(Math.sin(ang) * dist);
             if (tooClose(cx, cz)) {
@@ -268,10 +299,11 @@ public final class SettlementModule implements Listener {
         load();   // reaparecen los colonos ya existentes en sus casas (sin reconstruir)
         loadCivic();
         if (fresh && colonos.isEmpty()) {
-            // Mundo NUEVO: dos aldeanos fundadores, cada uno con su casa pequena y su puesto.
+            // Mundo NUEVO: dos fundadores, un hombre y una mujer (asi pueden formar una familia),
+            // cada uno con su casa pequena y su puesto.
             final var rng = ThreadLocalRandom.current();
-            growAdult(0, freshName(rng), 22 + rng.nextInt(30), "");
-            growAdult(1, freshName(rng), 22 + rng.nextInt(30), "");
+            growAdult(0, freshName("m", rng), "m", 22 + rng.nextInt(30), "");
+            growAdult(1, freshName("f", rng), "f", 22 + rng.nextInt(30), "");
         }
         plugin.getServer().getScheduler().runTaskTimer(plugin, this::reconcile, PERIOD, PERIOD);
         plugin.getLogger().info("[Aetheria] Pueblo vivo: reconciliando poblacion cada 60 s ("
@@ -306,16 +338,18 @@ public final class SettlementModule implements Listener {
                     c.retired = Boolean.parseBoolean(f[9]);
                     c.floors = f.length >= 11 ? Integer.parseInt(f[10]) : 1;
                     c.spouse = f.length >= 12 && !f[11].isEmpty() ? f[11] : null;
+                    c.gender = f.length >= 14 && !f[13].isEmpty() ? f[13] : randGender(rng);
                 } else {   // formato antiguo: se le asigna una edad plausible
                     c.bornMillis = System.currentTimeMillis();
                     c.initialAge = 20 + rng.nextInt(40);
                     c.deathAge = randomDeathAge(rng);
                     c.parent = "";
+                    c.gender = randGender(rng);
                 }
                 // Corrige nombres duplicados heredados de versiones antiguas (p.ej. tres "Tobias").
                 for (final Colono other : colonos) {
                     if (other.name.equals(c.name)) {
-                        c.name = freshName(rng);
+                        c.name = freshName(c.gender, rng);
                         renamed = true;
                         break;
                     }
@@ -359,8 +393,8 @@ public final class SettlementModule implements Listener {
         return Villager.Profession.FARMER;
     }
 
-    /** Un nombre que NO este ya en uso por otro colono, nino o vecino del nucleo. */
-    private String freshName(java.util.Random rng) {
+    /** Un nombre del sexo dado que NO este ya en uso por otro colono o nino. */
+    private String freshName(String gender, java.util.Random rng) {
         final java.util.Set<String> used = new java.util.HashSet<>();
         for (final Colono c : colonos) {
             used.add(c.name);
@@ -368,11 +402,9 @@ public final class SettlementModule implements Listener {
         for (final Child ch : children) {
             used.add(ch.name);
         }
-        used.add("Nara");
-        used.add("Pol");
-        used.add("Sella");
+        final String[] pool = "f".equals(gender) ? FEMALE_NAMES : MALE_NAMES;
         final List<String> free = new ArrayList<>();
-        for (final String n : NAMES) {
+        for (final String n : pool) {
             if (!used.contains(n)) {
                 free.add(n);
             }
@@ -380,14 +412,18 @@ public final class SettlementModule implements Listener {
         if (!free.isEmpty()) {
             return free.get(rng.nextInt(free.size()));
         }
-        // Todos los nombres en uso: genera una variante unica ("Tobias II", "Tobias III"...).
-        final String base = NAMES[rng.nextInt(NAMES.length)];
+        // Todos en uso: genera una variante unica ("Tobias II", "Tobias III"...).
+        final String base = pool[rng.nextInt(pool.length)];
         for (int i = 2; ; i++) {
             final String cand = base + " " + roman(i);
             if (!used.contains(cand)) {
                 return cand;
             }
         }
+    }
+
+    private static String randGender(java.util.Random rng) {
+        return rng.nextBoolean() ? "m" : "f";
     }
 
     private static String roman(int n) {
@@ -415,9 +451,11 @@ public final class SettlementModule implements Listener {
                 final var rng = ThreadLocalRandom.current();
                 // Hasta tener 2 adultos fundadores, llegan adultos directos; luego, nacen ninos.
                 if (adults < 2 || target - have >= 2) {
-                    growAdult(colonos.size(), freshName(rng), 20 + rng.nextInt(40), "");
-                } else {
-                    bearChild();
+                    final String g = randGender(rng);
+                    growAdult(colonos.size(), freshName(g, rng), g, 20 + rng.nextInt(40), "");
+                } else if (!bearChild()) {
+                    final String g = randGender(rng);   // sin pareja fertil, llega un inmigrante
+                    growAdult(colonos.size(), freshName(g, rng), g, 20 + rng.nextInt(40), "");
                 }
             } else if (have > target) {
                 if (!children.isEmpty()) {
@@ -434,22 +472,30 @@ public final class SettlementModule implements Listener {
         }));
     }
 
-    /** Nace un nino de un padre/madre del pueblo; jugara cerca de su casa y crecera con el tiempo. */
-    private void bearChild() {
+    /** Nace un nino de una PAREJA fertil (un hombre y una mujer, casados). Dos personas del
+     *  mismo sexo no tienen hijos biologicos. Devuelve true si hubo nacimiento. */
+    private boolean bearChild() {
         final var rng = ThreadLocalRandom.current();
-        final String name = freshName(rng);
-        // Padre/madre: un colono adulto no jubilado, si lo hay.
-        final List<Colono> adults = new ArrayList<>();
+        // Madres posibles: mujer no jubilada, casada con un hombre no jubilado.
+        final List<Colono> mothers = new ArrayList<>();
         for (final Colono c : colonos) {
-            if (!c.retired) {
-                adults.add(c);
+            if (c.retired || !"f".equals(c.gender) || c.spouse == null) {
+                continue;
+            }
+            final Colono sp = findColono(c.spouse);
+            if (sp != null && "m".equals(sp.gender) && !sp.retired) {
+                mothers.add(c);
             }
         }
-        final Colono parent = adults.isEmpty() ? null : adults.get(rng.nextInt(adults.size()));
-        // Aparece junto a la casa de su familia (o en la plaza si no hay familia).
-        final Location base = parent != null
-                ? new Location(world, parent.x + 0.5, parent.y, parent.z + 2.5)
-                : village.plaza();
+        if (mothers.isEmpty()) {
+            return false;   // no hay pareja fertil ahora mismo: que venga un inmigrante
+        }
+        final Colono mother = mothers.get(rng.nextInt(mothers.size()));
+        final Colono father = findColono(mother.spouse);
+        final String gender = randGender(rng);
+        final String name = freshName(gender, rng);
+        // Aparece junto a la casa de su familia.
+        final Location base = new Location(world, mother.x + 0.5, mother.y, mother.z + 2.5);
         final Location at = base.clone().add(rng.nextInt(3) - 1, 0, rng.nextInt(3) - 1);
         final Villager baby = (Villager) world.spawnEntity(at, EntityType.VILLAGER);
         baby.setBaby();
@@ -460,22 +506,16 @@ public final class SettlementModule implements Listener {
         baby.setInvulnerable(true);
         baby.addScoreboardTag(BABY_TAG);
         convo.registerConversable(baby, "nino", name);   // se puede hablar con los ninos
-        String childOf = "";
-        if (parent != null) {
-            childOf = ", hijo de " + parent.name;
-            if (parent.spouse != null && !parent.spouse.isEmpty()) {
-                childOf += " y " + parent.spouse;
-            }
-        }
-        convo.setBio(name, "Eres " + name + ", un nino pequeno del pueblo de Aetheria" + childOf
+        final String hijo = "f".equals(gender) ? "hija" : "hijo";
+        final String of = ", " + hijo + " de " + father.name + " y " + mother.name;
+        convo.setBio(name, "Eres " + name + ", un nino pequeno del pueblo de Aetheria" + of
                 + ". Todavia no trabajas; hablas con la inocencia de un nino.");
-        final String parentName = parent != null ? parent.name : "";
-        children.add(new Child(baby, name, parentName, System.currentTimeMillis() + GROW_MS));
-        final String of = childOf;
+        children.add(new Child(baby, name, mother.name, gender, System.currentTimeMillis() + GROW_MS));
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
-                "§d[Pueblo] §fHa nacido §b" + name + "§f" + of + " en el pueblo."));
-        gateway.postEvent("nacimiento", "Ha nacido " + name + of + " en el pueblo.");
+                "§d[Pueblo] §fHa nacido §b" + name + "§f" + of + "."));
+        gateway.postEvent("nacimiento", "Nace " + name + of + ".");
         plugin.getLogger().info("[Aetheria] Pueblo vivo: nace un nino (" + name + ").");
+        return true;
     }
 
     /** Al llegar a la edad de trabajar (16), el nino se hace adulto con casa y oficio propios. */
@@ -491,7 +531,7 @@ public final class SettlementModule implements Listener {
             if (c.baby != null) {
                 c.baby.remove();
             }
-            growAdult(colonos.size(), c.name, WORK_AGE, c.parent);
+            growAdult(colonos.size(), c.name, c.gender, WORK_AGE, c.parent);
             Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                     "§a[Pueblo] §b" + c.name + " §7ha crecido y se ha mudado a su propia casa."));
         }
@@ -558,9 +598,10 @@ public final class SettlementModule implements Listener {
         buildCivic(plaza.getBlockX() + u[0], plaza.getBlockZ() + u[1], u[2]);
         civic++;
         saveCivic();
+        final String quien = tradesman(Villager.Profession.MASON, "El cantero del pueblo");
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
-                "§7[Pueblo] La prosperidad se nota: el pueblo ha mejorado la plaza."));
-        gateway.postEvent("mejora", "El pueblo, prospero, ha embellecido su plaza.");
+                "§7[Pueblo] La prosperidad se nota: se ha mejorado la plaza."));
+        gateway.postEvent("mejora", quien + " ha embellecido la plaza del pueblo.");
     }
 
     private void buildCivic(int x, int z, int type) {
@@ -624,7 +665,7 @@ public final class SettlementModule implements Listener {
         }
     }
 
-    private void growAdult(int index, String name, double initialAge, String parent) {
+    private void growAdult(int index, String name, String gender, double initialAge, String parent) {
         final int[] spot = findBuildSpot(index);
         if (spot == null) {
             return;   // no encontro sitio libre; lo reintenta el proximo ciclo
@@ -660,6 +701,7 @@ public final class SettlementModule implements Listener {
         c.deathAge = randomDeathAge(rng);
         c.parent = parent;
         c.floors = 1;
+        c.gender = gender;
         colonos.add(c);
         save();
 
@@ -704,11 +746,20 @@ public final class SettlementModule implements Listener {
         java.util.Collections.shuffle(singles, rng);
         Colono a = null;
         Colono b = null;
-        for (int i = 0; i < singles.size() && a == null; i++) {
-            for (int j = i + 1; j < singles.size(); j++) {
-                if (compatible(singles.get(i), singles.get(j))) {
-                    a = singles.get(i);
-                    b = singles.get(j);
+        // Preferencia por pareja de DISTINTO sexo (lo habitual); si no hay, se permite del mismo.
+        for (int pass = 0; pass < 2 && a == null; pass++) {
+            for (int i = 0; i < singles.size() && a == null; i++) {
+                for (int j = i + 1; j < singles.size(); j++) {
+                    final Colono ci = singles.get(i);
+                    final Colono cj = singles.get(j);
+                    if (!compatible(ci, cj)) {
+                        continue;
+                    }
+                    if (pass == 0 && ci.gender.equals(cj.gender)) {
+                        continue;   // primera pasada: solo distinto sexo
+                    }
+                    a = ci;
+                    b = cj;
                     break;
                 }
             }
@@ -837,9 +888,10 @@ public final class SettlementModule implements Listener {
             final String job = c.retired
                     ? "jubilado (antes fue " + oficio(profFromKey(c.profKey)) + ")"
                     : oficio(profFromKey(c.profKey));
+            final boolean fem = "f".equals(c.gender);
             final StringBuilder fam = new StringBuilder();
             if (c.spouse != null && !c.spouse.isEmpty()) {
-                fam.append(" Estas casado con ").append(c.spouse).append(".");
+                fam.append(fem ? " Estas casada con " : " Estas casado con ").append(c.spouse).append(".");
             }
             if (c.parent != null && !c.parent.isEmpty()) {
                 fam.append(" Tu padre o madre es ").append(c.parent).append(".");
@@ -848,7 +900,8 @@ public final class SettlementModule implements Listener {
             if (!kids.isEmpty()) {
                 fam.append(" Tus hijos son ").append(kids.replace("sus hijos ", "")).append(".");
             }
-            final String bio = "Eres " + c.name + ", vecino del pueblo de Aetheria. Tienes " + age
+            final String bio = "Eres " + c.name + ", " + (fem ? "vecina" : "vecino")
+                    + " del pueblo de Aetheria. Tienes " + age
                     + " anos y tu oficio es " + job + "." + fam
                     + " Si te preguntan, habla con naturalidad de tu edad, tu trabajo y tu familia.";
             convo.setBio(c.name, bio);
@@ -1006,27 +1059,60 @@ public final class SettlementModule implements Listener {
         }
     }
 
+    /** Creepers/TNT no destruyen casas de aldeano ni el nucleo del pueblo (se quitan de la lista
+     *  de bloques a volar). Asi no hay que reconstruir: sencillamente no se rompen. */
+    @EventHandler(ignoreCancelled = true)
+    public void onExplode(EntityExplodeEvent e) {
+        e.blockList().removeIf(b -> ownerAt(b) != null || inVillageCore(b));
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onBlockExplode(BlockExplodeEvent e) {
+        e.blockList().removeIf(b -> ownerAt(b) != null || inVillageCore(b));
+    }
+
     /** Seca una casa: quita el agua/lava que se haya colado dentro (±3 del centro, sin tocar
      *  el estanque del pescador ni el huerto, que estan en el puesto al este). */
-    private void deflood(int cx, int fy, int cz, int floors) {
+    private int deflood(int cx, int fy, int cz, int floors) {
+        int dried = 0;
         for (int dx = -3; dx <= 3; dx++) {
             for (int dz = -3; dz <= 3; dz++) {
                 for (int y = fy + 1; y <= fy + floors * 6 + 2; y++) {
                     final Block b = world.getBlockAt(cx + dx, y, cz + dz);
                     if (b.getType() == Material.WATER || b.getType() == Material.LAVA) {
                         b.setType(Material.AIR, false);
+                        dried++;
                     }
                 }
             }
         }
+        return dried;
     }
 
-    /** MANTENIMIENTO del pueblo (lo hace el propio servidor cada ciclo): seca las casas que se
-     *  hayan inundado. Asi, aunque algo se cuele, el pueblo lo repara solo. */
+    /** MANTENIMIENTO: el ALBANIL del pueblo (si lo hay) repara las casas que se hayan inundado.
+     *  Asi, aunque algo se cuele, el pueblo lo arregla solo. Enmarcado como un oficio, no como
+     *  "el servidor", para que quede realista. */
     private void repairHouses() {
+        int dried = 0;
         for (final Colono c : colonos) {
-            deflood(c.x, c.y - 1, c.z, c.floors);
+            dried += deflood(c.x, c.y - 1, c.z, c.floors);
         }
+        if (dried > 0) {
+            final String quien = tradesman(Villager.Profession.MASON, "El albanil del pueblo");
+            Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
+                    "§7[Pueblo] " + quien + " ha achicado el agua de una casa inundada."));
+        }
+    }
+
+    /** Nombre de un colono con ese oficio (para atribuirle una tarea), o un generico si no hay. */
+    private String tradesman(Villager.Profession prof, String fallback) {
+        final String key = profKey(prof);
+        for (final Colono c : colonos) {
+            if (!c.retired && key.equals(c.profKey)) {
+                return c.name + " (" + oficio(prof) + ")";
+            }
+        }
+        return fallback;
     }
 
     /** Demuele la casa de un colono (al morir o emigrar): la retira y deja un solar de cesped. */

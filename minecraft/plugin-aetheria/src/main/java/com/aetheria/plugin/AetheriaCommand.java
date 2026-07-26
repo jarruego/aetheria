@@ -157,7 +157,7 @@ public final class AetheriaCommand implements CommandExecutor {
 
     private void handleCronica(Player player) {
         player.sendMessage("§7[Aetheria] abriendo la cronica del mundo...");
-        gateway.getWorldEvents(40)
+        gateway.getWorldEvents(150)
                 .whenComplete((events, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
                     if (err != null) {
                         player.sendMessage("§c[Aetheria] error: " + rootMessage(err));
@@ -191,14 +191,25 @@ public final class AetheriaCommand implements CommandExecutor {
             final var o = e.getAsJsonObject();
             final String kind = o.get("kind").getAsString();
             final String desc = o.get("description").getAsString();
-            sb.append(iconFor(kind)).append("§0").append(desc).append("\n\n");
+            // En los sucesos destacables (nacimiento, boda, muerte) se anota la fecha.
+            String fecha = "";
+            if (notable(kind) && o.has("created_at") && !o.get("created_at").isJsonNull()) {
+                final String d = shortDate(o.get("created_at").getAsString());
+                if (!d.isEmpty()) {
+                    fecha = "§7(" + d + ") §0";
+                }
+            }
+            sb.append(iconFor(kind)).append(fecha).append("§0").append(desc).append("\n\n");
             if (++inPage >= 3) {
                 pages.add(net.kyori.adventure.text.Component.text(sb.toString()));
                 sb.setLength(0);
                 inPage = 0;
+                if (pages.size() >= 50) {
+                    break;   // nunca mas de 50 paginas
+                }
             }
         }
-        if (sb.length() > 0) {
+        if (sb.length() > 0 && pages.size() < 50) {
             pages.add(net.kyori.adventure.text.Component.text(sb.toString()));
         }
         meta.pages(pages);
@@ -206,15 +217,42 @@ public final class AetheriaCommand implements CommandExecutor {
         return book;
     }
 
+    private static boolean notable(String kind) {
+        return switch (kind) {
+            case "nacimiento", "boda", "obituario", "festival", "hardship" -> true;
+            default -> false;
+        };
+    }
+
+    /** ISO "2026-07-26T..." -> "26 jul". */
+    private static String shortDate(String iso) {
+        if (iso == null || iso.length() < 10) {
+            return "";
+        }
+        final String[] mes = {"", "ene", "feb", "mar", "abr", "may", "jun",
+                "jul", "ago", "sep", "oct", "nov", "dic"};
+        try {
+            final int m = Integer.parseInt(iso.substring(5, 7));
+            final int d = Integer.parseInt(iso.substring(8, 10));
+            return d + " " + (m >= 1 && m <= 12 ? mes[m] : "");
+        } catch (Exception ex) {
+            return "";
+        }
+    }
+
     private static String iconFor(String kind) {
         return switch (kind) {
-            case "festival" -> "§2✦ ";     // festival
-            case "hardship" -> "§4✦ ";     // penuria
-            case "growth" -> "§2▲ ";       // crece
-            case "decline" -> "§4▼ ";      // decae
-            case "social" -> "§1• ";       // social
-            case "market" -> "§6• ";       // mercado
-            default -> "§8• ";              // economia y otros
+            case "festival" -> "§2✦ ";        // festival
+            case "hardship" -> "§4✦ ";        // penuria
+            case "prosperity" -> "§6✦ ";      // rumbo del pueblo (florece/calma/mala racha)
+            case "nacimiento" -> "§d✿ ";      // nacimiento
+            case "boda" -> "§d❤ ";            // boda
+            case "obituario" -> "§8✝ ";       // fallecimiento
+            case "jubilacion" -> "§7☕ ";      // jubilacion
+            case "mejora" -> "§a✦ ";          // mejora del pueblo
+            case "growth" -> "§2▲ ";          // crece
+            case "decline" -> "§4▼ ";         // decae
+            default -> "§8• ";                 // otros
         };
     }
 

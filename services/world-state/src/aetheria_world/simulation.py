@@ -80,12 +80,24 @@ _HARDSHIPS = [
 ]
 
 
+# Ultimo nivel de prosperidad anotado en la cronica (para apuntar solo los CAMBIOS de rumbo).
+_last_level: str | None = None
+
+
+def _prosperity_line(level: str) -> str:
+    return {
+        "floreciente": "El pueblo florece: los negocios rebosan y no falta trabajo para nadie.",
+        "prospero": "El pueblo prospera y se respira optimismo por las calles.",
+        "estable": "El pueblo vive un tiempo de calma, sin grandes cambios.",
+        "en apuros": "El pueblo atraviesa una mala racha y las cuentas aprietan.",
+    }.get(level, f"El rumbo del pueblo cambia: ahora esta {level}.")
+
+
 async def run_tick(conn) -> dict:
     """Ejecuta UN tick economico (con festivales, penurias y sustos). Devuelve un resumen."""
     banco = await _account(conn, _BANCO, "system")
     total_income = decimal.Decimal(0)
     total_upkeep = decimal.Decimal(0)
-    lines: list[str] = []
 
     # Evento global del dia: festival (bonanza) o penuria (perdidas). Poco frecuentes.
     roll = random.random()
@@ -93,7 +105,7 @@ async def run_tick(conn) -> dict:
     hardship = 0.12 <= roll < 0.24
     boost = decimal.Decimal("1.6") if festival else decimal.Decimal(1)
 
-    for owner_id, name, sector in _BUSINESSES:
+    for owner_id, _name, sector in _BUSINESSES:
         acc = await _account(conn, owner_id, "company")
         income = _money(decimal.Decimal(str(random.uniform(
             settings.sim_income_min, settings.sim_income_max))) * boost)
@@ -107,26 +119,25 @@ async def run_tick(conn) -> dict:
         if upkeep > 0:
             await _move(conn, acc, banco, upkeep, f"gastos {sector}")
 
-        net = income - upkeep
         total_income += income
         total_upkeep += upkeep
-        lines.append(f"{name} {'gano' if net >= 0 else 'perdio'} {abs(net)} AET ({sector})")
 
     net_total = total_income - total_upkeep
     prov = await prosperity(conn)
-    description = ("El pueblo trabajo: " + "; ".join(lines)
-                  + f". Balance neto {net_total} AET. El pueblo esta {prov['level']}.")
-    await _event(conn, "economy", description,
-                 {"net": str(net_total), "prosperity": prov["level"], "wealth": prov["wealth"]})
+
+    # Los balances economicos son lo MENOS importante: no se apunta el detalle cada tick. Solo
+    # se deja constancia (bien redactada) cuando CAMBIA el rumbo del pueblo (florece / calma /
+    # mala racha), para que la cronica no se llene de numeros ni se alargue.
+    global _last_level
+    if prov["level"] != _last_level:
+        await _event(conn, "prosperity", _prosperity_line(prov["level"]),
+                     {"prosperity": prov["level"], "wealth": prov["wealth"]})
+        _last_level = prov["level"]
 
     if festival:
         await _event(conn, "festival", random.choice(_FESTIVALS), {})
     elif hardship:
         await _event(conn, "hardship", random.choice(_HARDSHIPS), {})
-    elif random.random() < 0.25:
-        pct = random.randint(-8, 8)
-        verb = "subieron" if pct >= 0 else "bajaron"
-        await _event(conn, "market", f"Los precios del mercado {verb} un {abs(pct)}%.", {"pct": pct})
 
     return {"net": str(net_total), "prosperity": prov["level"], "wealth": prov["wealth"]}
 

@@ -46,6 +46,9 @@ Cada fase deja algo funcionando y verificable.
 - [x] Portales del lobby a main (esmeralda) y creativo (diamante); vuelta al lobby en cada mundo
 - [x] Comandos /sethome y /home (persistencia local v1)
 - [x] Servidor creativo (superflat) como backend de Velocity
+- [x] Portal de vuelta del main: zona segura 5x5 (sin spawns de mobs, barrido periodico
+      de hostiles y sin dano de monstruos al jugador) + decoracion tema geoda de amatista
+      (nucleo de amatista, borde calcita/basalto, pilares con lampara marina)
 
 ## Fase 5 - El mundo recuerda (camino de escritura a la DB)  (COMPLETA)
 - [x] Camino de escritura: plugin -> gateway -> world-state -> Postgres (ADR-0010)

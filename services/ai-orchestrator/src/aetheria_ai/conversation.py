@@ -33,32 +33,70 @@ _LEVEL3_HINTS = (
     "por que", "por qué", "explica", "compara", "estrategia", "optimiza",
 )
 
-# Personalidad de cada NPC: (nombre, caracter).
-_PERSONAS: dict[str, tuple[str, str]] = {
-    "guia-main": ("Bruno", "un herrero robusto, campechano y bromista"),
-    "guia-creative": ("Mila", "una arquitecta sonadora y entusiasta"),
-    "guia-creativo": ("Mila", "una arquitecta sonadora y entusiasta"),
-    "guia-vuelta": ("Tobias", "un cartografo viajero, tranquilo y curioso"),
+# Definicion de cada NPC: nombre, caracter, donde esta y en que ayuda.
+_NPCS: dict[str, dict[str, str]] = {
+    "guia-main": {
+        "name": "Bruno",
+        "trait": "un herrero robusto, campechano y bromista",
+        "where": "junto al portal de esmeralda del lobby, el que lleva al mundo principal",
+        "help": "orientar a los viajeros y animarles a cruzar al mundo principal, donde crece la civilizacion",
+    },
+    "guia-creative": {
+        "name": "Mila",
+        "trait": "una arquitecta sonadora y entusiasta",
+        "where": "junto al portal de diamante del lobby, el que lleva al mundo creativo",
+        "help": "invitar a la gente a construir sin limites en el mundo creativo",
+    },
+    "guia-vuelta": {
+        "name": "Tobias",
+        "trait": "un cartografo viajero, tranquilo y curioso",
+        "where": "junto al portal de vuelta al lobby, en los mundos de juego",
+        "help": "ayudar a los viajeros a volver al lobby",
+    },
 }
-_DEFAULT_PERSONA = ("Aldo", "un aldeano cercano y amable")
+_NPCS["guia-creativo"] = _NPCS["guia-creative"]  # alias por si acaso
+_DEFAULT_NPC = {
+    "name": "Aldo", "trait": "un aldeano cercano y amable",
+    "where": "en el pueblo", "help": "echar una mano a quien pase",
+}
+
+# Contexto compartido del mundo y del elenco (lo que TODO NPC sabe).
+_WORLD = (
+    "Aetheria es un pueblo dentro de un servidor de Minecraft. Tiene un LOBBY (una sala "
+    "flotante desde donde se viaja), un MUNDO PRINCIPAL (donde crecen la civilizacion y la "
+    "economia) y un MUNDO CREATIVO (para construir libremente). Entre ellos se viaja por PORTALES."
+)
+_ROSTER = (
+    "Conoces a los demas del pueblo: Bruno (herrero, junto al portal al mundo principal), "
+    "Mila (arquitecta, junto al portal al creativo) y Tobias (cartografo, junto al portal de "
+    "vuelta al lobby)."
+)
+_LIMITS = (
+    "PUEDES: charlar, orientar, contar cosas del pueblo y de sus mundos, y senalar los portales. "
+    "NO PUEDES: dar objetos, teletransportar a nadie (de eso se encargan los portales), dar "
+    "permisos ni cambiar el mundo. Si te piden algo asi, declinalo con amabilidad sin salir del personaje."
+)
 
 _WINDOW = 10          # turnos verbatim que ve el LLM (memoria de trabajo)
 _CONSOLIDATE_AT = 20  # al llegar a tantos turnos, se condensan los viejos en la ficha
 _MAX_SUMMARY = 700    # tope de la ficha (lo viejo se va difuminando)
 
 
-def _persona(npc_id: str) -> tuple[str, str]:
-    return _PERSONAS.get(npc_id, _DEFAULT_PERSONA)
+def _npc(npc_id: str) -> dict[str, str]:
+    return _NPCS.get(npc_id, _DEFAULT_NPC)
 
 
 def _system_prompt(npc_id: str, profile: str) -> str:
-    name, trait = _persona(npc_id)
+    n = _npc(npc_id)
     base = (
-        f"Eres {name}, {trait}. Vives en el pueblo de Aetheria, un lugar dentro de Minecraft. "
+        f"Eres {n['name']}, {n['trait']}. Estas {n['where']}. "
+        f"{_WORLD} "
+        f"Tu papel es {n['help']}. "
+        f"{_ROSTER} "
+        f"{_LIMITS} "
         "Hablas como una PERSONA de verdad: cercano, natural, con frases cortas y calidas. "
         "NUNCA digas que eres una IA, un modelo, un sistema o un programa; NO hables de "
-        "eficiencia, recursos, algoritmos ni simulaciones. "
-        f"Si te preguntan como te llamas, te llamas {name}. "
+        f"eficiencia, algoritmos ni simulaciones. Si te preguntan como te llamas, eres {n['name']}. "
         "Responde SIEMPRE en espanol y en 1 o 2 frases."
     )
     if profile:

@@ -96,16 +96,13 @@ public final class NpcRoutineModule {
         return Math.max(0, workers.size() - BASE);
     }
 
-    /** Da de alta un colono nuevo (con oficio al azar) que vive y trabaja donde se indica. */
-    public void addColono(String npcId, String name, Location home, Location work) {
+    /** Da de alta un colono nuevo con su oficio, que vive y trabaja donde se indica. */
+    public void addColono(String npcId, String name, Location home, Location work,
+            Villager.Profession prof) {
         final Worker w = new Worker(npcId, name, home, work, village.plaza());
         w.entity = spawnWorker(w);
         if (w.entity instanceof Villager v) {
-            final Villager.Profession[] profs = {Villager.Profession.FARMER,
-                Villager.Profession.LIBRARIAN, Villager.Profession.FISHERMAN,
-                Villager.Profession.FLETCHER, Villager.Profession.SHEPHERD, Villager.Profession.MASON,
-                Villager.Profession.BUTCHER, Villager.Profession.TOOLSMITH};
-            v.setProfession(profs[java.util.concurrent.ThreadLocalRandom.current().nextInt(profs.length)]);
+            v.setProfession(prof);
         }
         workers.add(w);
     }

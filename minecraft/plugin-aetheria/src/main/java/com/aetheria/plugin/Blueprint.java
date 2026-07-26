@@ -83,7 +83,7 @@ public final class Blueprint {
             final int fy = player.getWorld().getHighestBlockYAt(cx, cz);
             return buildHouse(player.getWorld(), cx, cz, fy, f.getOppositeFace(), 3, 2,
                     Material.OAK_PLANKS, Material.SPRUCE_LOG, Material.DARK_OAK_PLANKS,
-                    Material.BRICKS, true);
+                    Material.BRICKS, true, player.getName());
         }
         final List<Block> blocks = CATALOG.get(name);
         if (blocks == null) {
@@ -122,7 +122,7 @@ public final class Blueprint {
      */
     public static int buildHouse(World world, int cx, int cz, int floorY, BlockFace door,
             int half, int floors, Material wall, Material corner, Material roof, Material accent,
-            boolean furniture) {
+            boolean furniture, String ownerName) {
         final java.util.Random rng = new java.util.Random();
         final int fh = 4;                          // altura por planta (3 muro + 1 forjado)
         final int topY = floorY + floors * fh;     // nivel del tejado
@@ -170,10 +170,13 @@ public final class Blueprint {
                     }
                 }
             }
-            if (fl < floors - 1) {   // forjado de la planta de arriba
-                for (int dx = -half + 1; dx <= half - 1; dx++) {
-                    for (int dz = -half + 1; dz <= half - 1; dz++) {
-                        set(world, cx + dx, by + fh, cz + dz, Material.SPRUCE_PLANKS);
+            if (fl < floors - 1) {   // forjado + banda perimetral (muro continuo -> apoyo escalera)
+                for (int dx = -half; dx <= half; dx++) {
+                    for (int dz = -half; dz <= half; dz++) {
+                        final boolean edge = Math.abs(dx) == half || Math.abs(dz) == half;
+                        final boolean corn = Math.abs(dx) == half && Math.abs(dz) == half;
+                        set(world, cx + dx, by + fh, cz + dz,
+                                edge ? (corn ? corner : wall) : Material.SPRUCE_PLANKS);
                     }
                 }
             }
@@ -188,20 +191,6 @@ public final class Blueprint {
         placeDoor(world, dgx, floorY + 1, dgz, door.getOppositeFace(), doorMat);
         placeStair(world, dgx + door.getModX(), floorY, dgz + door.getModZ(), door);
         entrance(world, dgx, floorY, dgz, door, entrance);
-
-        // Escalera de mano entre plantas + huecos en los forjados.
-        if (floors > 1) {
-            final int lx = cx - half + 1;
-            final int lz = cz - half + 1;
-            for (int y = floorY + 1; y < topY; y++) {
-                placeLadder(world, lx, y, lz, BlockFace.SOUTH);
-            }
-            for (int fl = 1; fl <= floors; fl++) {
-                set(world, lx, floorY + fl * fh, lz, Material.AIR);
-                set(world, lx, floorY + fl * fh - 1, lz, Material.AIR);
-                placeLadder(world, lx, floorY + fl * fh, lz, BlockFace.SOUTH);
-            }
-        }
 
         // Tejado: a dos aguas (escalonado) o terraza con barandilla.
         if (pitched) {
@@ -248,10 +237,20 @@ public final class Blueprint {
             furnishFloor(world, cx, cz, floorY + fl * fh, half, fl, door, wall, furniture);
         }
 
-        final int sx = door.getModX() != 0 ? 0 : 1;
-        final int sz = door.getModZ() != 0 ? 0 : 1;
-        placeSign(world.getBlockAt(dgx + sx + door.getModX(), floorY + 2, dgz + sz + door.getModZ()),
-                door, "Tu casa");
+        // Escalera de mano AL FINAL: columna continua (nada la corta) con salida arriba.
+        if (floors > 1) {
+            final int lx = cx - half + 1;
+            final int lz = cz - half + 1;
+            for (int y = floorY + 1; y <= topY - 1; y++) {
+                placeLadder(world, lx, y, lz, BlockFace.SOUTH);
+            }
+            set(world, lx, topY, lz, Material.AIR);   // hueco de salida a la terraza/desvan
+        }
+
+        final int sgx = door.getModX() != 0 ? 0 : 1;
+        final int sgz = door.getModZ() != 0 ? 0 : 1;
+        placeSign(world.getBlockAt(dgx + sgx + door.getModX(), floorY + 2, dgz + sgz + door.getModZ()),
+                door, ownerName);
         return n;
     }
 
@@ -418,14 +417,15 @@ public final class Blueprint {
         world.getBlockAt(x - 1, y, z - 1).getRelative(facing).setBlockData(head, false);
     }
 
-    private static void placeSign(org.bukkit.block.Block block, BlockFace facing, String text) {
+    private static void placeSign(org.bukkit.block.Block block, BlockFace facing, String ownerName) {
         block.setType(Material.OAK_WALL_SIGN, false);
         if (block.getBlockData() instanceof Directional dir) {
             dir.setFacing(facing);
             block.setBlockData(dir, false);
         }
         if (block.getState() instanceof Sign sign) {
-            sign.getSide(Side.FRONT).line(1, Component.text(text));
+            sign.getSide(Side.FRONT).line(1, Component.text("Casa de"));
+            sign.getSide(Side.FRONT).line(2, Component.text("§6" + ownerName));
             sign.update(true);
         }
     }

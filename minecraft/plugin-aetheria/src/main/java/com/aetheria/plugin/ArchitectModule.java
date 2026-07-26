@@ -293,7 +293,7 @@ public final class ArchitectModule implements CommandExecutor, Listener {
                     }
                     undo.snapshot(player, Blueprint.houseRegion(cx, cz, floorY, o.half, o.floors), p, "tu casa");
                     final int blocks = Blueprint.buildHouse(player.getWorld(), cx, cz, floorY, door,
-                            o.half, o.floors, pal[0], pal[1], pal[2], pal[3], o.furniture);
+                            o.half, o.floors, pal[0], pal[1], pal[2], pal[3], o.furniture, player.getName());
                     player.sendMessage(String.format("§a[Arquitecto] ¡Hecho! Casa %s de %d plantas (%d "
                             + "bloques). Se cobraron §e%d AET§a. Si no te gusta, §f/deshacer§a.",
                             TIERS.get(o.mat).label(), o.floors, blocks, p));

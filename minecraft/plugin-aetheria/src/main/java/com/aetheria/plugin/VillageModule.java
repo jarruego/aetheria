@@ -58,6 +58,8 @@ public final class VillageModule {
     public Location plaza() { return plaza.clone(); }
     public Location tavern() { return tavern.clone(); }
     public int baseY() { return baseY; }
+    public int spawnX() { return sx; }
+    public int spawnZ() { return sz; }
 
     /** Centro de la casa nº i de expansion (rejilla de filas al sur del pueblo, 16 aparte). */
     public Location expansionSlot(int i) {
@@ -65,7 +67,7 @@ public final class VillageModule {
         final int col = i % perRow;
         final int row = i / perRow;
         final int x = sx + (col - perRow / 2) * 16;
-        final int z = sz + 42 + row * 16;
+        final int z = sz + 44 + row * 16;
         return new Location(world, x, baseY, z);
     }
 

@@ -56,3 +56,5 @@ volumes/
 *.iml
 .DS_Store
 Thumbs.db
+# Backups locales (DB + mundos): nunca al repo
+/backups/

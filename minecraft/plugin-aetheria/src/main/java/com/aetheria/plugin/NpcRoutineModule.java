@@ -69,6 +69,8 @@ public final class NpcRoutineModule {
                 village.naraHome(), village.naraWork(), village.plaza()));
         workers.add(new Worker("vecino-pol", "Pol",
                 village.polHome(), village.polWork(), village.plaza()));
+        workers.add(new Worker("vecina-sella", "Sella",
+                village.mercaderHome(), village.mercaderWork(), village.plaza()));
 
         for (final Worker w : workers) {
             w.entity = spawnWorker(w);

@@ -36,6 +36,8 @@ public final class VillageModule {
     private Location naraWork;
     private Location polHome;
     private Location polWork;
+    private Location mercaderHome;
+    private Location mercaderWork;
     private Location plaza;
 
     public VillageModule(AetheriaPlugin plugin, World world) {
@@ -47,6 +49,8 @@ public final class VillageModule {
     public Location naraWork() { return naraWork.clone(); }
     public Location polHome() { return polHome.clone(); }
     public Location polWork() { return polWork.clone(); }
+    public Location mercaderHome() { return mercaderHome.clone(); }
+    public Location mercaderWork() { return mercaderWork.clone(); }
     public Location plaza() { return plaza.clone(); }
 
     /** Levanta la aldea al sur del spawn (detras del portal), en fila mirando al sur. */
@@ -59,19 +63,44 @@ public final class VillageModule {
         final int baseY = spawn.getBlockY() - 1;
 
         // Limpia el volumen de la aldea (quita restos/vegetacion) para un rebuild limpio.
-        clearArea(sx - 18, sx + 18, sz + 8, sz + 25, baseY + 1, baseY + 9);
+        clearArea(sx - 24, sx + 24, sz + 8, sz + 36, baseY + 1, baseY + 9);
 
         // Casas en fila (mirando al sur, +Z), lejos de la zona del portal (sz-2..sz+7).
         this.naraHome = buildHouse(sx + 6, sz + 12, baseY, "Nara");
         this.polHome = buildHouse(sx - 6, sz + 12, baseY, "Pol");
+        this.mercaderHome = buildHouse(sx + 16, sz + 12, baseY, "Sella");
         // Puestos de trabajo mas al sur.
-        this.naraWork = buildFarm(sx + 14, sz + 20, baseY);
-        this.polWork = buildGuardPost(sx - 14, sz + 20, baseY);
-        // Plaza con pozo en el centro-sur.
+        this.naraWork = buildFarm(sx + 14, sz + 22, baseY);
+        this.polWork = buildGuardPost(sx - 14, sz + 22, baseY);
+        // Plaza con pozo en el centro-sur, mercado detras y una taberna al oeste.
         this.plaza = buildPlaza(sx, sz + 20, baseY);
+        this.mercaderWork = buildMarket(sx, sz + 30, baseY);
+        buildTavern(sx - 16, sz + 12, baseY);
 
-        plugin.getLogger().info("[Aetheria] Aldea construida cerca del spawn (2 casas, granja, "
-                + "puesto de guardia y plaza).");
+        // Caminos de grava que conectan el pueblo.
+        path(sx, baseY, sz + 8, sz + 34);        // eje norte-sur (spawn -> plaza -> mercado)
+        path2(sx, baseY, sz + 12, -16, 16);      // fila de casas (este-oeste)
+
+        plugin.getLogger().info("[Aetheria] Aldea construida (3 casas, granja, guardia, plaza, "
+                + "mercado y taberna).");
+    }
+
+    /** Camino de grava en linea recta a lo largo de Z (a un x fijo), sobre el suelo del pueblo. */
+    private void path(int x, int floorY, int z0, int z1) {
+        for (int z = z0; z <= z1; z++) {
+            if (world.getBlockAt(x, floorY + 1, z).getType().isAir()) {
+                set(x, floorY, z, Material.GRAVEL);
+            }
+        }
+    }
+
+    /** Camino de grava en linea recta a lo largo de X (a un z fijo). */
+    private void path2(int cx, int floorY, int z, int dx0, int dx1) {
+        for (int dx = dx0; dx <= dx1; dx++) {
+            if (world.getBlockAt(cx + dx, floorY + 1, z).getType().isAir()) {
+                set(cx + dx, floorY, z, Material.GRAVEL);
+            }
+        }
     }
 
     private void clearArea(int x0, int x1, int z0, int z1, int y0, int y1) {
@@ -202,6 +231,68 @@ public final class VillageModule {
             }
         }
         return new Location(world, cx + 3 + 0.5, floorY + 1, cz + 0.5);   // punto de reunion al lado
+    }
+
+    /** Plaza-mercado con puestos (toldos de colores) y barriles de genero. */
+    private Location buildMarket(int cx, int cz, int floorY) {
+        foundation(cx, cz, 3, floorY, Material.SMOOTH_STONE, 4);
+        final Material[] toldo = {Material.RED_WOOL, Material.BLUE_WOOL, Material.YELLOW_WOOL,
+                Material.LIME_WOOL};
+        final int[][] spots = {{-2, -2}, {2, -2}, {-2, 2}, {2, 2}};
+        for (int i = 0; i < spots.length; i++) {
+            final int ox = spots[i][0];
+            final int oz = spots[i][1];
+            set(cx + ox - 1, floorY + 1, cz + oz, Material.OAK_FENCE);
+            set(cx + ox - 1, floorY + 2, cz + oz, Material.OAK_FENCE);
+            set(cx + ox + 1, floorY + 1, cz + oz, Material.OAK_FENCE);
+            set(cx + ox + 1, floorY + 2, cz + oz, Material.OAK_FENCE);
+            for (int a = -1; a <= 1; a++) {
+                set(cx + ox + a, floorY + 3, cz + oz, toldo[i]);   // toldo
+            }
+            set(cx + ox, floorY + 1, cz + oz, Material.BARREL);     // genero
+        }
+        // Iluminacion en las esquinas de la plaza-mercado.
+        for (int dx = -3; dx <= 3; dx += 6) {
+            for (int dz = -3; dz <= 3; dz += 6) {
+                set(cx + dx, floorY + 1, cz + dz, Material.SEA_LANTERN);
+            }
+        }
+        placeWallSign(cx + 1, floorY + 2, cz - 3, BlockFace.NORTH, "§6Mercado", "de Aetheria");
+        return new Location(world, cx + 0.5, floorY + 1, cz + 0.5);
+    }
+
+    /** Taberna: casa de madera con barra, barriles y mesas. */
+    private void buildTavern(int cx, int cz, int floorY) {
+        final int half = 2;
+        foundation(cx, cz, half, floorY, Material.SPRUCE_PLANKS, 5);
+        for (int y = floorY + 1; y <= floorY + 3; y++) {
+            for (int dx = -half; dx <= half; dx++) {
+                for (int dz = -half; dz <= half; dz++) {
+                    if (Math.abs(dx) != half && Math.abs(dz) != half) {
+                        continue;
+                    }
+                    final boolean corner = Math.abs(dx) == half && Math.abs(dz) == half;
+                    set(cx + dx, y, cz + dz, corner ? Material.SPRUCE_LOG : Material.SPRUCE_PLANKS);
+                }
+            }
+        }
+        set(cx, floorY + 1, cz + half, Material.AIR);
+        set(cx, floorY + 2, cz + half, Material.AIR);
+        set(cx - half, floorY + 2, cz, Material.GLASS_PANE);
+        set(cx + half, floorY + 2, cz, Material.GLASS_PANE);
+        for (int dx = -half - 1; dx <= half + 1; dx++) {
+            for (int dz = -half - 1; dz <= half + 1; dz++) {
+                set(cx + dx, floorY + 4, cz + dz, Material.DARK_OAK_PLANKS);
+            }
+        }
+        // Barra y barriles al fondo; una mesa y un farol.
+        set(cx - 1, floorY + 1, cz - 1, Material.BARREL);
+        set(cx + 1, floorY + 1, cz - 1, Material.BARREL);
+        set(cx, floorY + 1, cz - 1, Material.BREWING_STAND);
+        set(cx - 1, floorY + 1, cz + 1, Material.OAK_FENCE);       // mesa
+        set(cx - 1, floorY + 2, cz + 1, Material.OAK_PRESSURE_PLATE);
+        set(cx + 1, floorY + 1, cz + 1, Material.LANTERN);
+        placeWallSign(cx + 1, floorY + 2, cz + half + 1, BlockFace.SOUTH, "§6La", "§6Taberna");
     }
 
     // ---------------- Utilidades ----------------

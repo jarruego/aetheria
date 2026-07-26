@@ -73,6 +73,12 @@ _NPCS: dict[str, dict[str, str]] = {
         "where": "en el mundo principal; patrulla de dia y al anochecer se recoge en casa",
         "help": "vigilar que todo este tranquilo y orientar a quien anda perdido",
     },
+    "vecina-sella": {
+        "name": "Sella",
+        "trait": "una comerciante viva y persuasiva, con don de gentes",
+        "where": "en el mercado del pueblo, entre sus puestos de colores",
+        "help": "hablar del comercio del pueblo y animar a comprar y vender (/sell, /shop)",
+    },
 }
 _NPCS["guia-creativo"] = _NPCS["guia-creative"]  # alias por si acaso
 _DEFAULT_NPC = {

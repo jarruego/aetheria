@@ -48,14 +48,24 @@ Vende lo que produces al mercado del pueblo:
 - `/worth` — cuánto vale lo que llevas en la mano.
 - `/shop` — lista de precios de referencia.
 
-## Servicios de la IA (de pago)
+## Servicios: construir con ayuda (de pago)
 
-Contrata a los **maestros del pueblo**: la IA diseña y **construye por ti**, y **solo te
-cobra si lo consigue** (nunca pagas por un encargo que no se puede hacer):
+Primero, **`/servicios`** te muestra todos los servicios y precios.
 
-- `/aetheria servicio arquitecto <qué quieres>` — construcciones.
-- `/aetheria servicio decorador <qué quieres>` — decoración.
-- `/aetheria servicio urbanista <qué quieres>` — planificación.
+### Arquitecto guiado — `/arquitecto`
+Un asistente te va **preguntando y guiando** para encargar una **casa a medida**: eliges
+**tamaño** (pequeña/mediana/grande), **material** (madera/piedra/ladrillo/lujo) y si la
+quieres **amueblada**. El arquitecto **calcula el precio** según lo que pides y solo
+construye cuando **confirmas** (haciendo clic en las opciones del chat) y **pagas**.
+
+- Precio ≈ base(tamaño) × material + mobiliario. Ej.: mediana de piedra amueblada ≈ 248 AET.
+- **Para construir necesitas ser dueño de la parcela**: ponte sobre tu terreno y usa
+  `/claim` primero. Así nadie construye donde no debe. La casa se levanta **frente a ti**.
+
+### Otros encargos a la IA
+- `/aetheria servicio decorador <qué quieres>` y `/aetheria servicio urbanista <qué quieres>`:
+  la IA propone y **solo cobra por lo que construye** (nunca pagas por un plan que no se
+  puede hacer, ni por una simple frase).
 
 Se venden **servicios**, nunca ventajas de combate: nadie compra poder, solo trabajo.
 

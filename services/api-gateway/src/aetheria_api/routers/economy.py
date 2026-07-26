@@ -33,6 +33,12 @@ async def pay(body: dict):
     return await _ws("POST", "/internal/transfer", json=body)
 
 
+@router.post("/reward", dependencies=[Depends(require_internal_token)])
+async def reward(body: dict):
+    """Recompensa a un jugador por trabajo o venta (Jobs/Shop)."""
+    return await _ws("POST", "/internal/reward", json=body)
+
+
 @router.get("/world-events", dependencies=[Depends(require_internal_token)])
 async def world_events(limit: int = 20):
     """Cronica del mundo (Fase 8): que ha pasado mientras no estabas."""

@@ -1,0 +1,247 @@
+package com.aetheria.plugin;
+
+import java.util.concurrent.ThreadLocalRandom;
+
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.World;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.Sign;
+import org.bukkit.block.data.Ageable;
+import org.bukkit.block.data.Directional;
+import org.bukkit.block.data.type.Bed;
+import org.bukkit.block.sign.Side;
+
+import net.kyori.adventure.text.Component;
+
+/**
+ * Fase 7 (aldea fisica) - Construye una ALDEA REAL cerca del spawn del main: casas con
+ * puerta, ventanas, cama y cartel; puestos de trabajo por oficio (granja con compostador,
+ * puesto de guardia con campana); y una plaza con pozo. Todo lo levanta el PLUGIN de forma
+ * determinista (nunca el LLM), y es idempotente: al reconstruir se sobrescriben las mismas
+ * posiciones.
+ *
+ * <p>Ademas define los waypoints (casa/trabajo/plaza) que la rutina de NPC usa, de modo que
+ * los vecinos viven y trabajan en edificios de verdad, no en puntos invisibles.
+ */
+public final class VillageModule {
+
+    private final AetheriaPlugin plugin;
+    private final World world;
+
+    // Waypoints resultantes (centro de cada edificio, a nivel de pie), para la rutina.
+    private Location naraHome;
+    private Location naraWork;
+    private Location polHome;
+    private Location polWork;
+    private Location plaza;
+
+    public VillageModule(AetheriaPlugin plugin, World world) {
+        this.plugin = plugin;
+        this.world = world;
+    }
+
+    public Location naraHome() { return naraHome.clone(); }
+    public Location naraWork() { return naraWork.clone(); }
+    public Location polHome() { return polHome.clone(); }
+    public Location polWork() { return polWork.clone(); }
+    public Location plaza() { return plaza.clone(); }
+
+    /** Levanta la aldea al sur del spawn (detras del portal), en fila mirando al sur. */
+    public void build() {
+        final Location spawn = world.getSpawnLocation();
+        final int sx = spawn.getBlockX();
+        final int sz = spawn.getBlockZ();
+
+        // Casas en fila (mirando al sur, +Z), lejos de la zona del portal (sz-2..sz+7).
+        this.naraHome = buildHouse(sx + 6, sz + 12, "Nara");
+        this.polHome = buildHouse(sx - 6, sz + 12, "Pol");
+        // Puestos de trabajo mas al sur.
+        this.naraWork = buildFarm(sx + 14, sz + 20);
+        this.polWork = buildGuardPost(sx - 14, sz + 20);
+        // Plaza con pozo en el centro-sur.
+        this.plaza = buildPlaza(sx, sz + 20);
+
+        plugin.getLogger().info("[Aetheria] Aldea construida cerca del spawn (2 casas, granja, "
+                + "puesto de guardia y plaza).");
+    }
+
+    // ---------------- Edificios ----------------
+
+    private Location buildHouse(int cx, int cz, String name) {
+        final int floorY = world.getHighestBlockYAt(cx, cz);
+        final int half = 2;
+        foundation(cx, cz, half, floorY, Material.STONE_BRICKS, 5);
+
+        // Muros (esquinas de tronco, paredes de tablon) de 3 de alto.
+        for (int y = floorY + 1; y <= floorY + 3; y++) {
+            for (int dx = -half; dx <= half; dx++) {
+                for (int dz = -half; dz <= half; dz++) {
+                    final boolean perimeter = Math.abs(dx) == half || Math.abs(dz) == half;
+                    if (!perimeter) {
+                        continue;
+                    }
+                    final boolean corner = Math.abs(dx) == half && Math.abs(dz) == half;
+                    set(cx + dx, y, cz + dz, corner ? Material.SPRUCE_LOG : Material.OAK_PLANKS);
+                }
+            }
+        }
+        // Puerta abierta al frente (sur, +Z): hueco de 1x2.
+        set(cx, floorY + 1, cz + half, Material.AIR);
+        set(cx, floorY + 2, cz + half, Material.AIR);
+        // Ventanas de cristal en los otros tres lados.
+        set(cx - half, floorY + 2, cz, Material.GLASS_PANE);
+        set(cx + half, floorY + 2, cz, Material.GLASS_PANE);
+        set(cx, floorY + 2, cz - half, Material.GLASS_PANE);
+
+        // Tejado solido con alero (7x7) un bloque por encima de los muros.
+        for (int dx = -half - 1; dx <= half + 1; dx++) {
+            for (int dz = -half - 1; dz <= half + 1; dz++) {
+                set(cx + dx, floorY + 4, cz + dz, Material.DARK_OAK_PLANKS);
+            }
+        }
+
+        // Interior: farol y cama.
+        set(cx + 1, floorY + 1, cz - 1, Material.LANTERN);
+        placeBed(cx - 1, floorY + 1, cz - 1, BlockFace.EAST);
+
+        // Cartel con el nombre en la fachada, junto a la puerta.
+        placeWallSign(cx + 1, floorY + 2, cz + half + 1, BlockFace.SOUTH, "Casa de", "§6" + name);
+
+        return new Location(world, cx + 0.5, floorY + 1, cz + 0.5);
+    }
+
+    private Location buildFarm(int cx, int cz) {
+        final int floorY = world.getHighestBlockYAt(cx, cz);
+        foundation(cx, cz, 2, floorY, Material.DIRT, 4);
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                if (dx == 0 && dz == 0) {
+                    set(cx, floorY, cz, Material.WATER);   // riego central
+                    continue;
+                }
+                set(cx + dx, floorY, cz + dz, Material.FARMLAND);
+                final Ageable wheat = (Ageable) Bukkit.createBlockData(Material.WHEAT);
+                wheat.setAge(ThreadLocalRandom.current().nextInt(3, wheat.getMaximumAge() + 1));
+                setData(cx + dx, floorY + 1, cz + dz, wheat);
+            }
+        }
+        // Compostador (puesto del granjero) y farol en una esquina de trabajo.
+        set(cx + 3, floorY, cz + 2, Material.COARSE_DIRT);
+        set(cx + 3, floorY + 1, cz + 2, Material.COMPOSTER);
+        set(cx - 3, floorY, cz - 2, Material.OAK_FENCE);
+        set(cx - 3, floorY + 1, cz - 2, Material.LANTERN);
+
+        return new Location(world, cx + 3 + 0.5, floorY + 1, cz + 2 + 0.5);
+    }
+
+    private Location buildGuardPost(int cx, int cz) {
+        final int floorY = world.getHighestBlockYAt(cx, cz);
+        foundation(cx, cz, 1, floorY, Material.STONE_BRICKS, 5);
+        // Cuatro pilares de muro con tejado y campana en el centro.
+        for (int dx = -1; dx <= 1; dx += 2) {
+            for (int dz = -1; dz <= 1; dz += 2) {
+                for (int y = floorY + 1; y <= floorY + 3; y++) {
+                    set(cx + dx, y, cz + dz, Material.STONE_BRICK_WALL);
+                }
+            }
+        }
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                set(cx + dx, floorY + 4, cz + dz, Material.STONE_BRICKS);
+            }
+        }
+        set(cx, floorY + 1, cz, Material.BELL);            // campana del guardia
+        set(cx + 1, floorY + 4, cz + 1, Material.LANTERN); // luz
+
+        return new Location(world, cx + 0.5, floorY + 1, cz - 2 + 0.5);
+    }
+
+    private Location buildPlaza(int cx, int cz) {
+        final int floorY = world.getHighestBlockYAt(cx, cz);
+        foundation(cx, cz, 3, floorY, Material.STONE_BRICKS, 5);
+        // Pozo central: anillo de piedra con agua, postes y tejadillo.
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                set(cx + dx, floorY, cz + dz, Material.COBBLESTONE);
+            }
+        }
+        set(cx, floorY, cz, Material.WATER);
+        for (int dx = -1; dx <= 1; dx += 2) {
+            for (int dz = -1; dz <= 1; dz += 2) {
+                set(cx + dx, floorY + 1, cz + dz, Material.OAK_FENCE);
+                set(cx + dx, floorY + 2, cz + dz, Material.OAK_FENCE);
+            }
+        }
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                set(cx + dx, floorY + 3, cz + dz, Material.COBBLESTONE_SLAB);
+            }
+        }
+        // Faroles en las esquinas de la plaza.
+        for (int dx = -3; dx <= 3; dx += 6) {
+            for (int dz = -3; dz <= 3; dz += 6) {
+                set(cx + dx, floorY + 1, cz + dz, Material.SEA_LANTERN);
+            }
+        }
+        return new Location(world, cx + 3 + 0.5, floorY + 1, cz + 0.5);   // punto de reunion al lado
+    }
+
+    // ---------------- Utilidades ----------------
+
+    /** Aplana un cuadrado: suelo firme, aire encima y relleno de tierra debajo si flota. */
+    private void foundation(int cx, int cz, int half, int floorY, Material floor, int clearHeight) {
+        for (int dx = -half; dx <= half; dx++) {
+            for (int dz = -half; dz <= half; dz++) {
+                set(cx + dx, floorY, cz + dz, floor);
+                for (int y = 1; y <= clearHeight; y++) {
+                    set(cx + dx, floorY + y, cz + dz, Material.AIR);
+                }
+                for (int y = floorY - 1; y >= floorY - 4; y--) {
+                    final Block b = world.getBlockAt(cx + dx, y, cz + dz);
+                    if (b.getType().isAir() || b.isLiquid()) {
+                        b.setType(Material.DIRT, false);
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    private void placeBed(int x, int y, int z, BlockFace facing) {
+        final Bed foot = (Bed) Bukkit.createBlockData(Material.RED_BED);
+        foot.setPart(Bed.Part.FOOT);
+        foot.setFacing(facing);
+        final Bed head = (Bed) Bukkit.createBlockData(Material.RED_BED);
+        head.setPart(Bed.Part.HEAD);
+        head.setFacing(facing);
+        world.getBlockAt(x, y, z).setBlockData(foot, false);
+        world.getBlockAt(x, y, z).getRelative(facing).setBlockData(head, false);
+    }
+
+    private void placeWallSign(int x, int y, int z, BlockFace facing, String l0, String l1) {
+        final Block block = world.getBlockAt(x, y, z);
+        block.setType(Material.OAK_WALL_SIGN, false);
+        if (block.getBlockData() instanceof Directional dir) {
+            dir.setFacing(facing);
+            block.setBlockData(dir, false);
+        }
+        if (block.getState() instanceof Sign sign) {
+            final var front = sign.getSide(Side.FRONT);
+            front.line(1, Component.text(l0));
+            front.line(2, Component.text(l1));
+            sign.update(true);
+        }
+    }
+
+    private void set(int x, int y, int z, Material m) {
+        world.getBlockAt(x, y, z).setType(m, false);
+    }
+
+    private void setData(int x, int y, int z, org.bukkit.block.data.BlockData data) {
+        world.getBlockAt(x, y, z).setBlockData(data, false);
+    }
+}

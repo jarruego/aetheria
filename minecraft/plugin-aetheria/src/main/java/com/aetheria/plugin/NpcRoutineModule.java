@@ -49,25 +49,26 @@ public final class NpcRoutineModule {
     private final AetheriaPlugin plugin;
     private final ConversationManager convo;
     private final World world;
+    private final VillageModule village;
     private final List<Worker> workers = new ArrayList<>();
     private int taskId = -1;
 
-    public NpcRoutineModule(AetheriaPlugin plugin, ConversationManager convo, World world) {
+    public NpcRoutineModule(AetheriaPlugin plugin, ConversationManager convo, World world,
+            VillageModule village) {
         this.plugin = plugin;
         this.convo = convo;
         this.world = world;
+        this.village = village;
     }
 
-    /** Coloca a los vecinos alrededor del spawn y arranca el bucle de rutina. */
+    /** Coloca a los vecinos en su casa/puesto de la aldea y arranca el bucle de rutina. */
     public void start() {
         clearOld();
-        final Location spawn = world.getSpawnLocation();
-        // Puntos relativos al spawn: casa, trabajo y plaza. Distancias moderadas para que
-        // sean alcanzables a pie sobre terreno generado (los muy lejanos se vuelven inaccesibles).
+        // Cada vecino vive y trabaja en edificios REALES de la aldea (VillageModule).
         workers.add(new Worker("vecina-nara", "Nara",
-                offset(spawn, 6, 5), offset(spawn, 13, -3), offset(spawn, 2, 2)));
+                village.naraHome(), village.naraWork(), village.plaza()));
         workers.add(new Worker("vecino-pol", "Pol",
-                offset(spawn, -6, 5), offset(spawn, -12, -4), offset(spawn, -2, 2)));
+                village.polHome(), village.polWork(), village.plaza()));
 
         for (final Worker w : workers) {
             w.entity = spawnWorker(w);
@@ -150,12 +151,5 @@ public final class NpcRoutineModule {
             }
             w.last = at;
         }
-    }
-
-    /** Punto a nivel de suelo desplazado (dx, dz) desde una base. */
-    private static Location offset(Location base, double dx, double dz) {
-        final Location loc = base.clone().add(dx, 0, dz);
-        loc.setY(base.getWorld().getHighestBlockYAt(loc) + 1);
-        return loc;
     }
 }

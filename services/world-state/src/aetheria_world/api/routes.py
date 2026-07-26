@@ -281,6 +281,26 @@ async def transfer(body: TransferIn) -> dict:
     return {"status": "ok"}
 
 
+@router.post("/reward")
+async def reward(body: ChargeIn) -> dict:
+    """Recompensa a un jugador (trabajo/venta): el dinero sale de la cuenta del sistema."""
+    _require_db()
+    amount = decimal.Decimal(str(body.amount))
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="La cantidad debe ser positiva")
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            acc = await _account(conn, uuid.UUID(body.uuid))
+            banco = await _account(conn, _BANCO, owner_type="system")
+            await conn.execute("update accounts set balance = balance - $1 where id = $2", amount, banco["id"])
+            await conn.execute("update accounts set balance = balance + $1 where id = $2", amount, acc["id"])
+            await conn.execute(
+                "insert into transactions (from_account, to_account, amount, reason) values ($1, $2, $3, $4)",
+                banco["id"], acc["id"], amount, body.reason or "recompensa",
+            )
+    return {"status": "ok"}
+
+
 @router.post("/charge")
 async def charge(body: ChargeIn) -> dict:
     """Cobra a un jugador (por un servicio). El dinero va a la cuenta del sistema."""

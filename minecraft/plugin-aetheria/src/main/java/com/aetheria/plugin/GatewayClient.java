@@ -164,6 +164,15 @@ public final class GatewayClient {
         return getJson("/v1/balance/" + uuid);
     }
 
+    /** Recompensa a un jugador (trabajo/venta). No lanza en 4xx: devuelve {ok, ...}. */
+    public CompletableFuture<JsonObject> reward(String uuid, double amount, String reason) {
+        final JsonObject body = new JsonObject();
+        body.addProperty("uuid", uuid);
+        body.addProperty("amount", amount);
+        body.addProperty("reason", reason);
+        return sendCapturing("/v1/reward", gson.toJson(body));
+    }
+
     /** Paga a otro jugador. Devuelve {ok:bool, error?:string} (no lanza por saldo insuficiente). */
     public CompletableFuture<JsonObject> pay(String fromUuid, String toUuid, double amount) {
         final JsonObject body = new JsonObject();

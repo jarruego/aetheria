@@ -33,6 +33,22 @@ commands:
     description: Libera tu parcela actual
     usage: /unclaim
     permission: aetheria.use
+  sell:
+    description: Vende al mercado el objeto de tu mano
+    usage: /sell [all]
+    permission: aetheria.use
+  worth:
+    description: Muestra cuanto vale el objeto de tu mano
+    usage: /worth
+    permission: aetheria.use
+  shop:
+    description: Muestra los precios del mercado
+    usage: /shop
+    permission: aetheria.use
+  guia:
+    description: Te da la guia de Aetheria
+    usage: /guia
+    permission: aetheria.use
 permissions:
   aetheria.use:
     description: Permite usar los comandos de Aetheria

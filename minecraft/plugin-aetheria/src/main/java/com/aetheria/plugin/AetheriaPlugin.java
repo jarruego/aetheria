@@ -68,10 +68,13 @@ public final class AetheriaPlugin extends JavaPlugin {
                 ret.build();
             }
 
-            // Fase 7: vecinos con rutina diaria (NPC vivos) en el mundo principal.
+            // Fase 7: aldea fisica + vecinos con rutina diaria en el mundo principal.
             if (getConfig().getBoolean("npc-routines.enabled", true)) {
+                final org.bukkit.World gameWorld = getServer().getWorlds().get(0);
+                final VillageModule village = new VillageModule(this, gameWorld);
+                village.build();
                 final NpcRoutineModule routines =
-                        new NpcRoutineModule(this, convo, getServer().getWorlds().get(0));
+                        new NpcRoutineModule(this, convo, gameWorld, village);
                 routines.start();
             }
 
@@ -83,6 +86,21 @@ public final class AetheriaPlugin extends JavaPlugin {
                 getServer().getPluginManager().registerEvents(claims, this);
                 claims.loadClaims();
             }
+
+            // Vida del server: trabajos (ganar AET por tareas), mercado y HUD/guia.
+            final JobsModule jobs = new JobsModule(this, gateway);
+            getServer().getPluginManager().registerEvents(jobs, this);
+            jobs.start();
+
+            final ShopModule shop = new ShopModule(this, gateway);
+            Objects.requireNonNull(getCommand("sell")).setExecutor(shop);
+            Objects.requireNonNull(getCommand("worth")).setExecutor(shop);
+            Objects.requireNonNull(getCommand("shop")).setExecutor(shop);
+
+            final HudModule hud = new HudModule(this, gateway);
+            getServer().getPluginManager().registerEvents(hud, this);
+            Objects.requireNonNull(getCommand("guia")).setExecutor(hud);
+            hud.start();
         }
 
         getLogger().info("Aetheria habilitado (rol: " + role + "). Gateway: " + url);

@@ -87,7 +87,8 @@ public final class SettlementModule implements Listener {
         int deathAge;
         String parent;
         boolean retired;
-        int floors = 1;   // plantas de su casa (para saber que region ocupa)
+        int floors = 1;      // plantas de su casa (para saber que region ocupa)
+        String spouse;       // nombre del conyuge, o null si esta soltero/a
 
         double age(long now) {
             return initialAge + (now - bornMillis) * YEARS_PER_DAY / DAY_MS;
@@ -96,7 +97,7 @@ public final class SettlementModule implements Listener {
         String toLine() {
             return name + ";" + profKey + ";" + x + ";" + y + ";" + z + ";" + bornMillis + ";"
                     + initialAge + ";" + deathAge + ";" + (parent == null ? "" : parent) + ";"
-                    + retired + ";" + floors;
+                    + retired + ";" + floors + ";" + (spouse == null ? "" : spouse);
         }
     }
 
@@ -234,6 +235,7 @@ public final class SettlementModule implements Listener {
                     c.parent = f[8];
                     c.retired = Boolean.parseBoolean(f[9]);
                     c.floors = f.length >= 11 ? Integer.parseInt(f[10]) : 1;
+                    c.spouse = f.length >= 12 && !f[11].isEmpty() ? f[11] : null;
                 } else {   // formato antiguo: se le asigna una edad plausible
                     c.bornMillis = System.currentTimeMillis();
                     c.initialAge = 20 + rng.nextInt(40);
@@ -386,12 +388,18 @@ public final class SettlementModule implements Listener {
         baby.setInvulnerable(true);
         baby.addScoreboardTag(BABY_TAG);
         convo.registerConversable(baby, "nino", name);   // se puede hablar con los ninos
-        final String childOf = parent != null ? ", hijo de " + parent.name : "";
+        String childOf = "";
+        if (parent != null) {
+            childOf = ", hijo de " + parent.name;
+            if (parent.spouse != null && !parent.spouse.isEmpty()) {
+                childOf += " y " + parent.spouse;
+            }
+        }
         convo.setBio(name, "Eres " + name + ", un nino pequeno del pueblo de Aetheria" + childOf
                 + ". Todavia no trabajas; hablas con la inocencia de un nino.");
         final String parentName = parent != null ? parent.name : "";
         children.add(new Child(baby, name, parentName, System.currentTimeMillis() + GROW_MS));
-        final String of = parent != null ? ", hijo de " + parent.name : "";
+        final String of = childOf;
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                 "§d[Pueblo] §fHa nacido §b" + name + "§f" + of + " en el pueblo."));
         gateway.postEvent("nacimiento", "Ha nacido " + name + of + " en el pueblo.");
@@ -454,6 +462,12 @@ public final class SettlementModule implements Listener {
     }
 
     private void growAdult(int index, String name, double initialAge, String parent) {
+        // ¿Se casa con un soltero del pueblo y se muda con el/ella (en vez de levantar casa)?
+        final Colono spouse = pickSpouse(name, parent, ThreadLocalRandom.current());
+        if (spouse != null) {
+            marryInto(name, initialAge, parent, spouse);
+            return;
+        }
         final int[] spot = findBuildSpot(index);
         if (spot == null) {
             return;   // no encontro sitio libre; lo reintenta el proximo ciclo
@@ -505,6 +519,73 @@ public final class SettlementModule implements Listener {
         plugin.getLogger().info("[Aetheria] Pueblo vivo: +1 colono (" + name + ", " + prof + ").");
     }
 
+    /** Un soltero/a del pueblo con quien casarse (ni tu, ni tu progenitor, ni tu hijo/hermano). */
+    private Colono pickSpouse(String name, String parent, java.util.Random rng) {
+        final List<Colono> singles = new ArrayList<>();
+        for (final Colono c : colonos) {
+            if (c.spouse != null || c.retired) {
+                continue;
+            }
+            if (c.name.equals(name)) {
+                continue;                       // no te casas contigo mismo
+            }
+            if (parent != null && !parent.isEmpty() && parent.equals(c.name)) {
+                continue;                       // ni con tu padre/madre
+            }
+            if (c.parent != null && !c.parent.isEmpty() && c.parent.equals(name)) {
+                continue;                       // ni con tu hijo/a
+            }
+            if (parent != null && !parent.isEmpty() && parent.equals(c.parent)) {
+                continue;                       // ni con un hermano/a
+            }
+            singles.add(c);
+        }
+        if (singles.isEmpty() || rng.nextInt(100) >= 55) {
+            return null;                        // no siempre hay con quien, ni siempre se casan
+        }
+        return singles.get(rng.nextInt(singles.size()));
+    }
+
+    /** Un recien llegado se casa con {@code spouse} y se muda a SU casa (no se construye otra). */
+    private void marryInto(String name, double initialAge, String parent, Colono spouse) {
+        final var rng = ThreadLocalRandom.current();
+        final Villager.Profession prof = PROFS[rng.nextInt(PROFS.length)];
+        final Colono c = new Colono();
+        c.name = name;
+        c.profKey = profKey(prof);
+        c.x = spouse.x;
+        c.y = spouse.y;
+        c.z = spouse.z;
+        c.floors = spouse.floors;
+        c.bornMillis = System.currentTimeMillis();
+        c.initialAge = initialAge;
+        c.deathAge = randomDeathAge(rng);
+        c.parent = parent;
+        c.spouse = spouse.name;
+        spouse.spouse = c.name;
+        colonos.add(c);
+        save();
+        final Location home = new Location(world, spouse.x + 0.5, spouse.y, spouse.z + 0.5);
+        final Location workspot = new Location(world, spouse.x + 6 + 0.5, spouse.y, spouse.z + 0.5);
+        routines.addColono("colono", name, home, workspot, prof);
+        final String msg = name + " y " + spouse.name + " se han casado y viven juntos.";
+        gateway.postEvent("boda", msg);
+        Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage("§d[Pueblo] §f" + msg));
+        plugin.getLogger().info("[Aetheria] Pueblo vivo: boda (" + name + " + " + spouse.name + ").");
+    }
+
+    private Colono findColono(String name) {
+        if (name == null) {
+            return null;
+        }
+        for (final Colono c : colonos) {
+            if (c.name.equals(name)) {
+                return c;
+            }
+        }
+        return null;
+    }
+
     /** Envejecimiento LENTO: a los 65 se jubilan; de muy mayores mueren (libera espacio en BD). */
     private void ageAndDeath() {
         final long now = System.currentTimeMillis();
@@ -534,7 +615,12 @@ public final class SettlementModule implements Listener {
                 gateway.postEvent("obituario", msg);
                 Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage("§8[Pueblo] §7" + msg));
                 convo.clearBio(c.name);
-                demolish(c);   // su casa se derriba y queda un solar libre
+                final Colono widow = findColono(c.spouse);
+                if (widow != null) {
+                    widow.spouse = null;   // enviuda y conserva la casa comun
+                } else {
+                    demolish(c);           // vivia solo: su casa se derriba y queda un solar libre
+                }
             } else if (age >= RETIRE_AGE && !c.retired) {
                 c.retired = true;
                 changed = true;
@@ -572,6 +658,9 @@ public final class SettlementModule implements Listener {
                     ? "jubilado (antes fue " + oficio(profFromKey(c.profKey)) + ")"
                     : oficio(profFromKey(c.profKey));
             final StringBuilder fam = new StringBuilder();
+            if (c.spouse != null && !c.spouse.isEmpty()) {
+                fam.append(" Estas casado con ").append(c.spouse).append(".");
+            }
             if (c.parent != null && !c.parent.isEmpty()) {
                 fam.append(" Tu padre o madre es ").append(c.parent).append(".");
             }
@@ -663,7 +752,13 @@ public final class SettlementModule implements Listener {
         if (name != null) {
             convo.clearBio(name);
             if (!colonos.isEmpty()) {
-                demolish(colonos.remove(colonos.size() - 1));   // al emigrar, su casa se derriba
+                final Colono gone = colonos.remove(colonos.size() - 1);
+                final Colono widow = findColono(gone.spouse);
+                if (widow != null) {
+                    widow.spouse = null;   // su pareja se queda con la casa
+                } else {
+                    demolish(gone);        // al emigrar (vivia solo), su casa se derriba
+                }
             }
             save();
             Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(

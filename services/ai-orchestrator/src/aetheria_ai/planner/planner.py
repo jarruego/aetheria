@@ -23,7 +23,12 @@ logger = logging.getLogger(__name__)
 # positivos como que "vender" dispare "ven".
 _MOVE_WORDS = {"ven", "sigueme", "sígueme", "muevete", "muévete", "acercate", "acércate"}
 _GIVE_WORDS = {"dame", "regalo", "regalame", "item", "pan", "comida"}
-_BUILD_WORDS = {"plaza", "fuente", "construye", "construir", "edificio", "blueprint"}
+_HOUSE_WORDS = {"casa", "casita", "vivienda", "hogar", "house", "cabana", "cabaña", "choza"}
+_FOUNTAIN_WORDS = {"fuente", "plaza", "pozo"}
+_BUILD_WORDS = _HOUSE_WORDS | _FOUNTAIN_WORDS | {
+    "construye", "construir", "construyeme", "constrúyeme", "edificio", "edificame",
+    "blueprint", "plataforma", "suelo", "muro", "torre", "levanta", "haz",
+}
 _TRADE_WORDS = {"comercio", "comerciar", "trato", "trade", "vender", "tienda", "mercado"}
 
 
@@ -57,7 +62,12 @@ def _actions_for_goal(goal: str) -> list[PlanAction]:
         )
 
     if words & _BUILD_WORDS:
-        blueprint = "fountain" if ({"fuente", "plaza"} & words) else "platform"
+        if words & _HOUSE_WORDS:
+            blueprint = "house"
+        elif words & _FOUNTAIN_WORDS:
+            blueprint = "fountain"
+        else:
+            blueprint = "platform"
         actions.append(
             PlanAction(type=ActionType.PLACE_BLUEPRINT, params={"blueprint": blueprint})
         )

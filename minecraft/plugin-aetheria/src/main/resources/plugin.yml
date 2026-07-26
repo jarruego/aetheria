@@ -49,6 +49,14 @@ commands:
     description: Te da la guia de Aetheria
     usage: /guia
     permission: aetheria.use
+  arquitecto:
+    description: Encarga una casa a medida (asistente guiado)
+    usage: /arquitecto
+    permission: aetheria.use
+  servicios:
+    description: Guia de servicios y precios
+    usage: /servicios
+    permission: aetheria.use
 permissions:
   aetheria.use:
     description: Permite usar los comandos de Aetheria

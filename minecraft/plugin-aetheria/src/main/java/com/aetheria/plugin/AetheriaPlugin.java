@@ -82,13 +82,18 @@ public final class AetheriaPlugin extends JavaPlugin {
             }
 
             // Fase 9: parcelas reclamables con propietario y proteccion.
+            final ClaimModule claims = new ClaimModule(this, gateway, role);
             if (getConfig().getBoolean("claims.enabled", true)) {
-                final ClaimModule claims = new ClaimModule(this, gateway, role);
                 Objects.requireNonNull(getCommand("claim")).setExecutor(claims);
                 Objects.requireNonNull(getCommand("unclaim")).setExecutor(claims);
                 getServer().getPluginManager().registerEvents(claims, this);
                 claims.loadClaims();
             }
+
+            // Arquitecto guiado (casa a medida, cobra por spec) + guia de servicios.
+            final ArchitectModule architect = new ArchitectModule(this, gateway, claims);
+            Objects.requireNonNull(getCommand("arquitecto")).setExecutor(architect);
+            Objects.requireNonNull(getCommand("servicios")).setExecutor(architect);
 
             // Vida del server: trabajos (ganar AET por tareas), mercado y HUD/guia.
             final JobsModule jobs = new JobsModule(this, gateway);

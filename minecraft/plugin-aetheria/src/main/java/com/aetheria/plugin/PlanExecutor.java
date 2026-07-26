@@ -110,7 +110,14 @@ public final class PlanExecutor {
             player.sendMessage("§e[Aetheria] no conozco el plano '" + name + "'.");
             return;
         }
-        player.sendMessage("§a[NPC] §fhe construido '" + name + "' (" + placed + " bloques).");
+        final String what = switch (name) {
+            case "house" -> "tu casa";
+            case "fountain" -> "una fuente";
+            case "platform" -> "una plataforma";
+            default -> "'" + name + "'";
+        };
+        player.sendMessage("§a[NPC] §fHe construido " + what + " aqui mismo, frente a ti ("
+                + placed + " bloques).");
     }
 
     private void doOpenTrade(Player player, JsonObject params) {

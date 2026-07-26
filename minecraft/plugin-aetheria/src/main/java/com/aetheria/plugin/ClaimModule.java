@@ -158,6 +158,11 @@ public final class ClaimModule implements CommandExecutor, Listener {
         return owner != null && !owner.equals(player.getUniqueId());
     }
 
+    /** True si ese jugador es el dueno de la parcela (chunk) indicada. */
+    public boolean ownsChunk(UUID player, int chunkX, int chunkZ) {
+        return player.equals(owners.get(key(chunkX, chunkZ)));
+    }
+
     private static long key(int chunkX, int chunkZ) {
         return (((long) chunkX) << 32) | (chunkZ & 0xffffffffL);
     }

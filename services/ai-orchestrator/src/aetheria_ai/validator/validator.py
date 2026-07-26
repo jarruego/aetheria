@@ -27,7 +27,7 @@ MAX_ESTIMATED_COST = 10_000
 MAX_GIVE_AMOUNT = 64
 
 # Catalogos permitidos (deben reflejar los del plugin: defensa en profundidad en ambos lados).
-ALLOWED_BLUEPRINTS = {"platform", "fountain"}
+ALLOWED_BLUEPRINTS = {"platform", "fountain", "house"}
 ALLOWED_MOVE_TARGETS = {"player"}
 
 

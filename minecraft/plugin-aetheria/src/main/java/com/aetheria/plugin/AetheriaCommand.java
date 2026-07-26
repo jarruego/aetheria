@@ -248,27 +248,50 @@ public final class AetheriaCommand implements CommandExecutor {
             sender.sendMessage("§7Catalogo vacio.");
             return;
         }
-        java.util.Arrays.sort(files, java.util.Comparator.comparing(java.io.File::getName));
         final int baseX = sp.getBlockX() + 40;   // calle al este del spawn (lejos del showroom)
         final int z = sp.getBlockZ() + 40;
         final int y = sp.getBlockY();
-        // DE CERO: limpia la banda de la calle (por encima del suelo, se conserva el cesped).
-        schematics.fillAir(w, baseX - 30, y, z - 30,
-                baseX + (files.length - 1) * 80 + 70, y + 70, z + 90);
-        sender.sendMessage("§7Calle limpiada; pegando " + files.length + " esquematicos...");
-        int i = 0;
+        final int gap = 6;
+
+        // 1) Medir cada esquematico y ORDENAR de menor a mayor anchura.
+        record Item(java.io.File f, String name, int width, int length) { }
+        final java.util.List<Item> items = new java.util.ArrayList<>();
         for (final java.io.File f : files) {
-            final int x = baseX + i * 80;
+            final int[] d = schematics.dimensions(f);
             final String name = f.getName().replaceFirst("\\.(schem|schematic)$", "");
-            if (schematics.pasteAt(w, f, x, y, z)) {
-                streetSign(w, x, y, z - 6, name);
-                sender.sendMessage("§7  pegado §f" + name);
-            } else {
-                sender.sendMessage("§c  fallo §f" + name + " (revisa la consola)");
-            }
-            i++;
+            items.add(new Item(f, name, d != null ? d[0] : 16, d != null ? d[1] : 16));
         }
-        sender.sendMessage("§a[Esquematico] calle de muestra pegada al este del spawn (" + i + ").");
+        items.sort(java.util.Comparator.comparingInt(Item::width));
+
+        // 2) Limpiar la banda entera (de cero), dimensionada al total.
+        int total = 0;
+        int maxLen = 16;
+        for (final Item it : items) {
+            total += it.width() + gap;
+            maxLen = Math.max(maxLen, it.length());
+        }
+        // Limpia holgado: cubre tanto el nuevo total como cualquier disposicion anterior (mas larga).
+        final int clearMaxX = baseX + Math.max(total, items.size() * 100) + 120;
+        schematics.fillAir(w, baseX - 20, y, z - 40, clearMaxX, y + 100, z + Math.max(maxLen, 120) + 40);
+        sender.sendMessage("§7Calle limpiada; pegando " + items.size()
+                + " esquematicos ordenados por tamano...");
+
+        // 3) Pegar alineados por su borde, avanzando segun la anchura de cada uno.
+        int cursorX = baseX;
+        int done = 0;
+        for (final Item it : items) {
+            final int[] wl = schematics.pasteAligned(w, it.f(), cursorX, y, z);
+            final int width = wl != null ? wl[0] : it.width();
+            if (wl != null) {
+                streetSign(w, cursorX + width / 2, y, z - 4, it.name());
+                done++;
+            } else {
+                sender.sendMessage("§c  fallo §f" + it.name());
+            }
+            cursorX += width + gap;
+        }
+        sender.sendMessage("§a[Esquematico] calle pegada al este del spawn (" + done + "/"
+                + items.size() + ", de menor a mayor, separados por su anchura).");
     }
 
     private void streetSign(org.bukkit.World w, int x, int y, int z, String name) {

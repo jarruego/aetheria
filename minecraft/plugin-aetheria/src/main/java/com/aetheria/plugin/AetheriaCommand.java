@@ -156,8 +156,8 @@ public final class AetheriaCommand implements CommandExecutor {
     }
 
     private void handleCronica(Player player) {
-        player.sendMessage("§7[Aetheria] consultando la cronica del mundo...");
-        gateway.getWorldEvents(8)
+        player.sendMessage("§7[Aetheria] abriendo la cronica del mundo...");
+        gateway.getWorldEvents(40)
                 .whenComplete((events, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
                     if (err != null) {
                         player.sendMessage("§c[Aetheria] error: " + rootMessage(err));
@@ -167,12 +167,55 @@ public final class AetheriaCommand implements CommandExecutor {
                         player.sendMessage("§7El mundo aun no ha vivido nada digno de cronica.");
                         return;
                     }
-                    player.sendMessage("§6=== Cronica del mundo ===");
-                    events.forEach(e -> {
-                        final var o = e.getAsJsonObject();
-                        player.sendMessage("§7- §f" + o.get("description").getAsString());
-                    });
+                    player.getInventory().addItem(chronicleBook(events));
+                    player.sendMessage("§a[Aetheria] Toma la §fCronica de Aetheria§a. Abrela para leerla.");
                 }));
+    }
+
+    /** Construye un libro con la cronica maquetada (portada + sucesos, ~3 por pagina). */
+    private org.bukkit.inventory.ItemStack chronicleBook(com.google.gson.JsonArray events) {
+        final org.bukkit.inventory.ItemStack book =
+                new org.bukkit.inventory.ItemStack(org.bukkit.Material.WRITTEN_BOOK);
+        final org.bukkit.inventory.meta.BookMeta meta =
+                (org.bukkit.inventory.meta.BookMeta) book.getItemMeta();
+        meta.title(net.kyori.adventure.text.Component.text("Cronica de Aetheria"));
+        meta.author(net.kyori.adventure.text.Component.text("El pueblo de Aetheria"));
+
+        final java.util.List<net.kyori.adventure.text.Component> pages = new java.util.ArrayList<>();
+        pages.add(net.kyori.adventure.text.Component.text(
+                "§l  Cronica de\n     Aetheria\n\n§r§7Lo que ha ido viviendo el pueblo, del suceso mas "
+                + "reciente al mas antiguo.\n\n§8(pasa la pagina)"));
+        final StringBuilder sb = new StringBuilder();
+        int inPage = 0;
+        for (final var e : events) {
+            final var o = e.getAsJsonObject();
+            final String kind = o.get("kind").getAsString();
+            final String desc = o.get("description").getAsString();
+            sb.append(iconFor(kind)).append("§0").append(desc).append("\n\n");
+            if (++inPage >= 3) {
+                pages.add(net.kyori.adventure.text.Component.text(sb.toString()));
+                sb.setLength(0);
+                inPage = 0;
+            }
+        }
+        if (sb.length() > 0) {
+            pages.add(net.kyori.adventure.text.Component.text(sb.toString()));
+        }
+        meta.pages(pages);
+        book.setItemMeta(meta);
+        return book;
+    }
+
+    private static String iconFor(String kind) {
+        return switch (kind) {
+            case "festival" -> "§2✦ ";     // festival
+            case "hardship" -> "§4✦ ";     // penuria
+            case "growth" -> "§2▲ ";       // crece
+            case "decline" -> "§4▼ ";      // decae
+            case "social" -> "§1• ";       // social
+            case "market" -> "§6• ";       // mercado
+            default -> "§8• ";              // economia y otros
+        };
     }
 
     private static String join(String[] args, int from) {

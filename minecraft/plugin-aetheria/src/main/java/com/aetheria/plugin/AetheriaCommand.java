@@ -249,6 +249,7 @@ public final class AetheriaCommand implements CommandExecutor {
             case "boda" -> "§d❤ ";            // boda
             case "obituario" -> "§8✝ ";       // fallecimiento
             case "jubilacion" -> "§7☕ ";      // jubilacion
+            case "relevo" -> "§e⚒ ";          // cambio de oficio (cubrir vacante)
             case "mejora" -> "§a✦ ";          // mejora del pueblo
             case "growth" -> "§2▲ ";          // crece
             case "decline" -> "§4▼ ";         // decae

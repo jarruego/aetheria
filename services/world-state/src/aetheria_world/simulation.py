@@ -34,7 +34,8 @@ _BUSINESSES = [
     (uuid.UUID("a0000000-0000-0000-0000-000000000003"), "El Mercado del Pueblo", "comercio"),
 ]
 
-_UPKEEP_RATIO = decimal.Decimal("0.35")   # los gastos se comen parte del ingreso
+_UPKEEP_RATIO = decimal.Decimal("0.6")    # los gastos se comen buena parte del ingreso
+# (mas alto = la economia NO sube siempre: fluctua y se estanca en vez de crecer sin fin)
 _CENT = decimal.Decimal("0.01")
 
 
@@ -110,8 +111,8 @@ async def run_tick(conn) -> dict:
         income = _money(decimal.Decimal(str(random.uniform(
             settings.sim_income_min, settings.sim_income_max))) * boost)
         upkeep = _money(income * _UPKEEP_RATIO)
-        # 1 de cada 4 ticks un negocio tiene un mal dia (gastos > ingresos): puede perder.
-        if random.random() < 0.25 or hardship:
+        # ~4 de cada 10 ticks un negocio tiene un mal dia (gastos > ingresos): puede perder.
+        if random.random() < 0.4 or hardship:
             upkeep += _money(decimal.Decimal(str(random.uniform(0.5, 1.5))) * income)
 
         if income > 0:
@@ -167,12 +168,13 @@ async def evolve_population(conn) -> dict:
     pop = row["population"] if row else settings.sim_min_population
     old = pop
     level = prov["level"]
+    # Crecimiento LENTO (que no se dispare la poblacion): solo de vez en cuando llega alguien.
     r = random.random()
-    if level == "floreciente" and pop < settings.sim_max_population and r < 0.35:
+    if level == "floreciente" and pop < settings.sim_max_population and r < 0.12:
         pop += 1
-    elif level == "prospero" and pop < settings.sim_max_population and r < 0.15:
+    elif level == "prospero" and pop < settings.sim_max_population and r < 0.05:
         pop += 1
-    elif level == "en apuros" and pop > settings.sim_min_population and r < 0.30:
+    elif level == "en apuros" and pop > settings.sim_min_population and r < 0.25:
         pop -= 1
 
     if pop != old:

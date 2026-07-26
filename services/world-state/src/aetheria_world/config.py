@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Pueblo vivo: la poblacion crece/mengua con la prosperidad (limites).
     # Arranca en 2 (dos aldeanos fundadores) y crece solo si el pueblo prospera.
     sim_min_population: int = 2
-    sim_max_population: int = 12
+    sim_max_population: int = 20
 
     # Fase 9: reclamar una parcela (un chunk).
     claim_price: float = 50.0            # compra fija (para siempre)

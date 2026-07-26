@@ -25,6 +25,10 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
+
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.title.Title;
 
 /**
  * Pueblo VIVO: reconcilia el mundo fisico con la poblacion objetivo de la simulacion (crece
@@ -139,6 +143,13 @@ public final class SettlementModule implements Listener {
     private final List<Colono> colonos = new ArrayList<>(); // colonos adultos (con edad), persistidos
     private final File dataFile;
     private final File civicFile;
+    private final File nameFile;
+    private String villageName = "Aldea";
+    private final java.util.Set<java.util.UUID> inVillage = new java.util.HashSet<>();
+
+    private static final String[] TOWN_NAMES = {"Rocavieja", "Valverde", "Fuenteclara", "Montenar",
+        "Rivablanca", "Espinar", "Robledo", "Vallehondo", "Penaflor", "Aldealba", "Sotobravo",
+        "Villalce", "Olmedal", "Riofrio", "Costaluna", "Miralbosque", "Pradoverde", "Encinar"};
 
     /** Altura del SUELO real (ignora hojas, troncos y plantas), escaneando hacia abajo. */
     private int groundY(int x, int z) {
@@ -289,6 +300,7 @@ public final class SettlementModule implements Listener {
         plugin.getDataFolder().mkdirs();
         this.dataFile = new File(plugin.getDataFolder(), "colonos.txt");
         this.civicFile = new File(plugin.getDataFolder(), "civic.txt");
+        this.nameFile = new File(plugin.getDataFolder(), "village.txt");
     }
 
     public void start() {
@@ -298,6 +310,7 @@ public final class SettlementModule implements Listener {
         final boolean fresh = !dataFile.exists();
         load();   // reaparecen los colonos ya existentes en sus casas (sin reconstruir)
         loadCivic();
+        loadVillageName();
         if (fresh && colonos.isEmpty()) {
             // Mundo NUEVO: dos fundadores, un hombre y una mujer (asi pueden formar una familia),
             // cada uno con su casa pequena y su puesto.
@@ -676,10 +689,11 @@ public final class SettlementModule implements Listener {
         final var rng = ThreadLocalRandom.current();
         final Villager.Profession prof = PROFS[rng.nextInt(PROFS.length)];
         final Material[] pal = COMBOS[rng.nextInt(COMBOS.length)];
-        // Un aldeano SOLTERO vive en una casa PEQUENA (una sola cama). Nada de mansiones para
-        // uno solo: al casarse ya se le construye una mediana (ver maybeMarry).
-        final int halfX = 3;
-        final int halfZ = rng.nextInt(100) < 30 ? 4 : 3;   // a veces algo mas larga, sin agigantar
+        // Un aldeano SOLTERO vive en una casa MUY PEQUENA (una sola cama). Nada de mansiones:
+        // una casa de aldeano no es una casa de jugador con arquitecto. Al casarse se le
+        // construye una mediana (ver maybeMarry).
+        final int halfX = 2;
+        final int halfZ = rng.nextInt(100) < 35 ? 3 : 2;   // 5x5 o 5x7, modesta
         final BlockFace door = towardPlaza(cx, cz);        // la puerta mira al pueblo
 
         prepareTerrain(cx, cz, fy);                        // tala arboles + nivela SUAVE al suelo real
@@ -775,8 +789,8 @@ public final class SettlementModule implements Listener {
         final int cz = spot[1];
         final int fy = spot[2];
         final Material[] pal = COMBOS[rng.nextInt(COMBOS.length)];
-        final int halfX = 4;
-        final int halfZ = rng.nextInt(100) < 50 ? 4 : 5;   // MEDIANA (mayor que la de soltero)
+        final int halfX = 3;
+        final int halfZ = rng.nextInt(100) < 40 ? 4 : 3;   // MEDIANA (algo mayor que la de soltero)
         final BlockFace door = towardPlaza(cx, cz);
         prepareTerrain(cx, cz, fy);
         Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
@@ -829,22 +843,32 @@ public final class SettlementModule implements Listener {
                 it.remove();
                 routines.removeColono(c.name);
                 changed = true;
+                final String oficioDelDifunto = oficio(profFromKey(c.profKey));
                 final Colono heir = pickSuccessor(c);
+                String relevo = null;
                 final String successor;
                 if (heir != null) {
-                    heir.profKey = c.profKey;   // hereda el puesto del fallecido
+                    final String antes = oficio(profFromKey(heir.profKey));
+                    heir.profKey = c.profKey;   // cambia de oficio para cubrir la vacante
                     routines.setProfession(heir.name, profFromKey(c.profKey));
                     successor = heir.name;
+                    if (!antes.equals(oficioDelDifunto)) {
+                        relevo = heir.name + ", que era " + antes + ", se hace " + oficioDelDifunto
+                                + " para cubrir la vacante de " + c.name + ".";
+                    }
                 } else {
                     successor = "nadie de momento";
                 }
                 final String family = livingChildren(c);
                 final String msg = String.format(
-                        "Ha fallecido %s, %s, a los %d anos. %sLe releva %s en su oficio.",
-                        c.name, oficio(profFromKey(c.profKey)), (int) age,
-                        family.isEmpty() ? "" : "Le sobreviven " + family + ". ", successor);
+                        "Muere %s, %s, a los %d anos.%s Le releva %s.",
+                        c.name, oficioDelDifunto, (int) age,
+                        family.isEmpty() ? "" : " Le sobreviven " + family + ".", successor);
                 gateway.postEvent("obituario", msg);
                 Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage("§8[Pueblo] §7" + msg));
+                if (relevo != null) {
+                    gateway.postEvent("relevo", relevo);   // cambio de oficio para cubrir la baja
+                }
                 convo.clearBio(c.name);
                 final Colono widow = findColono(c.spouse);
                 if (widow != null) {
@@ -1031,7 +1055,25 @@ public final class SettlementModule implements Listener {
                 && b.getY() >= by - 1 && b.getY() <= by + 12;
     }
 
+    /** Bloque de TERRENO natural del suelo (se puede recolectar aunque este junto a una casa):
+     *  tierra, piedra y sus variantes, grava, arena, arcilla, nieve y minerales. NO incluye
+     *  madera/tablon/ladrillo/cristal (eso es la casa) para que no se pueda vandalizar. */
+    private static boolean terrain(Material m) {
+        if (m.name().endsWith("_ORE")) {
+            return true;
+        }
+        return switch (m) {
+            case DIRT, GRASS_BLOCK, COARSE_DIRT, PODZOL, ROOTED_DIRT, MUD, DIRT_PATH, MYCELIUM,
+                 STONE, GRANITE, DIORITE, ANDESITE, DEEPSLATE, TUFF, CALCITE, GRAVEL, CLAY,
+                 SAND, RED_SAND, SANDSTONE, RED_SANDSTONE, SNOW, SNOW_BLOCK, MOSS_BLOCK -> true;
+            default -> false;
+        };
+    }
+
     private boolean protect(Player player, Block b) {
+        if (terrain(b.getType())) {
+            return false;   // recolectar tierra/piedra/arena cerca de una casa esta permitido
+        }
         final Colono c = ownerAt(b);
         if (c != null) {
             player.sendMessage("§cEsta es la casa de §f" + c.name + "§c. Todavia vive en la aldea: "
@@ -1069,6 +1111,51 @@ public final class SettlementModule implements Listener {
     @EventHandler(ignoreCancelled = true)
     public void onBlockExplode(BlockExplodeEvent e) {
         e.blockList().removeIf(b -> ownerAt(b) != null || inVillageCore(b));
+    }
+
+    /** Al ENTRAR en la zona de la aldea, aparece su nombre en pantalla dando la bienvenida. */
+    @EventHandler
+    public void onMove(PlayerMoveEvent e) {
+        if (e.getTo() == null || (e.getFrom().getBlockX() == e.getTo().getBlockX()
+                && e.getFrom().getBlockZ() == e.getTo().getBlockZ())) {
+            return;   // solo al cambiar de bloque horizontal (barato)
+        }
+        final Player p = e.getPlayer();
+        final Location plaza = village.plaza();
+        final boolean inside = p.getWorld().equals(plaza.getWorld())
+                && Math.hypot(p.getX() - plaza.getX(), p.getZ() - plaza.getZ()) <= 48;
+        final boolean was = inVillage.contains(p.getUniqueId());
+        if (inside && !was) {
+            inVillage.add(p.getUniqueId());
+            p.showTitle(Title.title(
+                    Component.text("§6" + villageName),
+                    Component.text("§7Un pueblo de Aetheria"),
+                    Title.Times.times(java.time.Duration.ofMillis(400),
+                            java.time.Duration.ofSeconds(3), java.time.Duration.ofMillis(900))));
+        } else if (!inside && was) {
+            inVillage.remove(p.getUniqueId());
+        }
+    }
+
+    private void loadVillageName() {
+        try {
+            if (nameFile.exists()) {
+                try (BufferedReader r = new BufferedReader(new FileReader(nameFile))) {
+                    final String line = r.readLine();
+                    if (line != null && !line.isBlank()) {
+                        villageName = line.trim();
+                        return;
+                    }
+                }
+            }
+            villageName = TOWN_NAMES[ThreadLocalRandom.current().nextInt(TOWN_NAMES.length)];
+            try (FileWriter w = new FileWriter(nameFile, false)) {
+                w.write(villageName);
+            }
+        } catch (Exception ex) {
+            plugin.getLogger().warning("[Aetheria] no pude cargar/crear el nombre del pueblo: "
+                    + ex.getMessage());
+        }
     }
 
     /** Seca una casa: quita el agua/lava que se haya colado dentro (±3 del centro, sin tocar
@@ -1125,8 +1212,19 @@ public final class SettlementModule implements Listener {
                         world.getBlockAt(c.x + dx, y, c.z + dz).setType(Material.AIR, false);
                     }
                 }
-                if (dx >= -6 && dx <= 6) {     // solo el solar de la casa queda con cesped
+                if (dx >= -6 && dx <= 6) {     // el solar vuelve a ser un claro natural
                     world.getBlockAt(c.x + dx, fy, c.z + dz).setType(Material.GRASS_BLOCK, false);
+                    // el terreno se renaturaliza: hierba, alguna flor y algun brote de arbol.
+                    final var rng = ThreadLocalRandom.current();
+                    final int roll = rng.nextInt(100);
+                    if (roll < 35) {
+                        world.getBlockAt(c.x + dx, fy + 1, c.z + dz).setType(Material.SHORT_GRASS, false);
+                    } else if (roll < 45) {
+                        world.getBlockAt(c.x + dx, fy + 1, c.z + dz)
+                                .setType(FLOWERS[rng.nextInt(FLOWERS.length)], false);
+                    } else if (roll < 48) {
+                        world.getBlockAt(c.x + dx, fy + 1, c.z + dz).setType(Material.OAK_SAPLING, false);
+                    }
                 }
             }
         }

@@ -172,6 +172,7 @@ public final class SettlementModule implements Listener {
     }
 
     private final List<Town> towns = new ArrayList<>();
+    private final java.util.Map<Integer, String> alcaldes = new java.util.HashMap<>();  // vid -> alcalde
 
     /** Altura del SUELO real (ignora hojas, troncos y plantas), escaneando hacia abajo. */
     private int groundY(int x, int z) {
@@ -423,6 +424,33 @@ public final class SettlementModule implements Listener {
         return p.getKey().getKey();
     }
 
+    /** El oficio que MENOS tiene la aldea, para que se equilibre (no 6 del mismo y ninguno de otro). */
+    private Villager.Profession neededProfession(int vid, java.util.Random rng) {
+        final int[] counts = new int[PROFS.length];
+        for (final Colono c : colonos) {
+            if (c.vid != vid) {
+                continue;
+            }
+            for (int i = 0; i < PROFS.length; i++) {
+                if (PROFS[i].getKey().getKey().equals(c.profKey)) {
+                    counts[i]++;
+                    break;
+                }
+            }
+        }
+        int min = Integer.MAX_VALUE;
+        for (final int n : counts) {
+            min = Math.min(min, n);
+        }
+        final List<Villager.Profession> cand = new ArrayList<>();
+        for (int i = 0; i < PROFS.length; i++) {
+            if (counts[i] == min) {
+                cand.add(PROFS[i]);
+            }
+        }
+        return cand.get(rng.nextInt(cand.size()));
+    }
+
     private static Villager.Profession profFromKey(String key) {
         for (final Villager.Profession p : PROFS) {
             if (p.getKey().getKey().equals(key)) {
@@ -512,6 +540,7 @@ public final class SettlementModule implements Listener {
             }
             final String level = json.has("level") ? json.get("level").getAsString() : "estable";
             worldWork(level);   // los NPC mejoran el mundo (amplian cultivos) con el tiempo
+            townLife();         // alcalde de cada aldea + granero donde los oficios producen
         }));
     }
 
@@ -720,7 +749,7 @@ public final class SettlementModule implements Listener {
         final int cz = spot[1];
         final int fy = spot[2];
         final var rng = ThreadLocalRandom.current();
-        final Villager.Profession prof = PROFS[rng.nextInt(PROFS.length)];
+        final Villager.Profession prof = neededProfession(vid, rng);   // el oficio que falta en la aldea
         final Material[] pal = COMBOS[rng.nextInt(COMBOS.length)];
         // Un aldeano SOLTERO vive en una casa MUY PEQUENA (una sola cama). Nada de mansiones:
         // una casa de aldeano no es una casa de jugador con arquitecto. Al casarse se le
@@ -929,18 +958,110 @@ public final class SettlementModule implements Listener {
         }
     }
 
-    /** Un colono (preferiblemente joven y no jubilado) que hereda el oficio del fallecido. */
+    /** Hereda el oficio del fallecido: preferentemente un HIJO/A suyo; si no, el vecino mas joven
+     *  de su misma aldea. */
     private Colono pickSuccessor(Colono dead) {
+        Colono child = null;
         Colono best = null;
         for (final Colono c : colonos) {
-            if (c == dead || c.retired) {
+            if (c == dead || c.retired || c.vid != dead.vid) {
                 continue;
+            }
+            if (dead.name.equals(c.parent) && (child == null || c.initialAge < child.initialAge)) {
+                child = c;
             }
             if (best == null || c.initialAge < best.initialAge) {
                 best = c;
             }
         }
-        return best;
+        return child != null ? child : best;
+    }
+
+    /**
+     * Vida civica de cada aldea: un ALCALDE (el vecino mas veterano) con su cartel en la plaza,
+     * y un GRANERO donde cada oficio deposita algo de su produccion (la economia se vuelve
+     * tangible: al abrir el barril ves trigo, lana, hierro... segun quien trabaje en el pueblo).
+     */
+    private void townLife() {
+        final long now = System.currentTimeMillis();
+        for (int vid = 0; vid < towns.size(); vid++) {
+            final Town t = towns.get(vid);
+            Colono alc = null;
+            for (final Colono c : colonos) {
+                if (c.vid == vid && !c.retired && (alc == null || c.age(now) > alc.age(now))) {
+                    alc = c;
+                }
+            }
+            final String alcalde = alc != null ? alc.name : "";
+            mayorSign(t, alcalde);
+            final String prev = alcaldes.get(vid);
+            if (!alcalde.isEmpty() && !alcalde.equals(prev)) {
+                if (prev != null) {
+                    gateway.postEvent("gobierno", alcalde + " toma el cargo de alcalde de " + t.name + ".");
+                }
+                alcaldes.put(vid, alcalde);
+            }
+            produceInto(vid, t);
+        }
+    }
+
+    private void mayorSign(Town t, String alcalde) {
+        final int sx = t.cx;
+        final int sz = t.cz - 4;
+        final int gy = groundY(sx, sz);
+        if (world.getBlockAt(sx, gy + 1, sz).getType().isAir()
+                || world.getBlockAt(sx, gy + 1, sz).getType() == Material.OAK_FENCE) {
+            world.getBlockAt(sx, gy + 1, sz).setType(Material.OAK_FENCE, false);
+        }
+        final org.bukkit.block.Block b = world.getBlockAt(sx, gy + 2, sz);
+        if (b.getType() != Material.OAK_SIGN) {
+            b.setType(Material.OAK_SIGN, false);
+        }
+        if (b.getBlockData() instanceof org.bukkit.block.data.Rotatable rot) {
+            rot.setRotation(BlockFace.SOUTH);
+            b.setBlockData(rot, false);
+        }
+        if (b.getState() instanceof org.bukkit.block.Sign s) {
+            s.getSide(org.bukkit.block.sign.Side.FRONT).line(0, Component.text("§6" + t.name));
+            s.getSide(org.bukkit.block.sign.Side.FRONT).line(1, Component.text("§0Alcalde:"));
+            s.getSide(org.bukkit.block.sign.Side.FRONT).line(2,
+                    Component.text("§1" + (alcalde.isEmpty() ? "sin nombrar" : alcalde)));
+            s.update(true);
+        }
+    }
+
+    /** Cada oficio deposita 1 unidad de su produccion en el granero (barril) de su aldea. */
+    private void produceInto(int vid, Town t) {
+        final int bx = t.cx + 3;
+        final int bz = t.cz;
+        final int gy = groundY(bx, bz);
+        final org.bukkit.block.Block bb = world.getBlockAt(bx, gy + 1, bz);
+        if (bb.getType() != Material.BARREL) {
+            bb.setType(Material.BARREL, false);
+        }
+        if (!(bb.getState() instanceof org.bukkit.block.Container container)) {
+            return;
+        }
+        final org.bukkit.inventory.Inventory inv = container.getInventory();
+        for (final Colono c : colonos) {
+            if (c.vid == vid && !c.retired) {
+                inv.addItem(new org.bukkit.inventory.ItemStack(tradeGood(c.profKey), 1));
+            }
+        }
+    }
+
+    private static Material tradeGood(String profKey) {
+        return switch (profKey) {
+            case "farmer" -> Material.WHEAT;
+            case "fisherman" -> Material.COD;
+            case "shepherd" -> Material.WHITE_WOOL;
+            case "mason" -> Material.STONE;
+            case "butcher" -> Material.BEEF;
+            case "librarian" -> Material.BOOK;
+            case "toolsmith" -> Material.IRON_INGOT;
+            case "fletcher" -> Material.ARROW;
+            default -> Material.EMERALD;
+        };
     }
 
     /** Refresca la ficha (edad, oficio, familia) de cada colono para que hable de si mismo. */
@@ -962,6 +1083,10 @@ public final class SettlementModule implements Listener {
             final String kids = livingChildren(c);   // "sus hijos X, Y" o ""
             if (!kids.isEmpty()) {
                 fam.append(" Tus hijos son ").append(kids.replace("sus hijos ", "")).append(".");
+            }
+            if (c.name.equals(alcaldes.get(c.vid)) && c.vid < towns.size()) {
+                fam.append(" Eres el ALCALDE de ").append(towns.get(c.vid).name)
+                        .append("; hablas con orgullo de tu pueblo.");
             }
             final String bio = "Eres " + c.name + ", " + (fem ? "vecina" : "vecino")
                     + " del pueblo de Aetheria. Tienes " + age

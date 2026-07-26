@@ -96,12 +96,16 @@ public final class AetheriaPlugin extends JavaPlugin {
             }
 
             // Arquitecto guiado (casa a medida, cobra por spec) + guia de servicios.
-            final ArchitectModule architect = new ArchitectModule(this, gateway, claims);
+            // Deshacer construcciones (arquitecto/decorador) con reembolso.
+            final UndoModule undo = new UndoModule(this, gateway);
+            Objects.requireNonNull(getCommand("deshacer")).setExecutor(undo);
+
+            final ArchitectModule architect = new ArchitectModule(this, gateway, claims, undo);
             Objects.requireNonNull(getCommand("arquitecto")).setExecutor(architect);
             Objects.requireNonNull(getCommand("servicios")).setExecutor(architect);
 
             // Decorador guiado: pequenas estructuras (jardin, farola, estatua, fuente).
-            final DecoratorModule decorator = new DecoratorModule(this, gateway, claims);
+            final DecoratorModule decorator = new DecoratorModule(this, gateway, claims, undo);
             Objects.requireNonNull(getCommand("decorador")).setExecutor(decorator);
 
             // Vida del server: trabajos (ganar AET por tareas), mercado y HUD/guia.

@@ -44,6 +44,28 @@ public final class Blueprint {
     }
 
     /**
+     * Caja (minX,minY,minZ,maxX,maxY,maxZ) que ABARCA lo que colocaria {@code place}/
+     * {@code buildHouse} para este jugador AHORA. Se usa para fotografiar el terreno antes de
+     * construir (para poder deshacer). Debe calcular el mismo origen que los constructores.
+     */
+    public static int[] buildRegion(Player player, String blueprint, int half) {
+        final BlockFace f = player.getFacing();
+        final int px = player.getLocation().getBlockX();
+        final int pz = player.getLocation().getBlockZ();
+        if ("house".equals(blueprint)) {
+            final int cx = px + f.getModX() * (half + 2);
+            final int cz = pz + f.getModZ() * (half + 2);
+            final int fy = player.getWorld().getHighestBlockYAt(cx, cz);
+            return new int[] {cx - half - 1, fy - 8, cz - half - 1, cx + half + 1, fy + 5, cz + half + 1};
+        }
+        // Decoraciones del catalogo: origen a 2 bloques por delante (ver place()).
+        final int ox = px + f.getModX() * 2;
+        final int oz = pz + f.getModZ() * 2;
+        final int oy = player.getLocation().getBlockY();
+        return new int[] {ox - 2, oy - 2, oz - 2, ox + 2, oy + 4, oz + 2};
+    }
+
+    /**
      * Coloca el blueprint {@code name} unos bloques por delante del jugador.
      *
      * @return numero de bloques colocados, o -1 si el blueprint no existe.

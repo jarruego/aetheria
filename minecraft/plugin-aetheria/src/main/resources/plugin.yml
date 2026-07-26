@@ -57,6 +57,10 @@ commands:
     description: Decora tu parcela (jardin, farola, estatua, fuente)
     usage: /decorador
     permission: aetheria.use
+  deshacer:
+    description: Deshace tu ultima construccion y te devuelve casi todo el dinero
+    usage: /deshacer
+    permission: aetheria.use
   servicios:
     description: Guia de servicios y precios
     usage: /servicios

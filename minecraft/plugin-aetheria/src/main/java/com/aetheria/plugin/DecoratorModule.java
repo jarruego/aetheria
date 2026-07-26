@@ -37,11 +37,14 @@ public final class DecoratorModule implements CommandExecutor {
     private final AetheriaPlugin plugin;
     private final GatewayClient gateway;
     private final ClaimModule claims;
+    private final UndoModule undo;
 
-    public DecoratorModule(AetheriaPlugin plugin, GatewayClient gateway, ClaimModule claims) {
+    public DecoratorModule(AetheriaPlugin plugin, GatewayClient gateway, ClaimModule claims,
+            UndoModule undo) {
         this.plugin = plugin;
         this.gateway = gateway;
         this.claims = claims;
+        this.undo = undo;
     }
 
     @Override
@@ -92,9 +95,12 @@ public final class DecoratorModule implements CommandExecutor {
                         player.sendMessage("§c[Decorador] " + why + ". No he construido nada.");
                         return;
                     }
+                    undo.snapshot(player, Blueprint.buildRegion(player, deco.blueprint(), 0),
+                            deco.price(), deco.label().toLowerCase());
                     final int blocks = Blueprint.place(player, deco.blueprint());
                     player.sendMessage(String.format("§a[Decorador] Listo: §f%s§a, frente a ti (%d "
-                            + "bloques). Se cobraron §e%d AET§a.", deco.label(), blocks, deco.price()));
+                            + "bloques). Se cobraron §e%d AET§a. (Puedes §f/deshacer§a.)",
+                            deco.label(), blocks, deco.price()));
                 }));
     }
 }

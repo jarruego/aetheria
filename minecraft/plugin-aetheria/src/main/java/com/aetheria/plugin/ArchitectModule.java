@@ -38,12 +38,15 @@ public final class ArchitectModule implements CommandExecutor {
     private final AetheriaPlugin plugin;
     private final GatewayClient gateway;
     private final ClaimModule claims;
+    private final UndoModule undo;
     private final Map<UUID, Order> orders = new ConcurrentHashMap<>();
 
-    public ArchitectModule(AetheriaPlugin plugin, GatewayClient gateway, ClaimModule claims) {
+    public ArchitectModule(AetheriaPlugin plugin, GatewayClient gateway, ClaimModule claims,
+            UndoModule undo) {
         this.plugin = plugin;
         this.gateway = gateway;
         this.claims = claims;
+        this.undo = undo;
     }
 
     // --- Tabla de precios ---
@@ -201,10 +204,13 @@ public final class ArchitectModule implements CommandExecutor {
                         player.sendMessage("§c[Arquitecto] " + why + ". No he construido nada.");
                         return;
                     }
+                    // Fotografia el terreno antes de construir, para poder deshacer.
+                    undo.snapshot(player, Blueprint.buildRegion(player, "house", o.half), p, "tu casa");
                     final Material[] pal = palette(o.mat);
                     final int blocks = Blueprint.buildHouse(player, o.half, pal[0], pal[1], pal[2], o.furniture);
                     player.sendMessage(String.format("§a[Arquitecto] ¡Hecho! Tu casa %s de %s%s, "
-                            + "aqui delante (%d bloques). Se cobraron §e%d AET§a.",
+                            + "aqui delante (%d bloques). Se cobraron §e%d AET§a. Si no te gusta el "
+                            + "sitio, §f/deshacer§a y recuperas casi todo para rehacerla.",
                             sizeLabel(o.half), o.mat, o.furniture ? " amueblada" : "", blocks, p));
                     orders.remove(player.getUniqueId());
                 }));

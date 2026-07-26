@@ -39,6 +39,7 @@ Un servidor de Minecraft persistente donde la IA es el "sistema operativo del mu
 | `docs/infra/` | **Estado del despliegue cloud y traspaso entre sesiones** |
 | `docs/ia-local.md` | **IA real a coste cero** (Ollama): instalación, modelos, problemas |
 | `docs/seguridad.md` | **Qué protege el sistema y qué no** (comprobado atacándolo) |
+| `docs/guia-jugador.md` | **Guía del jugador**: todo lo que se puede hacer en el server |
 
 ## Comandos habituales
 
@@ -159,6 +160,24 @@ con propietario, persistidas en `plots`. `/claim` (cuesta AET, integra la econom
 `/claim info`, `/unclaim`. **Protección**: dentro de la parcela de otro nadie rompe/pone
 bloques (`ClaimModule` con caché en memoria chunk→dueño, cero red por bloque). El backend
 valida solape (409), fondos (400, sin cobrar) y propiedad. Roadmap F0–F9 al día.
+
+**Capa de "servidor vivo" (encima de F0–F9).** Para que al entrar se note vida:
+- **Aldea física** (`VillageModule`): el plugin construye a **cota fija** (no trepa entre
+  reinicios) casas con puerta/ventanas/cama/cartel, granja con compostador, puesto de
+  guardia y plaza con pozo, al **sur del spawn** (el portal queda al norte). Los vecinos
+  viven y trabajan en esos edificios reales.
+- **Trabajos** (`JobsModule`): se gana AET por minar/talar/cosechar (maduros)/cazar;
+  recompensa por lotes cada 20 s con action bar. **Mercado** (`ShopModule`): `/sell [all]`,
+  `/worth`, `/shop`. Backend: `/internal/reward` → `/v1/reward` (paga desde la cuenta banco).
+- **HUD** (`HudModule`): marcador lateral (saldo + prosperidad del pueblo), bienvenida,
+  **libro-guía** en la 1ª conexión y `/guia`.
+- **Conserje del lobby** (`LobbyGuideModule`): **un solo** NPC (Aeon) que ronda el lobby,
+  con nombre sobre la cabeza; su persona en el orchestrator conoce **todo** el server y da
+  los comandos exactos. Ya no hay un guía por portal.
+- **Sociedad que prospera/decae**: la simulación F8 tiene festivales, penurias y pérdidas;
+  se calcula la **prosperidad** (`/internal/world/prosperity` → `/v1/prosperity`), visible
+  en el HUD y en `/aetheria cronica`.
+- Guía para el dueño del avance: `docs/guia-jugador.md`.
 
 **Todas las fases del plan (F0–F9) están en su núcleo COMPLETAS.** Lo que queda son
 mejoras transversales (skins humanas para NPC, backups/monitorización, F4 cloud pendiente

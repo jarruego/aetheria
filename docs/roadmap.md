@@ -52,6 +52,13 @@ Cada fase deja algo funcionando y verificable.
       marina) y el jugador aparece 3 casillas al norte para no reentrar sin querer
 - [x] NPC con rutina: se detienen y te miran al hablarles; movimiento fiable (reemision de
       camino 2x/seg + rescate anti-atasco) por casa(~7)/trabajo(~13)/plaza(~3) desde el spawn
+- [x] Aldea FISICA (VillageModule): casas con puerta/ventanas/cama/cartel, granja, puesto de
+      guardia y plaza con pozo, a cota fija; los vecinos viven/trabajan en edificios reales
+- [x] Trabajos (ganar AET por minar/talar/cosechar/cazar) + Mercado (/sell,/worth,/shop)
+- [x] HUD lateral (saldo + prosperidad), bienvenida, libro-guia y /guia
+- [x] Conserje unico del lobby (Aeon) que ronda, con nombre y que conoce todo el server
+- [x] Sociedad que prospera/decae: festivales, penurias y prosperidad (en HUD y cronica)
+- [x] Guia del jugador (docs/guia-jugador.md)
 
 ## Fase 5 - El mundo recuerda (camino de escritura a la DB)  (COMPLETA)
 - [x] Camino de escritura: plugin -> gateway -> world-state -> Postgres (ADR-0010)

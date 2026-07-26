@@ -35,6 +35,7 @@ public final class NpcRoutineModule {
         Location home;
         Location work;
         final Location plaza;
+        final Location town;   // centro de SU aldea (para pasear por su pueblo, no por otro)
         Mob entity;
         Location last;      // ultima posicion vista (para detectar atascos)
         int stuck;          // ticks de rutina seguidos sin avanzar
@@ -42,12 +43,13 @@ public final class NpcRoutineModule {
         Location wander;    // destino de paseo actual (o null si esta trabajando)
         long wanderUntil;   // hasta cuando dura el paseo
 
-        Worker(String npcId, String name, Location home, Location work, Location plaza) {
+        Worker(String npcId, String name, Location home, Location work, Location plaza, Location town) {
             this.npcId = npcId;
             this.name = name;
             this.home = home;
             this.work = work;
             this.plaza = plaza;
+            this.town = town;
         }
     }
 
@@ -101,15 +103,24 @@ public final class NpcRoutineModule {
         return workers.size();
     }
 
-    /** Da de alta un colono nuevo con su oficio, que vive y trabaja donde se indica. */
+    /** Da de alta un colono nuevo con su oficio, que vive y trabaja donde se indica, y se reune
+     *  y pasea en SU aldea (townCenter). */
     public void addColono(String npcId, String name, Location home, Location work,
-            Villager.Profession prof) {
-        final Worker w = new Worker(npcId, name, home, work, village.plaza());
+            Villager.Profession prof, Location townCenter) {
+        final Worker w = new Worker(npcId, name, home, work, plazaSpot(townCenter), townCenter);
         w.entity = spawnWorker(w);
         if (w.entity instanceof Villager v) {
             v.setProfession(prof);
         }
         workers.add(w);
+    }
+
+    /** Punto de reunion en un ANILLO alrededor de la plaza de su aldea (uno distinto por vecino)
+     *  para que al atardecer no se apilen todos en la misma casilla y se crucen los nombres. */
+    private Location plazaSpot(Location center) {
+        final double ang = workers.size() * 2.399963;   // angulo aureo: reparte bien en el anillo
+        final double r = 3 + (workers.size() % 3);
+        return center.clone().add(Math.cos(ang) * r, 0, Math.sin(ang) * r);
     }
 
     /** Da de baja al colono mas reciente (emigra). Nunca toca al nucleo. Devuelve su nombre. */
@@ -285,7 +296,7 @@ public final class NpcRoutineModule {
         }
         if (java.util.concurrent.ThreadLocalRandom.current().nextInt(1000) < 7) {
             final var rng = java.util.concurrent.ThreadLocalRandom.current();
-            final Location p = village.plaza();
+            final Location p = w.town != null ? w.town : village.plaza();
             final double ang = rng.nextDouble() * Math.PI * 2;
             final int dist = 6 + rng.nextInt(rng.nextInt(100) < 20 ? 34 : 16);   // a veces explora lejos
             final int wx = (int) Math.round(p.getX() + Math.cos(ang) * dist);

@@ -211,7 +211,15 @@ public final class VillageModule {
         return new Location(world, cx + 0.5, floorY + 1, cz - 2 + 0.5);
     }
 
-    private Location buildPlaza(int cx, int cz, int floorY) {
+    /** Construye una plaza (pozo + campana) en CUALQUIER sitio, sobre el terreno. Para fundar
+     *  aldeas nuevas lejos del spawn. Devuelve el centro. */
+    public Location buildPlazaAt(int cx, int cz) {
+        final int by = world.getHighestBlockYAt(cx, cz) - 1;
+        clearArea(cx - 6, cx + 6, cz - 6, cz + 6, by + 1, by + 7);
+        return buildPlaza(cx, cz, by);
+    }
+
+    Location buildPlaza(int cx, int cz, int floorY) {
         foundation(cx, cz, 3, floorY, Material.STONE_BRICKS, 5);
         // Pozo central: anillo de piedra con agua, postes y tejadillo.
         for (int dx = -1; dx <= 1; dx++) {

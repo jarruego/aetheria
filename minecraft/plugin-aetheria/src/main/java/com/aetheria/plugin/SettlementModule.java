@@ -100,13 +100,15 @@ public final class SettlementModule implements Listener {
         final String name;
         final String parent;
         final String gender;
+        final int vid;
         final long matureAt;
 
-        Child(Villager baby, String name, String parent, String gender, long matureAt) {
+        Child(Villager baby, String name, String parent, String gender, int vid, long matureAt) {
             this.baby = baby;
             this.name = name;
             this.parent = parent;
             this.gender = gender;
+            this.vid = vid;
             this.matureAt = matureAt;
         }
     }
@@ -126,6 +128,7 @@ public final class SettlementModule implements Listener {
         int floors = 1;      // plantas de su casa (para saber que region ocupa)
         String spouse;       // nombre del conyuge, o null si esta soltero/a
         String gender = "m"; // "m" o "f" (dos hombres no tienen hijos biologicos)
+        int vid;             // aldea a la que pertenece (indice en towns)
 
         double age(long now) {
             return initialAge + (now - bornMillis) * YEARS_PER_DAY / DAY_MS;
@@ -134,7 +137,8 @@ public final class SettlementModule implements Listener {
         String toLine() {
             return name + ";" + profKey + ";" + x + ";" + y + ";" + z + ";" + bornMillis + ";"
                     + initialAge + ";" + deathAge + ";" + (parent == null ? "" : parent) + ";"
-                    + retired + ";" + floors + ";" + (spouse == null ? "" : spouse) + ";" + gender;
+                    + retired + ";" + floors + ";" + (spouse == null ? "" : spouse) + ";" + gender
+                    + ";" + vid;
         }
     }
 
@@ -143,13 +147,31 @@ public final class SettlementModule implements Listener {
     private final List<Colono> colonos = new ArrayList<>(); // colonos adultos (con edad), persistidos
     private final File dataFile;
     private final File civicFile;
-    private final File nameFile;
-    private String villageName = "Aldea";
-    private final java.util.Set<java.util.UUID> inVillage = new java.util.HashSet<>();
+    private final File nameFile;   // village.txt: una linea por aldea "nombre;cx;cz;baseY"
+    private final java.util.Map<java.util.UUID, Integer> inTown = new java.util.HashMap<>();
 
+    private static final int PER_TOWN = 8;   // al llenarse, una pareja funda otra aldea lejos
     private static final String[] TOWN_NAMES = {"Rocavieja", "Valverde", "Fuenteclara", "Montenar",
         "Rivablanca", "Espinar", "Robledo", "Vallehondo", "Penaflor", "Aldealba", "Sotobravo",
-        "Villalce", "Olmedal", "Riofrio", "Costaluna", "Miralbosque", "Pradoverde", "Encinar"};
+        "Villalce", "Olmedal", "Riofrio", "Costaluna", "Miralbosque", "Pradoverde", "Encinar",
+        "Torrelaguna", "Valdehielo", "Montalbo", "Fuentesauco", "Castroverde", "Puebla Nueva"};
+
+    /** Una aldea del mundo: su nombre y el centro de su plaza. Aetheria es el mundo; cada aldea
+     *  tiene nombre propio. */
+    private static final class Town {
+        final String name;
+        final int cx;
+        final int cz;
+        final int baseY;
+        Town(String name, int cx, int cz, int baseY) {
+            this.name = name;
+            this.cx = cx;
+            this.cz = cz;
+            this.baseY = baseY;
+        }
+    }
+
+    private final List<Town> towns = new ArrayList<>();
 
     /** Altura del SUELO real (ignora hojas, troncos y plantas), escaneando hacia abajo. */
     private int groundY(int x, int z) {
@@ -166,10 +188,9 @@ public final class SettlementModule implements Listener {
         return y;
     }
 
-    /** True si (x,z) esta demasiado cerca de otra casa o del centro del pueblo. */
-    private boolean tooClose(int x, int z) {
-        final Location plaza = village.plaza();
-        if (Math.hypot(x - plaza.getX(), z - plaza.getZ()) < 16) {
+    /** True si (x,z) esta demasiado cerca de otra casa o del centro de la aldea. */
+    private boolean tooClose(Location center, int x, int z) {
+        if (Math.hypot(x - center.getX(), z - center.getZ()) < 16) {
             return true;
         }
         for (final int[] p : placed) {
@@ -212,11 +233,10 @@ public final class SettlementModule implements Listener {
      * del pueblo (mas lejos conforme crece), plano, SIN AGUA y SIN construcciones (no se pisa
      * lo que haya edificado un jugador). Devuelve {cx,cz,fy} o null.
      */
-    private int[] findBuildSpot(int index) {
+    private int[] findBuildSpot(Location center, int index) {
         final var rng = ThreadLocalRandom.current();
-        final Location plaza = village.plaza();
-        final int px = plaza.getBlockX();
-        final int pz = plaza.getBlockZ();
+        final int px = center.getBlockX();
+        final int pz = center.getBlockZ();
         int[] best = null;
         int bestFlat = Integer.MAX_VALUE;
         // Banda COMPACTA alrededor de la plaza (no crece con la poblacion): la aldea se agrupa
@@ -228,7 +248,7 @@ public final class SettlementModule implements Listener {
             final int dist = 16 + rng.nextInt(t < 40 ? 26 : 90);
             final int cx = px + (int) Math.round(Math.cos(ang) * dist);
             final int cz = pz + (int) Math.round(Math.sin(ang) * dist);
-            if (tooClose(cx, cz)) {
+            if (tooClose(center, cx, cz)) {
                 continue;
             }
             int min = Integer.MAX_VALUE;
@@ -236,7 +256,9 @@ public final class SettlementModule implements Listener {
             long sum = 0;
             boolean water = false;
             boolean built = false;   // hay bloques construidos por alguien: no se pisa
-            for (int dx = -5; dx <= 5 && !water && !built; dx++) {
+            // Se comprueba la casa (±5) Y el puesto de trabajo (al este, +7..+11): ni la casa
+            // ni el puesto pueden quedar sobre el agua (la puerta siempre en tierra firme).
+            for (int dx = -5; dx <= 12 && !water && !built; dx++) {
                 for (int dz = -5; dz <= 5; dz++) {
                     final int gy = groundY(cx + dx, cz + dz);
                     final Block g = world.getBlockAt(cx + dx, gy, cz + dz);
@@ -310,15 +332,15 @@ public final class SettlementModule implements Listener {
                 .filter(e -> e.getScoreboardTags().contains(BABY_TAG))
                 .forEach(org.bukkit.entity.Entity::remove);
         final boolean fresh = !dataFile.exists();
-        load();   // reaparecen los colonos ya existentes en sus casas (sin reconstruir)
+        loadTowns();   // las aldeas (nombre + centro) ANTES que los colonos (que las referencian)
+        load();        // reaparecen los colonos ya existentes en sus casas (sin reconstruir)
         loadCivic();
-        loadVillageName();
         if (fresh && colonos.isEmpty()) {
             // Mundo NUEVO: dos fundadores, un hombre y una mujer (asi pueden formar una familia),
             // cada uno con su casa pequena y su puesto.
             final var rng = ThreadLocalRandom.current();
-            growAdult(0, freshName("m", rng), "m", 22 + rng.nextInt(30), "");
-            growAdult(1, freshName("f", rng), "f", 22 + rng.nextInt(30), "");
+            growAdult(0, 0, freshName("m", rng), "m", 22 + rng.nextInt(30), "");
+            growAdult(0, 1, freshName("f", rng), "f", 22 + rng.nextInt(30), "");
         }
         plugin.getServer().getScheduler().runTaskTimer(plugin, this::reconcile, PERIOD, PERIOD);
         plugin.getLogger().info("[Aetheria] Pueblo vivo: reconciliando poblacion cada 60 s ("
@@ -354,6 +376,7 @@ public final class SettlementModule implements Listener {
                     c.floors = f.length >= 11 ? Integer.parseInt(f[10]) : 1;
                     c.spouse = f.length >= 12 && !f[11].isEmpty() ? f[11] : null;
                     c.gender = f.length >= 14 && !f[13].isEmpty() ? f[13] : randGender(rng);
+                    c.vid = f.length >= 15 && !f[14].isEmpty() ? Integer.parseInt(f[14]) : 0;
                 } else {   // formato antiguo: se le asigna una edad plausible
                     c.bornMillis = System.currentTimeMillis();
                     c.initialAge = 20 + rng.nextInt(40);
@@ -370,7 +393,8 @@ public final class SettlementModule implements Listener {
                     }
                 }
                 routines.addColono("colono", c.name, new Location(world, c.x + 0.5, c.y, c.z + 0.5),
-                        new Location(world, c.x + 9 + 0.5, c.y, c.z + 0.5), profFromKey(c.profKey));
+                        new Location(world, c.x + 9 + 0.5, c.y, c.z + 0.5), profFromKey(c.profKey),
+                        townCenter(c.vid));
                 if (c.retired) {
                     routines.retire(c.name);
                 }
@@ -464,16 +488,17 @@ public final class SettlementModule implements Listener {
             final int have = adults + children.size();
             if (have < target) {
                 final var rng = ThreadLocalRandom.current();
-                // Hasta tener 2 adultos fundadores, llegan adultos directos; luego, nacen ninos.
-                if (adults < 2 || target - have >= 2) {
-                    // Los dos fundadores son de distinto sexo (para que puedan formar familia).
-                    final String g = adults == 1
-                            ? ("f".equals(colonos.get(0).gender) ? "m" : "f")
-                            : randGender(rng);
-                    growAdult(colonos.size(), freshName(g, rng), g, 20 + rng.nextInt(40), "");
+                // ¿A que aldea va el nuevo? La primera con sitio; si todas estan llenas, se FUNDA
+                // una nueva lejos (una pareja parte a prosperar a otra zona).
+                final int vid = assignTown();
+                final int enAldea = countInTown(vid);
+                // Los dos primeros de cada aldea son de distinto sexo (para formar familia).
+                if (enAldea < 2 || target - have >= 2) {
+                    final String g = enAldea == 1 ? oppositeOfSole(vid) : randGender(rng);
+                    growAdult(vid, colonos.size(), freshName(g, rng), g, 20 + rng.nextInt(40), "");
                 } else if (!bearChild()) {
                     final String g = randGender(rng);   // sin pareja fertil, llega un inmigrante
-                    growAdult(colonos.size(), freshName(g, rng), g, 20 + rng.nextInt(40), "");
+                    growAdult(vid, colonos.size(), freshName(g, rng), g, 20 + rng.nextInt(40), "");
                 }
             } else if (have > target) {
                 if (!children.isEmpty()) {
@@ -528,7 +553,8 @@ public final class SettlementModule implements Listener {
         final String of = ", " + hijo + " de " + father.name + " y " + mother.name;
         convo.setBio(name, "Eres " + name + ", un nino pequeno del pueblo de Aetheria" + of
                 + ". Todavia no trabajas; hablas con la inocencia de un nino.");
-        children.add(new Child(baby, name, mother.name, gender, System.currentTimeMillis() + GROW_MS));
+        children.add(new Child(baby, name, mother.name, gender, mother.vid,
+                System.currentTimeMillis() + GROW_MS));
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                 "§d[Pueblo] §fHa nacido §b" + name + "§f" + of + "."));
         gateway.postEvent("nacimiento", "Nace " + name + of + ".");
@@ -549,7 +575,7 @@ public final class SettlementModule implements Listener {
             if (c.baby != null) {
                 c.baby.remove();
             }
-            growAdult(colonos.size(), c.name, c.gender, WORK_AGE, c.parent);
+            growAdult(c.vid, colonos.size(), c.name, c.gender, WORK_AGE, c.parent);
             Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                     "§a[Pueblo] §b" + c.name + " §7ha crecido y se ha mudado a su propia casa."));
         }
@@ -683,8 +709,10 @@ public final class SettlementModule implements Listener {
         }
     }
 
-    private void growAdult(int index, String name, String gender, double initialAge, String parent) {
-        final int[] spot = findBuildSpot(index);
+    private void growAdult(int vid, int index, String name, String gender, double initialAge,
+            String parent) {
+        final Location center = townCenter(vid);
+        final int[] spot = findBuildSpot(center, index);
         if (spot == null) {
             return;   // no encontro sitio libre; lo reintenta el proximo ciclo
         }
@@ -699,14 +727,14 @@ public final class SettlementModule implements Listener {
         // construye una mediana (ver maybeMarry).
         final int halfX = 2;
         final int halfZ = rng.nextInt(100) < 35 ? 3 : 2;   // 5x5 o 5x7, modesta
-        final BlockFace door = towardPlaza(cx, cz);        // la puerta mira al pueblo
+        final BlockFace door = towardPlaza(center, cx, cz); // la puerta mira a la plaza de su aldea
 
         prepareTerrain(cx, cz, fy);                        // tala arboles + nivela SUAVE al suelo real
         Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
                 pal[0], pal[1], pal[2], pal[3], true, 1, name);   // 1 cama (soltero)
         deflood(cx, fy, cz, 1);                            // por si algo de agua se colo
         final int wy = buildWorkplace(cx, cz, prof);       // puesto de trabajo tematico, al este
-        pathTo(cx, cz, village.plaza());                   // sendero que sigue el relieve al pueblo
+        pathTo(cx, cz, center);                            // sendero que sigue el relieve a la plaza
         placed.add(new int[] {cx, cz});
 
         final Colono c = new Colono();
@@ -721,22 +749,23 @@ public final class SettlementModule implements Listener {
         c.parent = parent;
         c.floors = 1;
         c.gender = gender;
+        c.vid = vid;
         colonos.add(c);
         save();
 
-        // Vive en su casa y TRABAJA en su propio puesto (el rasgo del oficio, al este):
-        // asi cada uno esta en un sitio distinto y no se amontonan en la plaza.
         final Location home = new Location(world, cx + 0.5, fy + 1, cz + 0.5);
         final Location workspot = new Location(world, cx + 9 + 0.5, wy + 1, cz + 0.5);
-        routines.addColono("colono", name, home, workspot, prof);
+        routines.addColono("colono", name, home, workspot, prof, center);
+        final String pueblo = towns.get(Math.max(0, Math.min(vid, towns.size() - 1))).name;
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
-                "§a[Pueblo] §f" + name + " §7(" + oficio(prof) + ") se ha instalado en el pueblo."));
-        plugin.getLogger().info("[Aetheria] Pueblo vivo: +1 colono (" + name + ", " + prof + ").");
+                "§a[Pueblo] §f" + name + " §7(" + oficio(prof) + ") se ha instalado en §f" + pueblo + "§7."));
+        plugin.getLogger().info("[Aetheria] Pueblo vivo: +1 colono (" + name + ", " + prof
+                + ") en aldea " + vid + ".");
     }
 
     private boolean compatible(Colono a, Colono b) {
-        if (a == b) {
-            return false;
+        if (a == b || a.vid != b.vid) {
+            return false;   // se casan dentro de la misma aldea
         }
         if (a.name.equals(b.parent) || b.name.equals(a.parent)) {
             return false;   // padre/madre - hijo/a
@@ -786,7 +815,8 @@ public final class SettlementModule implements Listener {
         if (a == null) {
             return;
         }
-        final int[] spot = findBuildSpot(colonos.size() + 2);
+        final Location center = townCenter(a.vid);
+        final int[] spot = findBuildSpot(center, colonos.size() + 2);
         if (spot == null) {
             return;   // sin sitio libre ahora; se reintenta el proximo ciclo
         }
@@ -796,13 +826,13 @@ public final class SettlementModule implements Listener {
         final Material[] pal = COMBOS[rng.nextInt(COMBOS.length)];
         final int halfX = 3;
         final int halfZ = rng.nextInt(100) < 40 ? 4 : 3;   // MEDIANA (algo mayor que la de soltero)
-        final BlockFace door = towardPlaza(cx, cz);
+        final BlockFace door = towardPlaza(center, cx, cz);
         prepareTerrain(cx, cz, fy);
         Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
                 pal[0], pal[1], pal[2], pal[3], true, 3, a.name + " y " + b.name);   // 3 camas
         deflood(cx, fy, cz, 1);                                          // por si se colo agua
         final int wy = buildWorkplace(cx, cz, profFromKey(a.profKey));   // taller familiar
-        pathTo(cx, cz, village.plaza());
+        pathTo(cx, cz, center);
 
         demolish(a);   // sus dos casas pequenas (y puestos) se derriban y liberan solar
         demolish(b);
@@ -812,10 +842,14 @@ public final class SettlementModule implements Listener {
         placed.add(new int[] {cx, cz});
         save();
 
-        final Location home = new Location(world, cx + 0.5, fy + 1, cz + 0.5);
-        final Location workspot = new Location(world, cx + 9 + 0.5, wy + 1, cz + 0.5);
-        routines.setHomeWork(a.name, home, workspot);
-        routines.setHomeWork(b.name, home, workspot);
+        // Casa y puesto compartidos, pero con destinos LIGERAMENTE distintos para que la pareja
+        // no se apile en la misma casilla (si no, sus nombres se cruzan en pantalla).
+        routines.setHomeWork(a.name,
+                new Location(world, cx + 1.0, fy + 1, cz + 0.5),
+                new Location(world, cx + 9 + 1.0, wy + 1, cz + 0.5));
+        routines.setHomeWork(b.name,
+                new Location(world, cx, fy + 1, cz + 1.5),
+                new Location(world, cx + 9.0, wy + 1, cz + 1.5));
 
         final String msg = a.name + " y " + b.name
                 + " se han casado y se han mudado juntos a una casa nueva.";
@@ -951,8 +985,7 @@ public final class SettlementModule implements Listener {
         return sb.length() > 0 ? "sus hijos " + sb : "";
     }
 
-    private BlockFace towardPlaza(int cx, int cz) {
-        final Location plaza = village.plaza();
+    private BlockFace towardPlaza(Location plaza, int cx, int cz) {
         final int dx = plaza.getBlockX() - cx;
         final int dz = plaza.getBlockZ() - cz;
         if (Math.abs(dx) >= Math.abs(dz)) {
@@ -1118,7 +1151,7 @@ public final class SettlementModule implements Listener {
         e.blockList().removeIf(b -> ownerAt(b) != null || inVillageCore(b));
     }
 
-    /** Al ENTRAR en la zona de la aldea, aparece su nombre en pantalla dando la bienvenida. */
+    /** Al ENTRAR en la zona de una aldea, aparece SU nombre en pantalla dando la bienvenida. */
     @EventHandler
     public void onMove(PlayerMoveEvent e) {
         if (e.getTo() == null || (e.getFrom().getBlockX() == e.getTo().getBlockX()
@@ -1126,40 +1159,156 @@ public final class SettlementModule implements Listener {
             return;   // solo al cambiar de bloque horizontal (barato)
         }
         final Player p = e.getPlayer();
-        final Location plaza = village.plaza();
-        final boolean inside = p.getWorld().equals(plaza.getWorld())
-                && Math.hypot(p.getX() - plaza.getX(), p.getZ() - plaza.getZ()) <= 48;
-        final boolean was = inVillage.contains(p.getUniqueId());
-        if (inside && !was) {
-            inVillage.add(p.getUniqueId());
+        if (!p.getWorld().equals(world)) {
+            return;
+        }
+        int near = -1;
+        double bestD = 49;
+        for (int i = 0; i < towns.size(); i++) {
+            final Town t = towns.get(i);
+            final double d = Math.hypot(p.getX() - (t.cx + 0.5), p.getZ() - (t.cz + 0.5));
+            if (d <= 48 && d < bestD) {
+                bestD = d;
+                near = i;
+            }
+        }
+        final Integer was = inTown.get(p.getUniqueId());
+        if (near >= 0 && (was == null || was != near)) {
+            inTown.put(p.getUniqueId(), near);
             p.showTitle(Title.title(
-                    Component.text("§6" + villageName),
+                    Component.text("§6" + towns.get(near).name),
                     Component.text("§7Un pueblo de Aetheria"),
                     Title.Times.times(java.time.Duration.ofMillis(400),
                             java.time.Duration.ofSeconds(3), java.time.Duration.ofMillis(900))));
-        } else if (!inside && was) {
-            inVillage.remove(p.getUniqueId());
+        } else if (near < 0 && was != null) {
+            inTown.remove(p.getUniqueId());
         }
     }
 
-    private void loadVillageName() {
+    private Location townCenter(int vid) {
+        final Town t = towns.get(Math.max(0, Math.min(vid, towns.size() - 1)));
+        return new Location(world, t.cx + 0.5, t.baseY + 1, t.cz + 0.5);
+    }
+
+    private int countInTown(int vid) {
+        int n = 0;
+        for (final Colono c : colonos) {
+            if (c.vid == vid) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    private String oppositeOfSole(int vid) {
+        for (final Colono c : colonos) {
+            if (c.vid == vid) {
+                return "f".equals(c.gender) ? "m" : "f";
+            }
+        }
+        return "m";
+    }
+
+    /** La primera aldea con sitio; si todas estan llenas, FUNDA una nueva lejos y devuelve su id. */
+    private int assignTown() {
+        for (int i = 0; i < towns.size(); i++) {
+            if (countInTown(i) < PER_TOWN) {
+                return i;
+            }
+        }
+        return foundNewTown();
+    }
+
+    /** Funda una aldea NUEVA lejos de todas (fuera de vista), sobre tierra firme. Devuelve su id. */
+    private int foundNewTown() {
+        final var rng = ThreadLocalRandom.current();
+        final Town origin = towns.get(0);
+        int bcx = 0;
+        int bcz = 0;
+        boolean found = false;
+        for (int t = 0; t < 40 && !found; t++) {
+            final double ang = rng.nextDouble() * Math.PI * 2;
+            final int dist = 220 + rng.nextInt(180);   // 220-400 bloques: bien lejos
+            final int cx = origin.cx + (int) Math.round(Math.cos(ang) * dist);
+            final int cz = origin.cz + (int) Math.round(Math.sin(ang) * dist);
+            boolean far = true;
+            for (final Town tw : towns) {
+                if (Math.hypot(cx - tw.cx, cz - tw.cz) < 180) {
+                    far = false;
+                    break;
+                }
+            }
+            if (!far) {
+                continue;
+            }
+            final int gy = groundY(cx, cz);
+            if (world.getBlockAt(cx, gy, cz).isLiquid() || world.getBlockAt(cx, gy + 1, cz).isLiquid()) {
+                continue;   // agua: no fundar ahi
+            }
+            bcx = cx;
+            bcz = cz;
+            found = true;
+        }
+        if (!found) {
+            return 0;   // no encontro sitio; el nuevo se queda en la aldea principal
+        }
+        String name = null;
+        final java.util.Set<String> used = new java.util.HashSet<>();
+        for (final Town tw : towns) {
+            used.add(tw.name);
+        }
+        for (final String n : TOWN_NAMES) {
+            if (!used.contains(n)) {
+                name = n;
+                break;
+            }
+        }
+        if (name == null) {
+            name = "Aldea " + (towns.size() + 1);
+        }
+        final Location plaza = village.buildPlazaAt(bcx, bcz);
+        towns.add(new Town(name, plaza.getBlockX(), plaza.getBlockZ(), plaza.getBlockY() - 1));
+        saveTowns();
+        final String msg = "Unos colonos parten a fundar una nueva aldea, " + name + ", lejos de aqui.";
+        gateway.postEvent("fundacion", msg);
+        Bukkit.getOnlinePlayers().forEach(pl -> pl.sendMessage("§d[Mundo] §f" + msg));
+        plugin.getLogger().info("[Aetheria] Nueva aldea fundada: " + name + " en " + bcx + "," + bcz);
+        return towns.size() - 1;
+    }
+
+    private void loadTowns() {
+        towns.clear();
         try {
             if (nameFile.exists()) {
                 try (BufferedReader r = new BufferedReader(new FileReader(nameFile))) {
-                    final String line = r.readLine();
-                    if (line != null && !line.isBlank()) {
-                        villageName = line.trim();
-                        return;
+                    String line;
+                    while ((line = r.readLine()) != null) {
+                        final String[] f = line.split(";", -1);
+                        if (f.length >= 4 && !f[0].isBlank()) {
+                            towns.add(new Town(f[0], Integer.parseInt(f[1]),
+                                    Integer.parseInt(f[2]), Integer.parseInt(f[3])));
+                        }
                     }
                 }
             }
-            villageName = TOWN_NAMES[ThreadLocalRandom.current().nextInt(TOWN_NAMES.length)];
-            try (FileWriter w = new FileWriter(nameFile, false)) {
-                w.write(villageName);
+        } catch (Exception ex) {
+            plugin.getLogger().warning("[Aetheria] no pude cargar aldeas: " + ex.getMessage());
+        }
+        if (towns.isEmpty()) {
+            final Location plaza = village.plaza();
+            final String name = TOWN_NAMES[ThreadLocalRandom.current().nextInt(TOWN_NAMES.length)];
+            towns.add(new Town(name, plaza.getBlockX(), plaza.getBlockZ(), village.baseY()));
+            saveTowns();
+        }
+    }
+
+    private void saveTowns() {
+        try (FileWriter w = new FileWriter(nameFile, false)) {
+            for (final Town t : towns) {
+                w.write(t.name + ";" + t.cx + ";" + t.cz + ";" + t.baseY + "\n");
             }
         } catch (Exception ex) {
-            plugin.getLogger().warning("[Aetheria] no pude cargar/crear el nombre del pueblo: "
-                    + ex.getMessage());
+            plugin.getLogger().warning("[Aetheria] no pude guardar aldeas: " + ex.getMessage());
         }
     }
 

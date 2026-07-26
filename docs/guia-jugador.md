@@ -62,6 +62,11 @@ construye cuando **confirmas** (haciendo clic en las opciones del chat) y **paga
 - **Para construir necesitas ser dueño de la parcela**: ponte sobre tu terreno y usa
   `/claim` primero. Así nadie construye donde no debe. La casa se levanta **frente a ti**.
 
+### Decorador guiado — `/decorador`
+Embellece **tu parcela** con pequeñas estructuras eligiendo en un menú: **jardín** con
+flores, **farola**, **estatua** o una **gran fuente**. Se cobra según la pieza (15–60 AET)
+y solo construye si eres dueño del terreno. Se levanta frente a ti.
+
 ### Otros encargos a la IA
 - `/aetheria servicio decorador <qué quieres>` y `/aetheria servicio urbanista <qué quieres>`:
   la IA propone y **solo cobra por lo que construye** (nunca pagas por un plan que no se
@@ -81,11 +86,19 @@ Se venden **servicios**, nunca ventajas de combate: nadie compra poder, solo tra
 - `/claim info` — de quién es la parcela donde estás.
 - `/unclaim` — libera tu parcela.
 
+## Moverte por el mundo — `/warps`
+
+El pueblo es grande: usa `/warps` para ver los destinos y viajar rápido a **plaza**,
+**mercado**, **taberna** o **spawn** (`/warp <destino>`, o haz clic en la lista).
+
 ## El pueblo está vivo
 
-- **Vecinos con rutina**: Nara (granjera) y Pol (vigilante) viven en sus casas y trabajan
-  en su granja / puesto de guardia. De día trabajan, al atardecer se reúnen en la plaza y
-  de noche vuelven a casa. Habla con ellos con **clic derecho** (se paran a atenderte).
+- **Vecinos con rutina**: Nara (granjera), Pol (vigilante) y Sella (comerciante) viven en
+  sus casas y trabajan en su granja / puesto de guardia / mercado. De día trabajan, al
+  atardecer se reúnen en la plaza y de noche vuelven a casa. Habla con ellos con **clic
+  derecho** (se paran a atenderte).
+- **Lugares**: una **plaza** con pozo, un **mercado** con puestos y una **taberna**,
+  conectados por caminos.
 - **La economía evoluciona sola**, haya o no gente conectada: los negocios producen,
   gastan, viven festivales y penurias. El pueblo puede estar **en apuros, estable,
   próspero o floreciente** (lo ves en el marcador).

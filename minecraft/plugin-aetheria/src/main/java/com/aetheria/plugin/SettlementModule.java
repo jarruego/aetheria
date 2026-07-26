@@ -43,6 +43,7 @@ public final class SettlementModule {
     private final GatewayClient gateway;
     private final VillageModule village;
     private final NpcRoutineModule routines;
+    private final ConversationManager convo;
     private final World world;
     private int farmRadius = 2;   // los cultivos del pueblo se amplian con el tiempo
 
@@ -148,11 +149,12 @@ public final class SettlementModule {
     }
 
     public SettlementModule(AetheriaPlugin plugin, GatewayClient gateway, VillageModule village,
-            NpcRoutineModule routines, World world) {
+            NpcRoutineModule routines, ConversationManager convo, World world) {
         this.plugin = plugin;
         this.gateway = gateway;
         this.village = village;
         this.routines = routines;
+        this.convo = convo;
         this.world = world;
         plugin.getDataFolder().mkdirs();
         this.dataFile = new File(plugin.getDataFolder(), "colonos.txt");
@@ -265,6 +267,7 @@ public final class SettlementModule {
         baby.setRemoveWhenFarAway(false);
         baby.setInvulnerable(true);
         baby.addScoreboardTag(BABY_TAG);
+        convo.registerConversable(baby, "nino", name);   // se puede hablar con los ninos
         children.add(new Child(baby, name, System.currentTimeMillis() + GROW_MS));
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                 "§d[Pueblo] §fHa nacido §b" + name + "§f en el pueblo."));

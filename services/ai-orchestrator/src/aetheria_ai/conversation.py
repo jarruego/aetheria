@@ -86,6 +86,13 @@ _NPCS: dict[str, dict[str, str]] = {
         "where": "en el pueblo, en una de las casas nuevas de las afueras",
         "help": "contar como le va instalarse en el pueblo y charlar de la vida aqui",
     },
+    # Ninos del pueblo (nacen y crecen).
+    "nino": {
+        "name": "un nino del pueblo",
+        "trait": "un nino o nina del pueblo, alegre, inocente y con mucha imaginacion",
+        "where": "en el pueblo, jugando cerca de la plaza",
+        "help": "contar cosas de nino: sus juegos, lo que quiere ser de mayor, travesuras",
+    },
 }
 _NPCS["guia-creativo"] = _NPCS["guia-creative"]  # alias por si acaso
 _DEFAULT_NPC = {
@@ -141,17 +148,18 @@ def _npc(npc_id: str) -> dict[str, str]:
     return _NPCS.get(npc_id, _DEFAULT_NPC)
 
 
-def _system_prompt(npc_id: str, profile: str) -> str:
+def _system_prompt(npc_id: str, profile: str, npc_name: str | None = None) -> str:
     n = _npc(npc_id)
+    name = npc_name or n["name"]   # colonos y ninos usan su nombre real (el de su cartel)
     base = (
-        f"Eres {n['name']}, {n['trait']}. Estas {n['where']}. "
+        f"Eres {name}, {n['trait']}. Estas {n['where']}. "
         f"{_WORLD} "
         f"Tu papel es {n['help']}. "
         f"{_ROSTER} "
         f"{_LIMITS} "
         "Hablas como una PERSONA de verdad: cercano, natural, con frases cortas y calidas. "
         "NUNCA digas que eres una IA, un modelo, un sistema o un programa; NO hables de "
-        f"eficiencia, algoritmos ni simulaciones. Si te preguntan como te llamas, eres {n['name']}. "
+        f"eficiencia, algoritmos ni simulaciones. Si te preguntan como te llamas, eres {name}. "
         "Responde SIEMPRE en espanol y en 1 o 2 frases."
     )
     # El conserje conoce TODO el server y puede dar instrucciones concretas si se lo piden.
@@ -195,7 +203,8 @@ async def handle_conversation(request: ConversationRequest) -> ConversationRespo
     profile = await ws.get_npc_summary(request.npc_id, request.player_id)
     history = await ws.get_npc_history(request.npc_id, request.player_id, _WINDOW)
 
-    messages = [LLMMessage(role="system", content=_system_prompt(request.npc_id, profile))]
+    messages = [LLMMessage(role="system",
+                           content=_system_prompt(request.npc_id, profile, request.npc_name))]
     for turn in history:
         role = "assistant" if turn.get("role") == "npc" else "user"
         messages.append(LLMMessage(role=role, content=turn.get("content", "")))

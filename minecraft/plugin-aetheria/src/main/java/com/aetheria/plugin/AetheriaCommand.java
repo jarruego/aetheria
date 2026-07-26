@@ -93,7 +93,7 @@ public final class AetheriaCommand implements CommandExecutor {
 
     private void handleAsk(Player player, String message) {
         player.sendMessage("§7[Aetheria] pensando...");
-        gateway.conversation(defaultNpc, player.getUniqueId().toString(), message)
+        gateway.conversation(defaultNpc, player.getUniqueId().toString(), message, null)
                 .whenComplete((json, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
                     if (err != null) {
                         player.sendMessage("§c[Aetheria] error: " + rootMessage(err));

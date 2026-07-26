@@ -96,6 +96,7 @@ class ConversationRequest(BaseModel):
     player_id: str
     message: str
     world: str = "main"
+    npc_name: str | None = None   # nombre real del NPC (para colonos/ninos con identidad propia)
 
 
 class ConversationResponse(BaseModel):

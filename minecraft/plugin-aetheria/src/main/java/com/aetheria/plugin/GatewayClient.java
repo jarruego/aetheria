@@ -60,12 +60,16 @@ public final class GatewayClient {
     }
 
     /** Envia un mensaje conversacional a un NPC. Devuelve {reply, level}. */
-    public CompletableFuture<JsonObject> conversation(String npcId, String playerId, String message) {
+    public CompletableFuture<JsonObject> conversation(String npcId, String playerId, String message,
+            String npcName) {
         final JsonObject body = new JsonObject();
         body.addProperty("npc_id", npcId);
         body.addProperty("player_id", playerId);
         body.addProperty("message", message);
         body.addProperty("world", "main");
+        if (npcName != null) {
+            body.addProperty("npc_name", npcName);
+        }
         return post("/v1/conversation", body);
     }
 

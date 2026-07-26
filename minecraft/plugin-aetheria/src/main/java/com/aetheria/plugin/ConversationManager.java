@@ -168,7 +168,7 @@ public final class ConversationManager implements Listener {
         }
 
         runSync(() -> player.sendMessage("§7Tu: §f" + msg));
-        gateway.conversation(info.npcId(), player.getUniqueId().toString(), msg)
+        gateway.conversation(info.npcId(), player.getUniqueId().toString(), msg, info.name())
                 .whenComplete((json, err) -> runSync(() -> {
                     if (!player.isOnline()) {
                         return;

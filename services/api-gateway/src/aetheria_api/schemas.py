@@ -18,6 +18,7 @@ class ConversationRequest(BaseModel):
     player_id: str
     message: str = Field(max_length=2000)
     world: str = "main"
+    npc_name: str | None = Field(default=None, max_length=40)
 
 
 class ConversationResponse(BaseModel):

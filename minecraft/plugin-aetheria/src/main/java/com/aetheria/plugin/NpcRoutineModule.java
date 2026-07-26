@@ -32,8 +32,8 @@ public final class NpcRoutineModule {
     private static final class Worker {
         final String npcId;
         final String name;
-        final Location home;
-        final Location work;
+        Location home;
+        Location work;
         final Location plaza;
         Mob entity;
         Location last;      // ultima posicion vista (para detectar atascos)
@@ -66,25 +66,25 @@ public final class NpcRoutineModule {
         this.village = village;
     }
 
-    /** Coloca a los vecinos en su casa/puesto de la aldea y arranca el bucle de rutina. */
+    /** Arranca el bucle de rutina. Ya no hay vecinos "base": todos los aldeanos son colonos
+     *  que el SettlementModule da de alta (dos fundadores al empezar, y crece desde ahi). */
     public void start() {
         clearOld();
-        // Cada vecino vive y trabaja en edificios REALES de la aldea (VillageModule).
-        workers.add(new Worker("vecina-nara", "Nara",
-                village.naraHome(), village.naraWork(), village.plaza()));
-        workers.add(new Worker("vecino-pol", "Pol",
-                village.polHome(), village.polWork(), village.plaza()));
-        workers.add(new Worker("vecina-sella", "Sella",
-                village.mercaderHome(), village.mercaderWork(), village.plaza()));
-
-        for (final Worker w : workers) {
-            w.entity = spawnWorker(w);
-        }
-
         this.taskId = plugin.getServer().getScheduler().runTaskTimer(
                 plugin, this::tick, PERIOD_TICKS, PERIOD_TICKS).getTaskId();
-        plugin.getLogger().info("[Aetheria] Fase 7: " + workers.size()
-                + " vecinos con rutina diaria en '" + world.getName() + "'.");
+        plugin.getLogger().info("[Aetheria] Fase 7: rutina de aldeanos activa en '"
+                + world.getName() + "' (los aldeanos los crea el pueblo vivo).");
+    }
+
+    /** Reasigna casa y puesto de un aldeano (p.ej. al casarse y mudarse a una casa nueva). */
+    public void setHomeWork(String name, Location home, Location work) {
+        for (final Worker w : workers) {
+            if (w.name.equals(name)) {
+                w.home = home;
+                w.work = work;
+                return;
+            }
+        }
     }
 
     public void stop() {
@@ -94,11 +94,11 @@ public final class NpcRoutineModule {
         }
     }
 
-    private static final int BASE = 3;   // Nara, Pol y Sella son fijos
+    private static final int BASE = 0;   // ya no hay vecinos fijos: todos son colonos
 
-    /** Cuantos colonos (vecinos extra al nucleo) hay ahora mismo. */
+    /** Cuantos colonos hay ahora mismo. */
     public int colonoCount() {
-        return Math.max(0, workers.size() - BASE);
+        return workers.size();
     }
 
     /** Da de alta un colono nuevo con su oficio, que vive y trabaja donde se indica. */

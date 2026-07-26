@@ -25,9 +25,8 @@ public final class WarpModule implements CommandExecutor {
     private final Map<String, Location> warps = new LinkedHashMap<>();
 
     public WarpModule(VillageModule village, World world) {
+        // El pueblo arranca minimo (plaza + spawn) y crece solo; no hay mercado/taberna fijos.
         warps.put("plaza", village.plaza());
-        warps.put("mercado", village.mercaderWork());
-        warps.put("taberna", village.tavern());
         warps.put("spawn", world.getSpawnLocation());
     }
 

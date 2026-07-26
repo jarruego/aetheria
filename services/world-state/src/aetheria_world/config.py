@@ -24,7 +24,8 @@ class Settings(BaseSettings):
     sim_income_max: float = 30.0     # ingreso maximo por negocio y tick (AET)
 
     # Pueblo vivo: la poblacion crece/mengua con la prosperidad (limites).
-    sim_min_population: int = 3
+    # Arranca en 2 (dos aldeanos fundadores) y crece solo si el pueblo prospera.
+    sim_min_population: int = 2
     sim_max_population: int = 14
 
     # Fase 9: reclamar una parcela (un chunk).

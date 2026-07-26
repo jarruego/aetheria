@@ -12,6 +12,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Tag;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -132,7 +133,7 @@ public final class SettlementModule implements Listener {
             return true;
         }
         for (final int[] p : placed) {
-            if (Math.hypot(x - p[0], z - p[1]) < 13) {
+            if (Math.hypot(x - p[0], z - p[1]) < 18) {   // deja sitio a casa + puesto de trabajo
                 return true;
             }
         }
@@ -140,8 +141,36 @@ public final class SettlementModule implements Listener {
     }
 
     /**
+     * True si el bloque es NATURAL (se puede talar/allanar sin problema): aire, agua, tierra,
+     * roca, grava, arena, arboles/hojas, vegetacion, mineral... Si es FALSE, es algo puesto por
+     * alguien (madera trabajada, ladrillo, cristal, cofre...) y NO se debe romper para construir.
+     */
+    private static boolean natural(Material m) {
+        if (m.isAir() || m == Material.WATER || m == Material.LAVA) {
+            return true;
+        }
+        if (Tag.LOGS.isTagged(m) || Tag.LEAVES.isTagged(m) || Tag.SAPLINGS.isTagged(m)
+                || Tag.DIRT.isTagged(m) || Tag.SAND.isTagged(m) || Tag.FLOWERS.isTagged(m)) {
+            return true;
+        }
+        final String n = m.name();
+        if (n.endsWith("_ORE") || n.contains("MUSHROOM")) {
+            return true;
+        }
+        return switch (m) {
+            case STONE, GRANITE, DIORITE, ANDESITE, DEEPSLATE, TUFF, CALCITE, GRAVEL, CLAY,
+                 SANDSTONE, RED_SANDSTONE, SNOW, SNOW_BLOCK, POWDER_SNOW, ICE, PACKED_ICE, BLUE_ICE,
+                 SHORT_GRASS, TALL_GRASS, FERN, LARGE_FERN, DEAD_BUSH, VINE, GLOW_LICHEN, MOSS_BLOCK,
+                 MOSS_CARPET, DIRT_PATH, GRASS_BLOCK, SWEET_BERRY_BUSH, SUGAR_CANE, LILY_PAD,
+                 CACTUS, PUMPKIN, MELON, BAMBOO, COBWEB -> true;
+            default -> false;
+        };
+    }
+
+    /**
      * Busca un sitio LLANO ya existente para una casa: prueba posiciones aleatorias alrededor
-     * del pueblo (mas lejos conforme crece) y elige la mas plana sin agua. Devuelve {cx,cz,fy}.
+     * del pueblo (mas lejos conforme crece), plano, SIN AGUA y SIN construcciones (no se pisa
+     * lo que haya edificado un jugador). Devuelve {cx,cz,fy} o null.
      */
     private int[] findBuildSpot(int index) {
         final var rng = ThreadLocalRandom.current();
@@ -162,19 +191,37 @@ public final class SettlementModule implements Listener {
             int max = Integer.MIN_VALUE;
             long sum = 0;
             boolean water = false;
-            for (int dx = -4; dx <= 4 && !water; dx++) {
-                for (int dz = -4; dz <= 4; dz++) {
+            boolean built = false;   // hay bloques construidos por alguien: no se pisa
+            for (int dx = -5; dx <= 5 && !water && !built; dx++) {
+                for (int dz = -5; dz <= 5; dz++) {
                     final int gy = groundY(cx + dx, cz + dz);
-                    if (world.getBlockAt(cx + dx, gy, cz + dz).isLiquid()) {
+                    final Block g = world.getBlockAt(cx + dx, gy, cz + dz);
+                    if (g.isLiquid()) {
                         water = true;
                         break;
                     }
-                    min = Math.min(min, gy);
-                    max = Math.max(max, gy);
-                    sum += gy;
+                    if (!natural(g.getType())) {
+                        built = true;   // el propio suelo es algo puesto por alguien
+                        break;
+                    }
+                    for (int y = gy + 1; y <= gy + 7; y++) {   // ¿construccion sobre el suelo?
+                        final Material above = world.getBlockAt(cx + dx, y, cz + dz).getType();
+                        if (!above.isAir() && !natural(above)) {
+                            built = true;
+                            break;
+                        }
+                    }
+                    if (built) {
+                        break;
+                    }
+                    if (dx >= -4 && dx <= 4 && dz >= -4 && dz <= 4) {
+                        min = Math.min(min, gy);
+                        max = Math.max(max, gy);
+                        sum += gy;
+                    }
                 }
             }
-            if (water) {
+            if (water || built) {
                 continue;
             }
             final int flat = max - min;
@@ -207,8 +254,15 @@ public final class SettlementModule implements Listener {
         world.getEntities().stream()   // limpia bebes huerfanos de sesiones anteriores
                 .filter(e -> e.getScoreboardTags().contains(BABY_TAG))
                 .forEach(org.bukkit.entity.Entity::remove);
+        final boolean fresh = !dataFile.exists();
         load();   // reaparecen los colonos ya existentes en sus casas (sin reconstruir)
         loadCivic();
+        if (fresh && colonos.isEmpty()) {
+            // Mundo NUEVO: dos aldeanos fundadores, cada uno con su casa pequena y su puesto.
+            final var rng = ThreadLocalRandom.current();
+            growAdult(0, freshName(rng), 22 + rng.nextInt(30), "");
+            growAdult(1, freshName(rng), 22 + rng.nextInt(30), "");
+        }
         plugin.getServer().getScheduler().runTaskTimer(plugin, this::reconcile, PERIOD, PERIOD);
         plugin.getLogger().info("[Aetheria] Pueblo vivo: reconciliando poblacion cada 60 s ("
                 + colonos.size() + " colonos cargados).");
@@ -257,7 +311,7 @@ public final class SettlementModule implements Listener {
                     }
                 }
                 routines.addColono("colono", c.name, new Location(world, c.x + 0.5, c.y, c.z + 0.5),
-                        new Location(world, c.x + 6 + 0.5, c.y, c.z + 0.5), profFromKey(c.profKey));
+                        new Location(world, c.x + 9 + 0.5, c.y, c.z + 0.5), profFromKey(c.profKey));
                 if (c.retired) {
                     routines.retire(c.name);
                 }
@@ -339,21 +393,22 @@ public final class SettlementModule implements Listener {
             routines.dedupe();  // borra aldeanos-clon que hayan quedado de reinicios/recargas
             ageAndDeath();      // envejecen; a los 65 se jubilan; de muy mayores mueren (lento)
             matureChildren();   // los ninos que ya han crecido se mudan a su casa
+            maybeMarry();       // dos solteros pueden casarse y mudarse a una casa mediana nueva
             updateBios();       // refresca su ficha (edad/oficio/familia) para que hablen de si
 
-            final int population = json.get("population").getAsInt();
-            final int targetExtra = Math.max(0, population - 3);
+            // Todos los aldeanos son colonos (no hay vecinos "base"): el objetivo es la poblacion.
+            final int target = Math.max(2, json.get("population").getAsInt());
             final int adults = colonos.size();
             final int have = adults + children.size();
-            if (have < targetExtra) {
-                // Deficit grande = recuperar tras reinicio (adultos directos); +1 = nace un nino.
-                if (targetExtra - have >= 2) {
-                    final var rng = ThreadLocalRandom.current();
+            if (have < target) {
+                final var rng = ThreadLocalRandom.current();
+                // Hasta tener 2 adultos fundadores, llegan adultos directos; luego, nacen ninos.
+                if (adults < 2 || target - have >= 2) {
                     growAdult(colonos.size(), freshName(rng), 20 + rng.nextInt(40), "");
                 } else {
                     bearChild();
                 }
-            } else if (have > targetExtra) {
+            } else if (have > target) {
                 if (!children.isEmpty()) {
                     final Child c = children.remove(children.size() - 1);
                     if (c.baby != null) {
@@ -559,12 +614,6 @@ public final class SettlementModule implements Listener {
     }
 
     private void growAdult(int index, String name, double initialAge, String parent) {
-        // ¿Se casa con un soltero del pueblo y se muda con el/ella (en vez de levantar casa)?
-        final Colono spouse = pickSpouse(name, parent, ThreadLocalRandom.current());
-        if (spouse != null) {
-            marryInto(name, initialAge, parent, spouse);
-            return;
-        }
         final int[] spot = findBuildSpot(index);
         if (spot == null) {
             return;   // no encontro sitio libre; lo reintenta el proximo ciclo
@@ -575,20 +624,16 @@ public final class SettlementModule implements Listener {
         final var rng = ThreadLocalRandom.current();
         final Villager.Profession prof = PROFS[rng.nextInt(PROFS.length)];
         final Material[] pal = COMBOS[rng.nextInt(COMBOS.length)];
-        // Planta RECTANGULAR (no siempre cuadrada): ancho y fondo independientes.
-        final int halfX = 3 + rng.nextInt(3);              // 3..5
-        final int halfZ = 3 + rng.nextInt(3);              // 3..5
-        final int area = (2 * halfX + 1) * (2 * halfZ + 1);
-        // Las casas grandes suelen ser de UNA planta (anchas); las medianas, a veces de dos.
-        final int floors = rng.nextInt(100) < (area >= 81 ? 25 : 60) ? 2 : 1;
-        // Retranqueo: planta baja mas ancha que la alta (solo en casas amplias de dos plantas).
-        final boolean setback = floors == 2 && Math.min(halfX, halfZ) >= 4 && rng.nextInt(100) < 60;
+        // Un aldeano SOLTERO vive en una casa PEQUENA (una sola cama). Nada de mansiones para
+        // uno solo: al casarse ya se le construye una mediana (ver maybeMarry).
+        final int halfX = 3;
+        final int halfZ = rng.nextInt(100) < 30 ? 4 : 3;   // a veces algo mas larga, sin agigantar
         final BlockFace door = towardPlaza(cx, cz);        // la puerta mira al pueblo
 
         prepareTerrain(cx, cz, fy);                        // tala arboles + nivela SUAVE al suelo real
-        Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, floors, setback,
-                pal[0], pal[1], pal[2], pal[3], true, name);
-        professionFeature(cx, cz, fy, prof, rng);
+        Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
+                pal[0], pal[1], pal[2], pal[3], true, 1, name);   // 1 cama (soltero)
+        final int wy = buildWorkplace(cx, cz, prof);       // puesto de trabajo tematico, al este
         pathTo(cx, cz, village.plaza());                   // sendero que sigue el relieve al pueblo
         placed.add(new int[] {cx, cz});
 
@@ -602,73 +647,98 @@ public final class SettlementModule implements Listener {
         c.initialAge = initialAge;
         c.deathAge = randomDeathAge(rng);
         c.parent = parent;
-        c.floors = floors;
+        c.floors = 1;
         colonos.add(c);
         save();
 
         // Vive en su casa y TRABAJA en su propio puesto (el rasgo del oficio, al este):
         // asi cada uno esta en un sitio distinto y no se amontonan en la plaza.
         final Location home = new Location(world, cx + 0.5, fy + 1, cz + 0.5);
-        final Location workspot = new Location(world, cx + 6 + 0.5, fy + 1, cz + 0.5);
+        final Location workspot = new Location(world, cx + 9 + 0.5, wy + 1, cz + 0.5);
         routines.addColono("colono", name, home, workspot, prof);
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                 "§a[Pueblo] §f" + name + " §7(" + oficio(prof) + ") se ha instalado en el pueblo."));
         plugin.getLogger().info("[Aetheria] Pueblo vivo: +1 colono (" + name + ", " + prof + ").");
     }
 
-    /** Un soltero/a del pueblo con quien casarse (ni tu, ni tu progenitor, ni tu hijo/hermano). */
-    private Colono pickSpouse(String name, String parent, java.util.Random rng) {
-        final List<Colono> singles = new ArrayList<>();
-        for (final Colono c : colonos) {
-            if (c.spouse != null || c.retired) {
-                continue;
-            }
-            if (c.name.equals(name)) {
-                continue;                       // no te casas contigo mismo
-            }
-            if (parent != null && !parent.isEmpty() && parent.equals(c.name)) {
-                continue;                       // ni con tu padre/madre
-            }
-            if (c.parent != null && !c.parent.isEmpty() && c.parent.equals(name)) {
-                continue;                       // ni con tu hijo/a
-            }
-            if (parent != null && !parent.isEmpty() && parent.equals(c.parent)) {
-                continue;                       // ni con un hermano/a
-            }
-            singles.add(c);
+    private boolean compatible(Colono a, Colono b) {
+        if (a == b) {
+            return false;
         }
-        if (singles.isEmpty() || rng.nextInt(100) >= 55) {
-            return null;                        // no siempre hay con quien, ni siempre se casan
+        if (a.name.equals(b.parent) || b.name.equals(a.parent)) {
+            return false;   // padre/madre - hijo/a
         }
-        return singles.get(rng.nextInt(singles.size()));
+        if (a.parent != null && !a.parent.isEmpty() && a.parent.equals(b.parent)) {
+            return false;   // hermanos
+        }
+        return true;
     }
 
-    /** Un recien llegado se casa con {@code spouse} y se muda a SU casa (no se construye otra). */
-    private void marryInto(String name, double initialAge, String parent, Colono spouse) {
+    /**
+     * Casa a dos solteros compatibles: construye una casa MEDIANA NUEVA para los dos (con tres
+     * camas: la pareja y un futuro hijo/a), DEMUELE sus dos casas pequenas y los muda alli.
+     */
+    private void maybeMarry() {
         final var rng = ThreadLocalRandom.current();
-        final Villager.Profession prof = PROFS[rng.nextInt(PROFS.length)];
-        final Colono c = new Colono();
-        c.name = name;
-        c.profKey = profKey(prof);
-        c.x = spouse.x;
-        c.y = spouse.y;
-        c.z = spouse.z;
-        c.floors = spouse.floors;
-        c.bornMillis = System.currentTimeMillis();
-        c.initialAge = initialAge;
-        c.deathAge = randomDeathAge(rng);
-        c.parent = parent;
-        c.spouse = spouse.name;
-        spouse.spouse = c.name;
-        colonos.add(c);
+        final List<Colono> singles = new ArrayList<>();
+        for (final Colono c : colonos) {
+            if (c.spouse == null && !c.retired) {
+                singles.add(c);
+            }
+        }
+        if (singles.size() < 2 || rng.nextInt(100) >= 40) {
+            return;   // no siempre hay solteros, ni siempre se casan
+        }
+        java.util.Collections.shuffle(singles, rng);
+        Colono a = null;
+        Colono b = null;
+        for (int i = 0; i < singles.size() && a == null; i++) {
+            for (int j = i + 1; j < singles.size(); j++) {
+                if (compatible(singles.get(i), singles.get(j))) {
+                    a = singles.get(i);
+                    b = singles.get(j);
+                    break;
+                }
+            }
+        }
+        if (a == null) {
+            return;
+        }
+        final int[] spot = findBuildSpot(colonos.size() + 2);
+        if (spot == null) {
+            return;   // sin sitio libre ahora; se reintenta el proximo ciclo
+        }
+        final int cx = spot[0];
+        final int cz = spot[1];
+        final int fy = spot[2];
+        final Material[] pal = COMBOS[rng.nextInt(COMBOS.length)];
+        final int halfX = 4;
+        final int halfZ = rng.nextInt(100) < 50 ? 4 : 5;   // MEDIANA (mayor que la de soltero)
+        final BlockFace door = towardPlaza(cx, cz);
+        prepareTerrain(cx, cz, fy);
+        Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
+                pal[0], pal[1], pal[2], pal[3], true, 3, a.name + " y " + b.name);   // 3 camas
+        final int wy = buildWorkplace(cx, cz, profFromKey(a.profKey));   // taller familiar
+        pathTo(cx, cz, village.plaza());
+
+        demolish(a);   // sus dos casas pequenas (y puestos) se derriban y liberan solar
+        demolish(b);
+
+        a.x = cx;  a.y = fy + 1;  a.z = cz;  a.floors = 1;  a.spouse = b.name;
+        b.x = cx;  b.y = fy + 1;  b.z = cz;  b.floors = 1;  b.spouse = a.name;
+        placed.add(new int[] {cx, cz});
         save();
-        final Location home = new Location(world, spouse.x + 0.5, spouse.y, spouse.z + 0.5);
-        final Location workspot = new Location(world, spouse.x + 6 + 0.5, spouse.y, spouse.z + 0.5);
-        routines.addColono("colono", name, home, workspot, prof);
-        final String msg = name + " y " + spouse.name + " se han casado y viven juntos.";
+
+        final Location home = new Location(world, cx + 0.5, fy + 1, cz + 0.5);
+        final Location workspot = new Location(world, cx + 9 + 0.5, wy + 1, cz + 0.5);
+        routines.setHomeWork(a.name, home, workspot);
+        routines.setHomeWork(b.name, home, workspot);
+
+        final String msg = a.name + " y " + b.name
+                + " se han casado y se han mudado juntos a una casa nueva.";
         gateway.postEvent("boda", msg);
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage("§d[Pueblo] §f" + msg));
-        plugin.getLogger().info("[Aetheria] Pueblo vivo: boda (" + name + " + " + spouse.name + ").");
+        plugin.getLogger().info("[Aetheria] Pueblo vivo: boda (" + a.name + " + " + b.name + ").");
     }
 
     private Colono findColono(String name) {
@@ -802,8 +872,9 @@ public final class SettlementModule implements Listener {
             for (int dz = -6; dz <= 6; dz++) {
                 final int x = cx + dx;
                 final int z = cz + dz;
-                for (int y = fy + 1; y <= fy + 14; y++) {   // despeja/tala por encima
-                    if (!world.getBlockAt(x, y, z).getType().isAir()) {
+                for (int y = fy + 1; y <= fy + 14; y++) {   // despeja/tala SOLO lo natural
+                    final Material mm = world.getBlockAt(x, y, z).getType();
+                    if (!mm.isAir() && natural(mm)) {
                         world.getBlockAt(x, y, z).setType(Material.AIR, false);
                     }
                 }
@@ -813,7 +884,10 @@ public final class SettlementModule implements Listener {
                         world.getBlockAt(x, y, z).setType(Material.DIRT, false);
                     }
                 }
-                world.getBlockAt(x, fy, z).setType(Material.GRASS_BLOCK, false);
+                final Material top = world.getBlockAt(x, fy, z).getType();
+                if (top.isAir() || natural(top)) {          // no piso un suelo construido
+                    world.getBlockAt(x, fy, z).setType(Material.GRASS_BLOCK, false);
+                }
             }
         }
     }
@@ -874,7 +948,7 @@ public final class SettlementModule implements Listener {
     private Colono ownerAt(Block b) {
         for (final Colono c : colonos) {
             final int fy = c.y - 1;
-            if (b.getX() >= c.x - 6 && b.getX() <= c.x + 7 && b.getZ() >= c.z - 6 && b.getZ() <= c.z + 6
+            if (b.getX() >= c.x - 6 && b.getX() <= c.x + 12 && b.getZ() >= c.z - 6 && b.getZ() <= c.z + 6
                     && b.getY() >= fy && b.getY() <= fy + c.floors * 6 + 8) {
                 return c;
             }
@@ -922,70 +996,190 @@ public final class SettlementModule implements Listener {
     /** Demuele la casa de un colono (al morir o emigrar): la retira y deja un solar de cesped. */
     private void demolish(Colono c) {
         final int fy = c.y - 1;
-        for (int dx = -6; dx <= 7; dx++) {
+        for (int dx = -6; dx <= 12; dx++) {   // cubre la casa (±6) y el puesto de trabajo (al este)
             for (int dz = -6; dz <= 6; dz++) {
-                for (int y = fy + 1; y <= fy + c.floors * 6 + 8; y++) {
+                for (int y = fy; y <= fy + c.floors * 6 + 8; y++) {
                     if (!world.getBlockAt(c.x + dx, y, c.z + dz).getType().isAir()) {
                         world.getBlockAt(c.x + dx, y, c.z + dz).setType(Material.AIR, false);
                     }
                 }
-                world.getBlockAt(c.x + dx, fy, c.z + dz).setType(Material.GRASS_BLOCK, false);
+                if (dx >= -6 && dx <= 6) {     // solo el solar de la casa queda con cesped
+                    world.getBlockAt(c.x + dx, fy, c.z + dz).setType(Material.GRASS_BLOCK, false);
+                }
             }
         }
         placed.removeIf(p -> p[0] == c.x && p[1] == c.z);   // libera el hueco
     }
 
-    /** Un pequeno rasgo junto a la casa segun el oficio (al este). Profession ya no es enum. */
-    private void professionFeature(int cx, int cz, int fy, Villager.Profession prof, java.util.Random rng) {
-        final int ex = cx + 6;
-        if (prof == Villager.Profession.FARMER) {
+    /** Coloca un bloque SOLO si lo que hay es natural o aire (nunca pisa algo construido). */
+    private void put(int x, int y, int z, Material m) {
+        final Material cur = world.getBlockAt(x, y, z).getType();
+        if (cur.isAir() || natural(cur)) {
+            world.getBlockAt(x, y, z).setType(m, false);
+        }
+    }
+
+    /** Cerca perimetral de radio r con una puerta al oeste (hacia la casa). */
+    private void fencePen(int cx, int gy, int cz, int r) {
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dz = -r; dz <= r; dz++) {
+                if (Math.abs(dx) != r && Math.abs(dz) != r) {
+                    continue;
+                }
+                put(cx + dx, gy + 1, cz + dz,
+                        (dx == -r && dz == 0) ? Material.OAK_FENCE_GATE : Material.OAK_FENCE);
+            }
+        }
+    }
+
+    /** Pequeno toldo: cuatro postes y un techo 3x3 (para puestos tipo mercado/herreria). */
+    private void canopy(int cx, int gy, int cz, Material roof) {
+        for (int dx = -1; dx <= 1; dx += 2) {
+            for (int dz = -1; dz <= 1; dz += 2) {
+                put(cx + dx, gy + 1, cz + dz, Material.OAK_FENCE);
+                put(cx + dx, gy + 2, cz + dz, Material.OAK_FENCE);
+            }
+        }
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                put(cx + dx, gy + 3, cz + dz, roof);
+            }
+        }
+    }
+
+    /**
+     * PUESTO DE TRABAJO tematico al este de la casa: NO es una casa, es una estructura que
+     * PARECE su oficio (huerto, embarcadero, aprisco, taller de cantero, biblioteca, herreria,
+     * carniceria, taller de arquero). Nivela un pad 5x5 (respetando lo construido) y construye
+     * encima. Devuelve la cota del puesto (para colocar alli al aldeano a trabajar).
+     */
+    private int buildWorkplace(int hcx, int hcz, Villager.Profession prof) {
+        final int wx = hcx + 9;
+        final int wz = hcz;
+        long sum = 0;
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                sum += groundY(wx + dx, wz + dz);
+            }
+        }
+        final int wy = Math.round(sum / 25f);
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                for (int y = wy + 1; y <= wy + 6; y++) {   // despeja SOLO lo natural
+                    final Material mm = world.getBlockAt(wx + dx, y, wz + dz).getType();
+                    if (!mm.isAir() && natural(mm)) {
+                        world.getBlockAt(wx + dx, y, wz + dz).setType(Material.AIR, false);
+                    }
+                }
+                final int gy = groundY(wx + dx, wz + dz);
+                if (gy < wy) {
+                    for (int y = gy + 1; y <= wy; y++) {
+                        put(wx + dx, y, wz + dz, Material.DIRT);
+                    }
+                }
+                final Material top = world.getBlockAt(wx + dx, wy, wz + dz).getType();
+                if (top.isAir() || natural(top)) {
+                    world.getBlockAt(wx + dx, wy, wz + dz).setType(Material.GRASS_BLOCK, false);
+                }
+            }
+        }
+        workplaceStructure(wx, wy, wz, prof);
+        return wy;
+    }
+
+    private void workplaceStructure(int wx, int gy, int wz, Villager.Profession prof) {
+        if (prof == Villager.Profession.FARMER) {                 // HUERTO
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dz = -1; dz <= 1; dz++) {
                     if (dx == 0 && dz == 0) {
-                        world.getBlockAt(ex, fy, cz).setType(Material.WATER, false);
+                        put(wx, gy, wz, Material.WATER);
                     } else {
-                        world.getBlockAt(ex + dx, fy, cz + dz).setType(Material.FARMLAND, false);
-                        world.getBlockAt(ex + dx, fy + 1, cz + dz).setType(Material.WHEAT, false);
+                        put(wx + dx, gy, wz + dz, Material.FARMLAND);
+                        put(wx + dx, gy + 1, wz + dz,
+                                ((dx + dz) & 1) == 0 ? Material.WHEAT : Material.CARROTS);
                     }
                 }
             }
-            world.getBlockAt(ex + 2, fy + 1, cz).setType(Material.COMPOSTER, false);
-        } else if (prof == Villager.Profession.FISHERMAN) {
+            put(wx + 2, gy + 1, wz, Material.COMPOSTER);
+            put(wx - 2, gy + 1, wz + 1, Material.HAY_BLOCK);
+            put(wx - 2, gy + 2, wz + 1, Material.CARVED_PUMPKIN);   // espantapajaros
+            fencePen(wx, gy, wz, 2);
+        } else if (prof == Villager.Profession.FISHERMAN) {       // EMBARCADERO
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dz = -1; dz <= 1; dz++) {
-                    world.getBlockAt(ex + dx, fy, cz + dz).setType(Material.WATER, false);
+                    put(wx + dx, gy, wz + dz, Material.WATER);
                 }
             }
-            world.getBlockAt(ex, fy + 1, cz - 2).setType(Material.BARREL, false);
-        } else if (prof == Villager.Profession.SHEPHERD) {
+            put(wx, gy + 1, wz, Material.LILY_PAD);
+            for (int dz = -1; dz <= 1; dz++) {
+                put(wx + 2, gy + 1, wz + dz, Material.OAK_PLANKS);   // muelle
+            }
+            put(wx + 2, gy + 2, wz + 1, Material.OAK_FENCE);
+            put(wx + 2, gy + 3, wz + 1, Material.LANTERN);
+            put(wx + 2, gy + 2, wz - 1, Material.BARREL);
+            put(wx - 2, gy + 1, wz, Material.BARREL);
+        } else if (prof == Villager.Profession.SHEPHERD) {        // APRISCO
+            fencePen(wx, gy, wz, 2);
+            put(wx - 1, gy + 1, wz - 1, Material.WHITE_WOOL);       // "ovejas"
+            put(wx - 1, gy + 2, wz - 1, Material.WHITE_WOOL);
+            put(wx + 1, gy + 1, wz + 1, Material.BLACK_WOOL);
+            put(wx + 1, gy + 1, wz - 1, Material.HAY_BLOCK);
+            put(wx, gy + 1, wz, Material.SHORT_GRASS);
+        } else if (prof == Villager.Profession.MASON) {           // TALLER DE CANTERO
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dz = -1; dz <= 1; dz++) {
-                    final boolean edge = Math.abs(dx) == 1 || Math.abs(dz) == 1;
-                    world.getBlockAt(ex + dx, fy + 1, cz + dz)
-                            .setType(edge ? Material.OAK_FENCE : Material.WHITE_WOOL, false);
+                    put(wx + dx, gy, wz + dz, Material.STONE_BRICKS);
                 }
             }
-        } else if (prof == Villager.Profession.MASON) {
-            world.getBlockAt(ex, fy + 1, cz).setType(Material.STONECUTTER, false);
-            world.getBlockAt(ex + 1, fy + 1, cz).setType(Material.STONE, false);
-            world.getBlockAt(ex + 1, fy + 2, cz).setType(Material.CHISELED_STONE_BRICKS, false);
-        } else if (prof == Villager.Profession.LIBRARIAN) {
-            world.getBlockAt(ex, fy + 1, cz).setType(Material.LECTERN, false);
-            world.getBlockAt(ex + 1, fy + 1, cz).setType(Material.BOOKSHELF, false);
-            world.getBlockAt(ex + 1, fy + 2, cz).setType(Material.BOOKSHELF, false);
-        } else if (prof == Villager.Profession.TOOLSMITH) {
-            world.getBlockAt(ex, fy + 1, cz).setType(Material.ANVIL, false);
-            world.getBlockAt(ex + 1, fy + 1, cz).setType(Material.GRINDSTONE, false);
-            world.getBlockAt(ex - 1, fy + 1, cz).setType(Material.FURNACE, false);
-        } else if (prof == Villager.Profession.BUTCHER) {
-            world.getBlockAt(ex, fy + 1, cz).setType(Material.SMOKER, false);
-            world.getBlockAt(ex + 1, fy + 1, cz).setType(Material.BARREL, false);
-        } else if (prof == Villager.Profession.FLETCHER) {
-            world.getBlockAt(ex, fy + 1, cz).setType(Material.FLETCHING_TABLE, false);
-            world.getBlockAt(ex + 1, fy + 1, cz).setType(Material.HAY_BLOCK, false);
-        } else {
-            world.getBlockAt(ex, fy + 1, cz).setType(Material.OAK_FENCE, false);
-            world.getBlockAt(ex, fy + 2, cz).setType(Material.LANTERN, false);
+            put(wx, gy + 1, wz, Material.STONECUTTER);
+            put(wx + 1, gy + 1, wz, Material.CHISELED_STONE_BRICKS);
+            put(wx + 1, gy + 2, wz, Material.STONE_BRICK_WALL);
+            put(wx - 1, gy + 1, wz - 1, Material.POLISHED_ANDESITE);
+            put(wx - 1, gy + 1, wz + 1, Material.STONE_BRICK_STAIRS);
+            put(wx - 1, gy + 2, wz + 1, Material.STONE_BRICKS);      // pilar a medias
+        } else if (prof == Villager.Profession.LIBRARIAN) {       // BIBLIOTECA
+            canopy(wx, gy, wz, Material.OAK_SLAB);
+            put(wx, gy + 1, wz, Material.LECTERN);
+            put(wx + 1, gy + 1, wz, Material.BOOKSHELF);
+            put(wx - 1, gy + 1, wz, Material.BOOKSHELF);
+            put(wx + 1, gy + 2, wz, Material.BOOKSHELF);
+            put(wx - 1, gy + 2, wz, Material.BOOKSHELF);
+            put(wx, gy + 1, wz - 1, Material.LANTERN);
+        } else if (prof == Villager.Profession.TOOLSMITH) {       // HERRERIA
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    put(wx + dx, gy, wz + dz, Material.COBBLESTONE);
+                }
+            }
+            canopy(wx, gy, wz, Material.STONE_BRICK_SLAB);
+            put(wx - 1, gy + 1, wz, Material.FURNACE);
+            put(wx, gy + 1, wz, Material.BLAST_FURNACE);
+            put(wx + 1, gy + 1, wz, Material.FURNACE);
+            put(wx + 1, gy + 1, wz - 1, Material.ANVIL);
+            put(wx - 1, gy + 1, wz - 1, Material.GRINDSTONE);
+            put(wx, gy + 1, wz + 1, Material.CAMPFIRE);             // fragua encendida
+        } else if (prof == Villager.Profession.BUTCHER) {         // CARNICERIA (puesto)
+            canopy(wx, gy, wz, Material.RED_WOOL);                  // toldo rojo
+            put(wx - 1, gy + 1, wz, Material.SMOKER);
+            put(wx + 1, gy + 1, wz, Material.BARREL);
+            for (int dx = -1; dx <= 1; dx++) {                      // mostrador al frente
+                put(wx + dx, gy + 1, wz + 1, Material.OAK_FENCE);
+                put(wx + dx, gy + 2, wz + 1, Material.OAK_SLAB);
+            }
+        } else if (prof == Villager.Profession.FLETCHER) {        // TALLER DE ARQUERO
+            put(wx, gy + 1, wz, Material.FLETCHING_TABLE);
+            put(wx + 1, gy + 1, wz, Material.HAY_BLOCK);
+            for (int dx = -1; dx <= 1; dx++) {                      // diana en un muro al fondo
+                put(wx + dx, gy + 1, wz - 2, Material.WHITE_WOOL);
+                put(wx + dx, gy + 3, wz - 2, Material.WHITE_WOOL);
+            }
+            put(wx, gy + 2, wz - 2, Material.RED_WOOL);
+            put(wx - 1, gy + 2, wz - 2, Material.WHITE_WOOL);
+            put(wx + 1, gy + 2, wz - 2, Material.WHITE_WOOL);
+        } else {                                                  // generico
+            canopy(wx, gy, wz, Material.OAK_SLAB);
+            put(wx, gy + 1, wz, Material.BARREL);
+            put(wx, gy + 2, wz, Material.LANTERN);
         }
     }
 

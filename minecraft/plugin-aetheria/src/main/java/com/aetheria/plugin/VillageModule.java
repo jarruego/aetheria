@@ -83,27 +83,13 @@ public final class VillageModule {
         this.sz = sz;
         this.baseY = baseY;
 
-        // Limpia el volumen de la aldea (quita restos/vegetacion) para un rebuild limpio.
-        clearArea(sx - 24, sx + 24, sz + 8, sz + 36, baseY + 1, baseY + 9);
-
-        // Casas en fila (mirando al sur, +Z), lejos de la zona del portal (sz-2..sz+7).
-        this.naraHome = buildHouse(sx + 6, sz + 12, baseY, "Nara");
-        this.polHome = buildHouse(sx - 6, sz + 12, baseY, "Pol");
-        this.mercaderHome = buildHouse(sx + 16, sz + 12, baseY, "Sella");
-        // Puestos de trabajo mas al sur.
-        this.naraWork = buildFarm(sx + 14, sz + 22, baseY);
-        this.polWork = buildGuardPost(sx - 14, sz + 22, baseY);
-        // Plaza con pozo en el centro-sur, mercado detras y una taberna al oeste.
+        // ARRANQUE MINIMO: solo una plaza con pozo como centro del pueblo. Todo lo demas
+        // (casas, aldeanos, puestos de trabajo, mejoras civicas) lo hace crecer solo el
+        // sistema de mundo vivo (SettlementModule), partiendo de dos aldeanos fundadores.
+        clearArea(sx - 6, sx + 6, sz + 14, sz + 26, baseY + 1, baseY + 6);
         this.plaza = buildPlaza(sx, sz + 20, baseY);
-        this.mercaderWork = buildMarket(sx, sz + 30, baseY);
-        this.tavern = buildTavern(sx - 16, sz + 12, baseY);
 
-        // Caminos de grava que conectan el pueblo.
-        path(sx, baseY, sz + 8, sz + 34);        // eje norte-sur (spawn -> plaza -> mercado)
-        path2(sx, baseY, sz + 12, -16, 16);      // fila de casas (este-oeste)
-
-        plugin.getLogger().info("[Aetheria] Aldea construida (3 casas, granja, guardia, plaza, "
-                + "mercado y taberna).");
+        plugin.getLogger().info("[Aetheria] Centro del pueblo (plaza) listo; el pueblo crece solo.");
     }
 
     /** Camino de grava en linea recta a lo largo de Z (a un x fijo), sobre el suelo del pueblo. */
@@ -251,6 +237,11 @@ public final class VillageModule {
                 set(cx + dx, floorY + 1, cz + dz, Material.SEA_LANTERN);
             }
         }
+        // Campana del pueblo (la tipica de las aldeas de Minecraft), sobre un soporte de piedra
+        // al borde norte de la plaza (hacia el spawn/portal).
+        set(cx, floorY + 1, cz - 3, Material.COBBLESTONE_WALL);
+        set(cx, floorY + 2, cz - 3, Material.COBBLESTONE_WALL);
+        set(cx, floorY + 3, cz - 3, Material.BELL);
         return new Location(world, cx + 3 + 0.5, floorY + 1, cz + 0.5);   // punto de reunion al lado
     }
 

@@ -119,7 +119,7 @@ public final class Blueprint {
             int half, int floors, Material wall, Material corner, Material roof, Material accent,
             boolean furniture, String ownerName) {
         return buildHouse(world, cx, cz, floorY, door, half, half, floors, false,
-                wall, corner, roof, accent, furniture, ownerName);
+                wall, corner, roof, accent, furniture, -1, ownerName);
     }
 
     /**
@@ -131,7 +131,7 @@ public final class Blueprint {
      */
     public static int buildHouse(World world, int cx, int cz, int floorY, BlockFace door,
             int halfX, int halfZ, int floors, boolean setback, Material wall, Material corner,
-            Material roof, Material accent, boolean furniture, String ownerName) {
+            Material roof, Material accent, boolean furniture, int beds, String ownerName) {
         final java.util.Random rng = new java.util.Random();
         final int fh = 5;                          // altura por planta (4 muro + 1 forjado): techos altos
         final int topY = floorY + floors * fh;     // nivel del tejado
@@ -265,11 +265,17 @@ public final class Blueprint {
             set(world, chx, topY + maxH + 1, cz + halfZ - 1, Material.CAMPFIRE);
         }
 
-        // Estancias: tabiques con puerta y mobiliario por habitacion, planta a planta.
-        for (int fl = 0; fl < floors; fl++) {
-            final int shrink = (setback && fl == floors - 1 && floors > 1) ? 1 : 0;
-            furnishFloor(world, cx, cz, floorY + fl * fh, halfX - shrink, halfZ - shrink,
-                    fl, door, wall, furniture, split);
+        // Estancias. Casa de ALDEANO (beds>=1): habitacion diafana con UNA CAMA POR MIEMBRO
+        // contra la pared del fondo + una mesita; siempre transitable. Casa a medida del
+        // jugador (beds<0): salon/cocina/dormitorio por planta como antes.
+        if (beds >= 1) {
+            furnishVillager(world, cx, cz, floorY, halfX, halfZ, door, beds);
+        } else {
+            for (int fl = 0; fl < floors; fl++) {
+                final int shrink = (setback && fl == floors - 1 && floors > 1) ? 1 : 0;
+                furnishFloor(world, cx, cz, floorY + fl * fh, halfX - shrink, halfZ - shrink,
+                        fl, door, wall, furniture, split);
+            }
         }
 
         // Escalera de mano AL FINAL: columna continua (nada la corta) con salida arriba.
@@ -307,6 +313,45 @@ public final class Blueprint {
             set(w, dgx + ox - oz, floorY + 1, dgz + oz - ox, Material.OAK_FENCE);
             set(w, dgx + ox, floorY + 3, dgz + oz, Material.LANTERN);
         }
+    }
+
+    /**
+     * Amueblado de casa de ALDEANO: una sola habitacion diafana (sin tabiques) con UNA CAMA
+     * POR MIEMBRO contra la pared del fondo (cabecera al centro, accesible), un farol y un par
+     * de enseres junto a la pared de la puerta. Siempre transitable: el aldeano/jugador nunca
+     * queda atrapado.
+     */
+    private static void furnishVillager(World w, int cx, int cz, int floorY, int halfX, int halfZ,
+            BlockFace door, int beds) {
+        final int by = floorY;
+        final int ax = door.getModX();
+        final int az = door.getModZ();
+        final int px = ax != 0 ? 0 : 1;
+        final int pz = az != 0 ? 0 : 1;
+        final int depth = (ax != 0 ? halfX : halfZ) - 1;   // interior a lo largo del eje puerta
+        final int width = (px != 0 ? halfX : halfZ) - 1;   // interior perpendicular
+        set(w, cx, by + 4, cz, Material.LANTERN);           // luz colgante del techo
+        final int footX = cx - ax * depth;                  // pared del fondo (opuesta a la puerta)
+        final int footZ = cz - az * depth;
+        for (final int off : bedOffsets(beds, width)) {
+            placeBedAt(w, footX + px * off, by + 1, footZ + pz * off, door);  // cabecera hacia el centro
+        }
+        final int nx = cx + ax * (depth - 1);               // junto a la pared de la puerta
+        final int nz = cz + az * (depth - 1);
+        set(w, nx + px * width, by + 1, nz + pz * width, Material.CHEST);
+        set(w, nx - px * width, by + 1, nz - pz * width, Material.CRAFTING_TABLE);
+    }
+
+    /** Posiciones (eje perpendicular) para repartir {@code beds} camas a lo largo del muro. */
+    private static int[] bedOffsets(int beds, int width) {
+        final int s = Math.min(2, Math.max(1, width));
+        if (beds <= 1) {
+            return new int[] {0};
+        }
+        if (beds == 2) {
+            return new int[] {-s, s};
+        }
+        return new int[] {-s, 0, s};
     }
 
     /**

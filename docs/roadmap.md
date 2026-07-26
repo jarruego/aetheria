@@ -69,9 +69,14 @@ Cada fase deja algo funcionando y verificable.
 - [ ] Profesiones y empresas (futuro)
 - [ ] Encargos/contratos (contracts) entre jugadores y NPC (futuro)
 
-## Fase 7 - NPC vivos (rutinas)  (PENDIENTE)
-- [ ] Horarios, rutinas y pathfinding por codigo (hoy los guias son estaticos)
-- [ ] NPC que se mueven, trabajan y tienen agenda
+## Fase 7 - NPC vivos (rutinas)  (COMPLETA en su nucleo)
+- [x] Vecinos con RUTINA DIARIA por horario: trabajan de dia, se reunen en la plaza al
+      atardecer y se van a casa de noche (NpcRoutineModule, mundo principal).
+- [x] Movimiento por CODIGO (pathfinding Paper: Mob.getPathfinder().moveTo), no por el LLM.
+      La IA sigue solo proponiendo planes; las rutinas son deterministas.
+- [x] Son conversables (personas Nara/granjera y Pol/vigilante) y resucitan si algo los
+      elimina. Activable con npc-routines.enabled.
+- [ ] Agendas mas ricas (multiples tareas, oficios que producen) (futuro)
 
 ## Fase 8 - El mundo evoluciona solo  (PENDIENTE)
 - [ ] Simulacion en el backend (cron/ticks) que evoluciona economia y ciudades aunque no

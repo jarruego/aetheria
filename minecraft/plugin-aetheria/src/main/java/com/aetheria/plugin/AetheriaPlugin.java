@@ -67,6 +67,13 @@ public final class AetheriaPlugin extends JavaPlugin {
                 getServer().getPluginManager().registerEvents(ret, this);
                 ret.build();
             }
+
+            // Fase 7: vecinos con rutina diaria (NPC vivos) en el mundo principal.
+            if (getConfig().getBoolean("npc-routines.enabled", true)) {
+                final NpcRoutineModule routines =
+                        new NpcRoutineModule(this, convo, getServer().getWorlds().get(0));
+                routines.start();
+            }
         }
 
         getLogger().info("Aetheria habilitado (rol: " + role + "). Gateway: " + url);

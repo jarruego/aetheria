@@ -80,6 +80,14 @@ public final class ConversationManager implements Listener {
         return v;
     }
 
+    /**
+     * Registra una entidad ya existente como conversable (p.ej. un vecino con rutina de la
+     * Fase 7). No cambia su IA ni su aspecto: solo la hace hablable por clic derecho.
+     */
+    public void registerConversable(org.bukkit.entity.Entity entity, String npcId, String name) {
+        npcs.put(entity.getUniqueId(), new NpcInfo(npcId, name));
+    }
+
     /** Da a cada guia una apariencia distinta (bioma + profesion) segun su clave. */
     private void applyLook(Villager v, String npcId) {
         final int h = npcId.hashCode() & 0x7fffffff;

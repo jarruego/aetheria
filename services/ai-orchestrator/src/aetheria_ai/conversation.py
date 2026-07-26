@@ -53,6 +53,19 @@ _NPCS: dict[str, dict[str, str]] = {
         "where": "junto al portal de vuelta al lobby, en los mundos de juego",
         "help": "ayudar a los viajeros a volver al lobby",
     },
+    # Fase 7: vecinos con rutina diaria (trabajan de dia, plaza al atardecer, casa de noche).
+    "vecina-nara": {
+        "name": "Nara",
+        "trait": "una granjera trabajadora, alegre y algo parlanchina",
+        "where": "en el mundo principal; trabaja sus campos de dia y por la noche vuelve a casa",
+        "help": "contar la vida del pueblo y como va la cosecha",
+    },
+    "vecino-pol": {
+        "name": "Pol",
+        "trait": "un vigilante sereno y observador, de pocas palabras",
+        "where": "en el mundo principal; patrulla de dia y al anochecer se recoge en casa",
+        "help": "vigilar que todo este tranquilo y orientar a quien anda perdido",
+    },
 }
 _NPCS["guia-creativo"] = _NPCS["guia-creative"]  # alias por si acaso
 _DEFAULT_NPC = {

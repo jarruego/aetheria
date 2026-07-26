@@ -89,18 +89,41 @@ public final class ClaimModule implements CommandExecutor, Listener {
             }
             return true;
         }
-        handleClaim(player, chunkX, chunkZ);
+        if (args.length >= 1 && args[0].equalsIgnoreCase("comprar")) {
+            doClaim(player, chunkX, chunkZ, false);
+        } else if (args.length >= 1 && args[0].equalsIgnoreCase("alquilar")) {
+            doClaim(player, chunkX, chunkZ, true);
+        } else {
+            showClaimMenu(player, chunkX, chunkZ);
+        }
         return true;
     }
 
-    private void handleClaim(Player player, int chunkX, int chunkZ) {
+    private void showClaimMenu(Player player, int chunkX, int chunkZ) {
         if (owners.containsKey(key(chunkX, chunkZ))) {
             player.sendMessage("§eEsta parcela ya esta reclamada.");
             return;
         }
-        player.sendMessage("§7[Aetheria] reclamando esta parcela...");
+        player.sendMessage("§6[Parcela] §f¿Como quieres esta parcela? Elige:");
+        player.sendMessage(net.kyori.adventure.text.Component.text("  ")
+                .append(opt("§a[Comprar (50 AET, para siempre)]", "/claim comprar"))
+                .append(net.kyori.adventure.text.Component.text("   "))
+                .append(opt("§b[Alquilar (10 AET + renta)]", "/claim alquilar")));
+    }
+
+    private net.kyori.adventure.text.Component opt(String label, String cmd) {
+        return net.kyori.adventure.text.Component.text(label)
+                .clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand(cmd));
+    }
+
+    private void doClaim(Player player, int chunkX, int chunkZ, boolean rental) {
+        if (owners.containsKey(key(chunkX, chunkZ))) {
+            player.sendMessage("§eEsta parcela ya esta reclamada.");
+            return;
+        }
+        player.sendMessage("§7[Aetheria] " + (rental ? "alquilando" : "comprando") + " esta parcela...");
         gateway.claimPlot(player.getUniqueId().toString(), player.getName(), worldKey,
-                        chunkX * 16, chunkZ * 16, chunkX * 16 + 15, chunkZ * 16 + 15)
+                        chunkX * 16, chunkZ * 16, chunkX * 16 + 15, chunkZ * 16 + 15, rental)
                 .whenComplete((json, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
                     if (err != null) {
                         player.sendMessage("§c[Aetheria] error: " + err.getMessage());
@@ -111,11 +134,17 @@ public final class ClaimModule implements CommandExecutor, Listener {
                         return;
                     }
                     owners.put(key(chunkX, chunkZ), player.getUniqueId());
-                    final double price = json.has("data") && json.getAsJsonObject("data").has("price")
-                            ? json.getAsJsonObject("data").get("price").getAsDouble() : 0.0;
-                    player.sendMessage(String.format(
-                            "§a[Aetheria] parcela reclamada. Se cobraron §e%.0f AET§a. Ya esta protegida.",
-                            price));
+                    final var data = json.has("data") ? json.getAsJsonObject("data") : null;
+                    final double price = data != null && data.has("price") ? data.get("price").getAsDouble() : 0.0;
+                    if (rental) {
+                        final double rent = data != null && data.has("rent") ? data.get("rent").getAsDouble() : 0.0;
+                        player.sendMessage(String.format("§a[Aetheria] parcela alquilada (deposito §e%.0f "
+                                + "AET§a). Renta §e%.0f AET§a por periodo; si no puedes pagarla, se libera. "
+                                + "Ya esta protegida.", price, rent));
+                    } else {
+                        player.sendMessage(String.format("§a[Aetheria] parcela comprada por §e%.0f AET§a. "
+                                + "Es tuya y esta protegida.", price));
+                    }
                 }));
     }
 

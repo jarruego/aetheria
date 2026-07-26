@@ -73,8 +73,11 @@ Se venden **servicios**, nunca ventajas de combate: nadie compra poder, solo tra
 
 - `/sethome` — guarda tu casa aquí.
 - `/home` — vuelve a tu casa.
-- `/claim` — **reclama la parcela** (el chunk) donde estás. Cuesta AET y pasa a ser tuya:
-  nadie más puede romper ni poner bloques dentro.
+- `/claim` — **reclama la parcela** (el chunk) donde estás. Puedes elegir:
+  - **Comprar** (pago único, ~50 AET): es tuya para siempre.
+  - **Alquilar** (depósito ~10 AET + una **renta** cada periodo): más barata de entrada, pero
+    si no puedes pagar la renta, la parcela **se libera** automáticamente.
+  Una vez tuya, nadie más puede romper ni poner bloques dentro.
 - `/claim info` — de quién es la parcela donde estás.
 - `/unclaim` — libera tu parcela.
 

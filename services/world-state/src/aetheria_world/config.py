@@ -23,8 +23,11 @@ class Settings(BaseSettings):
     sim_income_min: float = 5.0      # ingreso minimo por negocio y tick (AET)
     sim_income_max: float = 30.0     # ingreso maximo por negocio y tick (AET)
 
-    # Fase 9: coste de reclamar una parcela (un chunk) en AET.
-    claim_price: float = 50.0
+    # Fase 9: reclamar una parcela (un chunk).
+    claim_price: float = 50.0            # compra fija (para siempre)
+    claim_rent_deposit: float = 10.0     # deposito al alquilar
+    claim_rent: float = 5.0              # renta cobrada cada periodo
+    rent_interval_seconds: int = 3600    # cada cuanto se cobra la renta ("un dia")
 
 
 settings = Settings()

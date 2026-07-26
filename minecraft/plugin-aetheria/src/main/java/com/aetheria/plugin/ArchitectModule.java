@@ -218,7 +218,8 @@ public final class ArchitectModule implements CommandExecutor {
         player.sendMessage("§7  Amueblada: +40. (Ej.: mediana de piedra amueblada = 248 AET)");
         player.sendMessage("§eOtros §7(/aetheria servicio decorador|urbanista <que>): la IA "
                 + "construye y cobra segun lo que hace.");
-        player.sendMessage("§eParcelas §7(/claim): reclamar y proteger tu terreno (cuesta AET).");
+        player.sendMessage("§eParcelas §7(/claim): §fcomprar§7 (50, para siempre) o §falquilar§7 "
+                + "(10 + renta cada periodo; si no pagas, se libera). Protege tu terreno.");
         player.sendMessage("§eGanar §7: trabaja (mina/tala/cosecha/caza) o vende con /sell.");
     }
 

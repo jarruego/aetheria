@@ -26,6 +26,7 @@ import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.player.PlayerBucketEmptyEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 
 import com.google.common.io.ByteArrayDataOutput;
@@ -55,6 +56,7 @@ public final class ReturnPortalModule implements Listener {
 
     private Location portalCenter;
     private Location safeCenter;   // centro de la zona segura (coordenadas de bloque)
+    private Location arrival;      // donde dejar al jugador al llegar (lejos del portal)
 
     public ReturnPortalModule(AetheriaPlugin plugin, String targetServer, ConversationManager convo) {
         this.plugin = plugin;
@@ -114,9 +116,11 @@ public final class ReturnPortalModule implements Listener {
 
         this.portalCenter = new Location(world, cx + 0.5, baseY + 1, cz + 0.5);
 
-        // El jugador aparece 3 casillas al norte del portal (dentro de la zona decorada),
-        // mirando hacia el, para no volver a entrar por accidente nada mas llegar.
-        world.setSpawnLocation(new Location(world, cx + 0.5, baseY + 1, cz - 3 + 0.5, 0f, 0f));
+        // Punto de llegada: al OTRO lado del portal (lado del pueblo), 4 casillas por delante y
+        // MIRANDO al pueblo (portal a su espalda), para no volver a entrar al moverse. NO se
+        // cambia el world spawn (eso haria "derivar" el portal en cada reinicio): se
+        // teletransporta al jugador al llegar (onJoin) si aparece pegado al portal.
+        this.arrival = new Location(world, cx + 0.5, baseY + 1, cz + 4 + 0.5, 0f, 0f);
 
         // Barrido periodico: mantiene la zona libre de monstruos (los que ya haya y los que
         // logren aparecer pese al bloqueo de spawn). Cada 2 s, coste minimo (area pequena).
@@ -228,6 +232,20 @@ public final class ReturnPortalModule implements Listener {
         final int dz = loc.getBlockZ() - safeCenter.getBlockZ();
         return dx >= SAFE_MIN && dx <= SAFE_MAX && dz >= SAFE_MIN && dz <= SAFE_MAX
                 && Math.abs(loc.getBlockY() - safeCenter.getBlockY()) <= 4;
+    }
+
+    /** Al llegar al mundo, si el jugador aparece pegado al portal, se le aparta hacia el pueblo. */
+    @EventHandler
+    public void onJoin(PlayerJoinEvent event) {
+        if (arrival == null) {
+            return;
+        }
+        final Player player = event.getPlayer();
+        if (player.getWorld().equals(arrival.getWorld())
+                && player.getLocation().distanceSquared(portalCenter) < 100) {   // ~10 bloques
+            // 1 tick despues: en un cambio de servidor el teleport inmediato puede ignorarse.
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> player.teleport(arrival), 2L);
+        }
     }
 
     @EventHandler

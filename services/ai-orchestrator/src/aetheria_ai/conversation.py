@@ -107,8 +107,9 @@ _FEATURES = (
     "- Otros servicios de la IA (de pago): '/aetheria servicio decorador|urbanista <que "
     "quieres>'; construye y solo cobra por lo que hace.\n"
     "- Hogar: '/sethome' guardar casa, '/home' volver a ella.\n"
-    "- Tierras: '/claim' reclama la parcela donde estas (cuesta AET y queda protegida), "
-    "'/unclaim' la suelta.\n"
+    "- Tierras: '/claim' para reclamar la parcela donde estas: puedes COMPRARLA (50 AET, para "
+    "siempre) o ALQUILARLA (10 AET + una renta cada periodo; si no la pagas, se libera). Queda "
+    "protegida. '/unclaim' la suelta. Necesitas una parcela tuya para construir.\n"
     "- El pueblo: hablar con los vecinos, y '/aetheria cronica' para ver que ha pasado en el "
     "mundo (la economia evoluciona sola). '/guia' da un libro con todo esto."
 )

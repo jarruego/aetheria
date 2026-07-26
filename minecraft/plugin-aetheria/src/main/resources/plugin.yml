@@ -26,8 +26,8 @@ commands:
     usage: /pay <jugador> <cantidad>
     permission: aetheria.use
   claim:
-    description: Reclama la parcela (chunk) donde estas
-    usage: /claim [info]
+    description: Reclama la parcela (chunk) donde estas (comprar o alquilar)
+    usage: /claim [comprar|alquilar|info]
     permission: aetheria.use
   unclaim:
     description: Libera tu parcela actual

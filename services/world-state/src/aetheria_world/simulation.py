@@ -17,6 +17,7 @@ import decimal
 import logging
 import random
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from aetheria_world.config import settings
 from aetheria_world.db import is_ready, pool
@@ -155,6 +156,37 @@ async def _event(conn, kind: str, description: str, data: dict) -> None:
     )
 
 
+async def collect_rent(conn) -> dict:
+    """Cobra la renta de las parcelas de alquiler vencidas; libera las que no puedan pagar."""
+    charged = 0
+    released = 0
+    # Ojo: las cuentas se indexan por el UUID de Minecraft (java_uuid), no por players.id.
+    due = await conn.fetch(
+        """
+        select p.id, p.rent, a.id as acc_id, a.balance, pl.username
+        from plots p
+        join players pl on pl.id = p.owner_id
+        join accounts a on a.owner_type = 'player' and a.owner_id = pl.java_uuid and a.currency = 'AET'
+        where p.rental and p.rent_due is not null and p.rent_due <= now()
+        for update of p
+        """
+    )
+    banco = await _account(conn, _BANCO, "system")
+    nxt = datetime.now(timezone.utc) + timedelta(seconds=settings.rent_interval_seconds)
+    for r in due:
+        rent = r["rent"]
+        if r["balance"] >= rent:
+            await _move(conn, {"id": r["acc_id"]}, banco, rent, "renta parcela")
+            await conn.execute("update plots set rent_due = $1 where id = $2", nxt, r["id"])
+            charged += 1
+        else:
+            await conn.execute("delete from plots where id = $1", r["id"])
+            await _event(conn, "social",
+                         f"La parcela de {r['username']} se libero por impago del alquiler.", {})
+            released += 1
+    return {"status": "ok", "charged": charged, "released": released}
+
+
 def _as_json(obj: dict) -> str:
     import json
 
@@ -173,6 +205,7 @@ async def simulation_loop() -> None:
             async with pool().acquire() as conn:
                 async with conn.transaction():
                     summary = await run_tick(conn)
-            logger.info("Tick economico: %s", summary)
+                    rent = await collect_rent(conn)   # cobra alquileres vencidos
+            logger.info("Tick economico: %s | renta: %s", summary, rent)
         except Exception:  # noqa: BLE001 - la simulacion nunca debe tumbar el servicio
             logger.exception("Fallo un tick de simulacion (se continua).")

@@ -8,6 +8,7 @@ from __future__ import annotations
 import decimal
 import json
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
 
@@ -32,6 +33,7 @@ from aetheria_world.models import (
     WorldRef,
     WorldSummary,
 )
+from aetheria_world.simulation import collect_rent as sim_collect_rent
 from aetheria_world.simulation import prosperity as sim_prosperity
 from aetheria_world.simulation import run_tick
 
@@ -402,13 +404,22 @@ async def _player_id(conn, java_uuid: str, name: str | None):
 
 @router.post("/plots/claim")
 async def claim_plot(body: PlotClaimIn) -> dict:
-    """Reclama una parcela (un chunk). Cobra en AET y falla si se solapa o no hay fondos."""
+    """Reclama una parcela (un chunk), en compra fija o en alquiler. Cobra en AET."""
     _require_db()
-    price = decimal.Decimal(str(settings.claim_price))
+    if body.rental:
+        up_front = decimal.Decimal(str(settings.claim_rent_deposit))
+        rent = decimal.Decimal(str(settings.claim_rent))
+        rent_due = datetime.now(timezone.utc) + timedelta(seconds=settings.rent_interval_seconds)
+        reason = "deposito alquiler parcela"
+    else:
+        up_front = decimal.Decimal(str(settings.claim_price))
+        rent = decimal.Decimal(0)
+        rent_due = None
+        reason = "comprar parcela"
+
     async with pool().acquire() as conn:
         async with conn.transaction():
             world_id = await _world_id(conn, body.world)
-            # Solape con una parcela existente en el mismo mundo.
             overlap = await conn.fetchrow(
                 """
                 select 1 from plots
@@ -423,26 +434,28 @@ async def claim_plot(body: PlotClaimIn) -> dict:
 
             player_id = await _player_id(conn, body.owner_uuid, body.owner_name)
             acc = await _account(conn, uuid.UUID(body.owner_uuid))
-            if acc["balance"] < price:
+            if acc["balance"] < up_front:
                 raise HTTPException(status_code=400, detail="Fondos insuficientes para reclamar")
             banco = await _account(conn, _BANCO, owner_type="system")
-            await conn.execute("update accounts set balance = balance - $1 where id = $2", price, acc["id"])
-            await conn.execute("update accounts set balance = balance + $1 where id = $2", price, banco["id"])
+            await conn.execute("update accounts set balance = balance - $1 where id = $2", up_front, acc["id"])
+            await conn.execute("update accounts set balance = balance + $1 where id = $2", up_front, banco["id"])
             await conn.execute(
                 "insert into transactions (from_account, to_account, amount, reason) values ($1, $2, $3, $4)",
-                acc["id"], banco["id"], price, "reclamar parcela",
+                acc["id"], banco["id"], up_front, reason,
             )
             await conn.execute(
-                "insert into plots (world_id, owner_id, min_x, min_z, max_x, max_z) "
-                "values ($1, $2, $3, $4, $5, $6)",
+                "insert into plots (world_id, owner_id, min_x, min_z, max_x, max_z, rental, rent, rent_due) "
+                "values ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
                 world_id, player_id, body.min_x, body.min_z, body.max_x, body.max_z,
+                body.rental, rent, rent_due,
             )
+            modo = "en alquiler" if body.rental else "en propiedad"
             await conn.execute(
                 "insert into world_events (kind, description) values ($1, $2)",
                 "social",
-                f"{body.owner_name or 'Alguien'} reclamo una parcela en {body.world}.",
+                f"{body.owner_name or 'Alguien'} reclamo una parcela {modo} en {body.world}.",
             )
-    return {"status": "ok", "price": float(price)}
+    return {"status": "ok", "price": float(up_front), "rental": body.rental, "rent": float(rent)}
 
 
 @router.post("/plots/unclaim")
@@ -472,7 +485,7 @@ async def list_plots(world: str) -> list[PlotOut]:
         world_id = await _world_id(conn, world)
         rows = await conn.fetch(
             """
-            select p.min_x, p.min_z, p.max_x, p.max_z, pl.java_uuid, pl.username
+            select p.min_x, p.min_z, p.max_x, p.max_z, p.rental, p.rent, pl.java_uuid, pl.username
             from plots p left join players pl on pl.id = p.owner_id
             where p.world_id = $1
             """,
@@ -483,6 +496,16 @@ async def list_plots(world: str) -> list[PlotOut]:
             owner_uuid=str(r["java_uuid"]) if r["java_uuid"] else None,
             owner_name=r["username"],
             world=world, min_x=r["min_x"], min_z=r["min_z"], max_x=r["max_x"], max_z=r["max_z"],
+            rental=r["rental"], rent=float(r["rent"]),
         )
         for r in rows
     ]
+
+
+@router.post("/plots/collect-rent")
+async def collect_rent_endpoint() -> dict:
+    """Cobra la renta de las parcelas de alquiler vencidas (manual; el bucle ya lo hace)."""
+    _require_db()
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            return await sim_collect_rent(conn)

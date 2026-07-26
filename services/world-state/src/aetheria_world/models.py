@@ -121,6 +121,7 @@ class PlotClaimIn(BaseModel):
     min_z: int
     max_x: int
     max_z: int
+    rental: bool = False       # True = alquiler; False = compra fija
 
 
 class PlotUnclaimIn(BaseModel):
@@ -138,3 +139,5 @@ class PlotOut(BaseModel):
     min_z: int
     max_x: int
     max_z: int
+    rental: bool = False
+    rent: float = 0.0

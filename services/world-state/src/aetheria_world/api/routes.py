@@ -361,6 +361,18 @@ async def world_events(limit: int = 20) -> list[WorldEventOut]:
     ]
 
 
+@router.post("/world-events")
+async def add_world_event(body: dict) -> dict:
+    """Añade un suceso a la cronica (lo usa el plugin: nacimientos, jubilaciones, muertes)."""
+    _require_db()
+    async with pool().acquire() as conn:
+        await conn.execute(
+            "insert into world_events (kind, description) values ($1, $2)",
+            str(body.get("kind", "evento"))[:32], str(body.get("description", ""))[:500],
+        )
+    return {"status": "ok"}
+
+
 @router.post("/sim/tick")
 async def sim_tick() -> dict:
     """Fuerza un tick completo (economia + renta + poblacion). Pruebas o cron externo."""

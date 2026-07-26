@@ -121,6 +121,41 @@ public final class NpcRoutineModule {
         return w.name;
     }
 
+    /** Da de baja a un colono concreto por su nombre (p.ej. al morir). */
+    public boolean removeColono(String name) {
+        for (int i = workers.size() - 1; i >= BASE; i--) {
+            if (workers.get(i).name.equals(name)) {
+                final Worker w = workers.remove(i);
+                if (w.entity != null) {
+                    w.entity.remove();
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Jubila a un colono: pierde el oficio y su nombre pasa a "(jubilado)". */
+    public void retire(String name) {
+        for (final Worker w : workers) {
+            if (w.name.equals(name) && w.entity instanceof Villager v) {
+                v.setProfession(Villager.Profession.NONE);
+                v.customName(Component.text("§7" + name + " §8(jubilado)"));
+                return;
+            }
+        }
+    }
+
+    /** Cambia el oficio de un colono (p.ej. al heredar el puesto de un fallecido). */
+    public void setProfession(String name, Villager.Profession prof) {
+        for (final Worker w : workers) {
+            if (w.name.equals(name) && w.entity instanceof Villager v) {
+                v.setProfession(prof);
+                return;
+            }
+        }
+    }
+
     private void clearOld() {
         world.getEntities().stream()
                 .filter(e -> e.getScoreboardTags().contains(WORKER_TAG))

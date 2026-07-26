@@ -210,6 +210,14 @@ public final class GatewayClient {
         return getJson("/v1/village");
     }
 
+    /** Registra un suceso en la cronica del mundo (nacimiento, jubilacion, muerte...). */
+    public CompletableFuture<JsonObject> postEvent(String kind, String description) {
+        final JsonObject body = new JsonObject();
+        body.addProperty("kind", kind);
+        body.addProperty("description", description);
+        return sendCapturing("/v1/world-events", gson.toJson(body));
+    }
+
     /** Cronica del mundo (Fase 8): sucesos autonomos recientes, del mas nuevo al mas viejo. */
     public CompletableFuture<com.google.gson.JsonArray> getWorldEvents(int limit) {
         final HttpRequest request = HttpRequest.newBuilder()

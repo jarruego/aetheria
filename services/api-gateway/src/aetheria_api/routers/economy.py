@@ -45,6 +45,12 @@ async def world_events(limit: int = 20):
     return await _ws("GET", f"/internal/world-events?limit={limit}")
 
 
+@router.post("/world-events", dependencies=[Depends(require_internal_token)])
+async def add_world_event(body: dict):
+    """El plugin registra un suceso en la cronica (nacimientos, jubilaciones, muertes)."""
+    return await _ws("POST", "/internal/world-events", json=body)
+
+
 @router.get("/prosperity", dependencies=[Depends(require_internal_token)])
 async def prosperity():
     """Estado de prosperidad del pueblo (para mostrarlo en el HUD)."""

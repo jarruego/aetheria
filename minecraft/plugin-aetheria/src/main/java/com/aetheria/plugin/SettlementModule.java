@@ -49,23 +49,52 @@ public final class SettlementModule {
 
     private static final String BABY_TAG = "aetheria_baby";
     private static final long GROW_MS = 6 * 60 * 1000L;   // un bebe tarda ~6 min en hacerse adulto
+    private static final double YEARS_PER_DAY = 2.0;       // envejecen 2 anos por dia real
+    private static final long DAY_MS = 86_400_000L;
+    private static final int WORK_AGE = 16;
+    private static final int RETIRE_AGE = 65;
 
-    /** Un nino del pueblo creciendo: su entidad bebe, su nombre y cuando se hara adulto. */
+    /** Un nino del pueblo creciendo: su bebe, su nombre, su padre/madre y cuando se hara adulto. */
     private static final class Child {
         final Villager baby;
         final String name;
+        final String parent;
         final long matureAt;
 
-        Child(Villager baby, String name, long matureAt) {
+        Child(Villager baby, String name, String parent, long matureAt) {
             this.baby = baby;
             this.name = name;
+            this.parent = parent;
             this.matureAt = matureAt;
+        }
+    }
+
+    /** Un colono adulto con su edad (envejece), oficio, casa, padre/madre y estado de jubilacion. */
+    private static final class Colono {
+        String name;
+        String profKey;
+        int x;
+        int y;
+        int z;
+        long bornMillis;
+        double initialAge;
+        int deathAge;
+        String parent;
+        boolean retired;
+
+        double age(long now) {
+            return initialAge + (now - bornMillis) * YEARS_PER_DAY / DAY_MS;
+        }
+
+        String toLine() {
+            return name + ";" + profKey + ";" + x + ";" + y + ";" + z + ";" + bornMillis + ";"
+                    + initialAge + ";" + deathAge + ";" + (parent == null ? "" : parent) + ";" + retired;
         }
     }
 
     private final List<Child> children = new ArrayList<>();
     private final List<int[]> placed = new ArrayList<>();   // (x,z) de las casas ya colocadas
-    private final List<String> records = new ArrayList<>(); // colonos persistidos (nombre;oficio;x;y;z)
+    private final List<Colono> colonos = new ArrayList<>(); // colonos adultos (con edad), persistidos
     private final File dataFile;
 
     /** Altura del SUELO real (ignora hojas, troncos y plantas), escaneando hacia abajo. */
@@ -167,7 +196,7 @@ public final class SettlementModule {
         load();   // reaparecen los colonos ya existentes en sus casas (sin reconstruir)
         plugin.getServer().getScheduler().runTaskTimer(plugin, this::reconcile, PERIOD, PERIOD);
         plugin.getLogger().info("[Aetheria] Pueblo vivo: reconciliando poblacion cada 60 s ("
-                + records.size() + " colonos cargados).");
+                + colonos.size() + " colonos cargados).");
     }
 
     /** Reaparece a los colonos guardados en sus casas (los bloques ya persisten en el mundo). */
@@ -175,22 +204,39 @@ public final class SettlementModule {
         if (!dataFile.exists()) {
             return;
         }
+        final var rng = ThreadLocalRandom.current();
         try (BufferedReader r = new BufferedReader(new FileReader(dataFile))) {
             String line;
             while ((line = r.readLine()) != null) {
-                final String[] f = line.split(";");
+                final String[] f = line.split(";", -1);
                 if (f.length < 5) {
                     continue;
                 }
-                final String name = f[0];
-                final Villager.Profession prof = profFromKey(f[1]);
-                final int x = Integer.parseInt(f[2]);
-                final int y = Integer.parseInt(f[3]);
-                final int z = Integer.parseInt(f[4]);
-                routines.addColono("colono", name, new Location(world, x + 0.5, y, z + 0.5),
-                        village.plaza(), prof);
-                placed.add(new int[] {x, z});
-                records.add(line);
+                final Colono c = new Colono();
+                c.name = f[0];
+                c.profKey = f[1];
+                c.x = Integer.parseInt(f[2]);
+                c.y = Integer.parseInt(f[3]);
+                c.z = Integer.parseInt(f[4]);
+                if (f.length >= 10) {
+                    c.bornMillis = Long.parseLong(f[5]);
+                    c.initialAge = Double.parseDouble(f[6]);
+                    c.deathAge = Integer.parseInt(f[7]);
+                    c.parent = f[8];
+                    c.retired = Boolean.parseBoolean(f[9]);
+                } else {   // formato antiguo: se le asigna una edad plausible
+                    c.bornMillis = System.currentTimeMillis();
+                    c.initialAge = 20 + rng.nextInt(40);
+                    c.deathAge = 74 + rng.nextInt(19);
+                    c.parent = "";
+                }
+                routines.addColono("colono", c.name, new Location(world, c.x + 0.5, c.y, c.z + 0.5),
+                        new Location(world, c.x + 6 + 0.5, c.y, c.z + 0.5), profFromKey(c.profKey));
+                if (c.retired) {
+                    routines.retire(c.name);
+                }
+                placed.add(new int[] {c.x, c.z});
+                colonos.add(c);
             }
         } catch (Exception e) {   // nunca hacemos caer el plugin por esto
             plugin.getLogger().warning("[Aetheria] no pude cargar colonos: " + e.getMessage());
@@ -199,8 +245,8 @@ public final class SettlementModule {
 
     private void save() {
         try (FileWriter w = new FileWriter(dataFile, false)) {
-            for (final String rec : records) {
-                w.write(rec + "\n");
+            for (final Colono c : colonos) {
+                w.write(c.toLine() + "\n");
             }
         } catch (Exception e) {
             plugin.getLogger().warning("[Aetheria] no pude guardar colonos: " + e.getMessage());
@@ -225,16 +271,18 @@ public final class SettlementModule {
             if (err != null || json == null) {
                 return;
             }
+            ageAndDeath();      // envejecen; a los 65 se jubilan; de muy mayores mueren (lento)
             matureChildren();   // los ninos que ya han crecido se mudan a su casa
 
             final int population = json.get("population").getAsInt();
             final int targetExtra = Math.max(0, population - 3);
-            final int adults = routines.colonoCount();
+            final int adults = colonos.size();
             final int have = adults + children.size();
             if (have < targetExtra) {
                 // Deficit grande = recuperar tras reinicio (adultos directos); +1 = nace un nino.
                 if (targetExtra - have >= 2) {
-                    growAdult(adults, NAMES[ThreadLocalRandom.current().nextInt(NAMES.length)]);
+                    final var rng = ThreadLocalRandom.current();
+                    growAdult(colonos.size(), NAMES[rng.nextInt(NAMES.length)], 20 + rng.nextInt(40), "");
                 } else {
                     bearChild();
                 }
@@ -253,12 +301,23 @@ public final class SettlementModule {
         }));
     }
 
-    /** Nace un nino: un bebe aldeano cerca de la plaza que crecera con el tiempo. */
+    /** Nace un nino de un padre/madre del pueblo; jugara cerca de su casa y crecera con el tiempo. */
     private void bearChild() {
         final var rng = ThreadLocalRandom.current();
         final String name = NAMES[rng.nextInt(NAMES.length)];
-        final Location plaza = village.plaza();
-        final Location at = plaza.clone().add(rng.nextInt(5) - 2, 0, rng.nextInt(5) - 2);
+        // Padre/madre: un colono adulto no jubilado, si lo hay.
+        final List<Colono> adults = new ArrayList<>();
+        for (final Colono c : colonos) {
+            if (!c.retired) {
+                adults.add(c);
+            }
+        }
+        final Colono parent = adults.isEmpty() ? null : adults.get(rng.nextInt(adults.size()));
+        // Aparece junto a la casa de su familia (o en la plaza si no hay familia).
+        final Location base = parent != null
+                ? new Location(world, parent.x + 0.5, parent.y, parent.z + 2.5)
+                : village.plaza();
+        final Location at = base.clone().add(rng.nextInt(3) - 1, 0, rng.nextInt(3) - 1);
         final Villager baby = (Villager) world.spawnEntity(at, EntityType.VILLAGER);
         baby.setBaby();
         baby.customName(net.kyori.adventure.text.Component.text("§b" + name + " §7(nino)"));
@@ -268,13 +327,16 @@ public final class SettlementModule {
         baby.setInvulnerable(true);
         baby.addScoreboardTag(BABY_TAG);
         convo.registerConversable(baby, "nino", name);   // se puede hablar con los ninos
-        children.add(new Child(baby, name, System.currentTimeMillis() + GROW_MS));
+        final String parentName = parent != null ? parent.name : "";
+        children.add(new Child(baby, name, parentName, System.currentTimeMillis() + GROW_MS));
+        final String of = parent != null ? ", hijo de " + parent.name : "";
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
-                "§d[Pueblo] §fHa nacido §b" + name + "§f en el pueblo."));
+                "§d[Pueblo] §fHa nacido §b" + name + "§f" + of + " en el pueblo."));
+        gateway.postEvent("nacimiento", "Ha nacido " + name + of + " en el pueblo.");
         plugin.getLogger().info("[Aetheria] Pueblo vivo: nace un nino (" + name + ").");
     }
 
-    /** Los ninos que han crecido se convierten en adultos con casa y oficio propios. */
+    /** Al llegar a la edad de trabajar (16), el nino se hace adulto con casa y oficio propios. */
     private void matureChildren() {
         final long now = System.currentTimeMillis();
         final Iterator<Child> it = children.iterator();
@@ -287,7 +349,7 @@ public final class SettlementModule {
             if (c.baby != null) {
                 c.baby.remove();
             }
-            growAdult(routines.colonoCount(), c.name);
+            growAdult(colonos.size(), c.name, WORK_AGE, c.parent);
             Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                     "§a[Pueblo] §b" + c.name + " §7ha crecido y se ha mudado a su propia casa."));
         }
@@ -329,7 +391,7 @@ public final class SettlementModule {
         }
     }
 
-    private void growAdult(int index, String name) {
+    private void growAdult(int index, String name, double initialAge, String parent) {
         final int[] spot = findBuildSpot(index);
         if (spot == null) {
             return;   // no encontro sitio libre; lo reintenta el proximo ciclo
@@ -349,14 +411,98 @@ public final class SettlementModule {
         professionFeature(cx, cz, fy, prof, rng);
         pathTo(cx, cz, village.plaza());                   // sendero que sigue el relieve al pueblo
         placed.add(new int[] {cx, cz});
-        records.add(name + ";" + profKey(prof) + ";" + cx + ";" + (fy + 1) + ";" + cz);
+
+        final Colono c = new Colono();
+        c.name = name;
+        c.profKey = profKey(prof);
+        c.x = cx;
+        c.y = fy + 1;
+        c.z = cz;
+        c.bornMillis = System.currentTimeMillis();
+        c.initialAge = initialAge;
+        c.deathAge = 74 + rng.nextInt(19);
+        c.parent = parent;
+        colonos.add(c);
         save();
 
+        // Vive en su casa y TRABAJA en su propio puesto (el rasgo del oficio, al este):
+        // asi cada uno esta en un sitio distinto y no se amontonan en la plaza.
         final Location home = new Location(world, cx + 0.5, fy + 1, cz + 0.5);
-        routines.addColono("colono", name, home, village.plaza(), prof);
+        final Location workspot = new Location(world, cx + 6 + 0.5, fy + 1, cz + 0.5);
+        routines.addColono("colono", name, home, workspot, prof);
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                 "§a[Pueblo] §f" + name + " §7(" + oficio(prof) + ") se ha instalado en el pueblo."));
         plugin.getLogger().info("[Aetheria] Pueblo vivo: +1 colono (" + name + ", " + prof + ").");
+    }
+
+    /** Envejecimiento LENTO: a los 65 se jubilan; de muy mayores mueren (libera espacio en BD). */
+    private void ageAndDeath() {
+        final long now = System.currentTimeMillis();
+        final Iterator<Colono> it = colonos.iterator();
+        boolean changed = false;
+        while (it.hasNext()) {
+            final Colono c = it.next();
+            final double age = c.age(now);
+            if (age >= c.deathAge) {
+                it.remove();
+                routines.removeColono(c.name);
+                changed = true;
+                final Colono heir = pickSuccessor(c);
+                final String successor;
+                if (heir != null) {
+                    heir.profKey = c.profKey;   // hereda el puesto del fallecido
+                    routines.setProfession(heir.name, profFromKey(c.profKey));
+                    successor = heir.name;
+                } else {
+                    successor = "nadie de momento";
+                }
+                final String family = livingChildren(c);
+                final String msg = String.format(
+                        "Ha fallecido %s, %s, a los %d anos. %sLe releva %s en su oficio.",
+                        c.name, oficio(profFromKey(c.profKey)), (int) age,
+                        family.isEmpty() ? "" : "Le sobreviven " + family + ". ", successor);
+                gateway.postEvent("obituario", msg);
+                Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage("§8[Pueblo] §7" + msg));
+            } else if (age >= RETIRE_AGE && !c.retired) {
+                c.retired = true;
+                changed = true;
+                routines.retire(c.name);
+                final String msg = c.name + " se jubila de " + oficio(profFromKey(c.profKey)) + ".";
+                gateway.postEvent("jubilacion", msg);
+                Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage("§7[Pueblo] " + msg));
+            }
+        }
+        if (changed) {
+            save();
+        }
+    }
+
+    /** Un colono (preferiblemente joven y no jubilado) que hereda el oficio del fallecido. */
+    private Colono pickSuccessor(Colono dead) {
+        Colono best = null;
+        for (final Colono c : colonos) {
+            if (c == dead || c.retired) {
+                continue;
+            }
+            if (best == null || c.initialAge < best.initialAge) {
+                best = c;
+            }
+        }
+        return best;
+    }
+
+    /** Nombres de los hijos vivos de un colono (para el obituario). */
+    private String livingChildren(Colono parent) {
+        final StringBuilder sb = new StringBuilder();
+        for (final Colono c : colonos) {
+            if (parent.name.equals(c.parent)) {
+                if (sb.length() > 0) {
+                    sb.append(", ");
+                }
+                sb.append(c.name);
+            }
+        }
+        return sb.length() > 0 ? "sus hijos " + sb : "";
     }
 
     private BlockFace towardPlaza(int cx, int cz) {
@@ -420,8 +566,8 @@ public final class SettlementModule {
     private void shrink() {
         final String name = routines.removeNewestColono();
         if (name != null) {
-            if (!records.isEmpty()) {
-                records.remove(records.size() - 1);
+            if (!colonos.isEmpty()) {
+                colonos.remove(colonos.size() - 1);
             }
             if (!placed.isEmpty()) {
                 placed.remove(placed.size() - 1);

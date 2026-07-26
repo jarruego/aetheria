@@ -7,6 +7,7 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Mob;
+import org.bukkit.entity.Player;
 import org.bukkit.entity.Villager;
 
 import net.kyori.adventure.text.Component;
@@ -36,6 +37,7 @@ public final class NpcRoutineModule {
         Mob entity;
         Location last;      // ultima posicion vista (para detectar atascos)
         int stuck;          // ticks de rutina seguidos sin avanzar
+        long lastRemark;    // ultima vez que solto un comentario curioso
 
         Worker(String npcId, String name, Location home, Location work, Location plaza) {
             this.npcId = npcId;
@@ -155,6 +157,7 @@ public final class NpcRoutineModule {
             if (!w.entity.hasAI()) {
                 w.entity.setAI(true);         // red de seguridad: reanuda si quedo pausado
             }
+            maybeRemark(w);                   // comentario curioso si hay alguien cerca
             final Location target;
             if (time < 12000L) {
                 target = w.work;
@@ -182,6 +185,40 @@ public final class NpcRoutineModule {
                 w.stuck = 0;
             }
             w.last = at;
+        }
+    }
+
+    private static final String[] REMARKS = {
+        "Buen dia para trabajar, ¿no crees?",
+        "Dicen en la taberna que el pueblo prospera.",
+        "Cuidado de noche, que salen cosas por los caminos.",
+        "¿Ya conoces a Sella, la del mercado?",
+        "He oido que alguien se ha construido una casa nueva.",
+        "Si necesitas algo, pregunta por la plaza.",
+        "El herrero anda muy ocupado estos dias.",
+        "Los cultivos van creciendo poco a poco.",
+        "Bienvenido, viajero. Ponte comodo.",
+        "Cada dia llega mas gente al pueblo.",
+        "Trabajar de dia, descansar de noche: asi es la vida aqui.",
+        "¿Has probado a vender en el mercado? Da buenas monedas.",
+    };
+
+    /** Si hay un jugador cerca, el vecino suelta un comentario curioso (con cooldown). */
+    private void maybeRemark(Worker w) {
+        final long now = System.currentTimeMillis();
+        if (now - w.lastRemark < 30000L) {
+            return;
+        }
+        if (java.util.concurrent.ThreadLocalRandom.current().nextInt(100) >= 5) {
+            return;   // ~1 comentario cada pocos segundos como mucho
+        }
+        for (final Player p : w.entity.getWorld().getPlayers()) {
+            if (p.getLocation().distanceSquared(w.entity.getLocation()) <= 25) {   // 5 bloques
+                w.lastRemark = now;
+                final String line = REMARKS[java.util.concurrent.ThreadLocalRandom.current().nextInt(REMARKS.length)];
+                p.sendMessage("§e[" + w.name + "] §7" + line);
+                return;
+            }
         }
     }
 }

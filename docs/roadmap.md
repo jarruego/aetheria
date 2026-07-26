@@ -89,7 +89,9 @@ Cada fase deja algo funcionando y verificable.
       La IA sigue solo proponiendo planes; las rutinas son deterministas.
 - [x] Son conversables (personas Nara/granjera y Pol/vigilante) y resucitan si algo los
       elimina. Activable con npc-routines.enabled.
-- [ ] Agendas mas ricas (multiples tareas, oficios que producen) (futuro)
+- [x] Agendas mas ricas: los vecinos PASEAN/exploran el pueblo a ratos (no clavados en el
+      puesto) y hay SOCIEDAD (matrimonios que conviven, viudedad, familias). Ver "servidor vivo".
+- [ ] Oficios que PRODUCEN recursos fisicos (futuro)
 
 ## Fase 8 - El mundo evoluciona solo  (COMPLETA en su nucleo)
 - [x] Simulacion economica por TICKS en el backend (world-state), corre aunque no haya
@@ -100,7 +102,9 @@ Cada fase deja algo funcionando y verificable.
       estabas") y via /v1/world-events.
 - [x] Tick manual (POST /internal/sim/tick) para pruebas o un cron externo; bucle de
       fondo cada SIM_TICK_SECONDS. Nunca lo mueve el LLM (simulacion por codigo).
-- [ ] Que la simulacion tambien haga crecer ciudades/estructuras, no solo dinero (futuro)
+- [x] La prosperidad hace crecer la plaza FISICAMENTE (faroles, jardines, bancos y puestos
+      de mercado que se construyen solos con el tiempo), no solo dinero (civic.txt, persistido).
+- [ ] Que crezcan barrios/ciudades enteras, no solo la plaza (futuro)
 
 ## Fase 9 - Estructuras sociales  (COMPLETA en su nucleo)
 - [x] Parcelas reclamables por chunk, con PROPIETARIO, persistidas en la tabla plots.
@@ -112,11 +116,14 @@ Cada fase deja algo funcionando y verificable.
 - [ ] Ciudades, gobiernos y contratos formales entre jugadores (futuro; tablas cities/
       contracts ya existen para apoyarlo)
 
-## Mejoras transversales  (PENDIENTE)
-- [ ] Seguridad: filtro de contenido en respuestas de NPC + rate-limit por jugador
+## Mejoras transversales  (EN CURSO)
+- [x] Seguridad: filtro de contenido en respuestas de NPC (sanitize_chat_text tambien a la
+      salida del LLM) + rate-limit por jugador (5 llamadas/10 s -> protege la cartera)
 - [ ] NPC con aspecto HUMANO real (skins) via Citizens o packets (hoy son aldeanos)
 - [x] Memoria a largo plazo (migracion 0004): ficha evolutiva del jugador que condensa lo
       viejo (concentra muchas charlas en un perfil), poda los turnos ya resumidos; corto
       plazo verbatim (~10 turnos) + largo plazo difuso. La IA nunca se satura.
-- [ ] Backups automaticos (DB + mundos), monitorizacion/logs, CI que compile el plugin Java
+- [x] Backups (DB + mundos) reproducibles: `scripts/backup.ps1` (pg_dump comprimido +
+      tar de mundos, conserva N). Falta programarlo (cron/Task Scheduler) y off-site.
+- [ ] Monitorizacion/logs y CI que compile el plugin Java (futuro)
 - [ ] Prueba de login Bedrock (Geyser) y salto entre mundos con cliente real

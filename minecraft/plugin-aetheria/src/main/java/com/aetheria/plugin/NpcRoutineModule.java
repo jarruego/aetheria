@@ -11,6 +11,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.Villager;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
 /**
  * Fase 7 - NPC vivos. Aldeanos "vecinos" con una RUTINA DIARIA por horario: trabajan de
@@ -162,7 +163,26 @@ public final class NpcRoutineModule {
                 .forEach(org.bukkit.entity.Entity::remove);
     }
 
+    // Biomas -> colores/estilo de atuendo distintos. El oficio (Profession) pone ademas el
+    // distintivo del trabajo; asi cada aldeano viste diferente y acorde a lo que hace.
+    private static final Villager.Type[] TYPES = {
+        Villager.Type.PLAINS, Villager.Type.TAIGA, Villager.Type.SNOW, Villager.Type.SAVANNA,
+        Villager.Type.DESERT, Villager.Type.JUNGLE, Villager.Type.SWAMP,
+    };
+
     private Mob spawnWorker(Worker w) {
+        // Reutiliza un aldeano ya existente con ese nombre (evita CLONES al recargar chunks o
+        // reiniciar: no volvemos a generar uno si el mundo ya guardo al original).
+        for (final org.bukkit.entity.Entity e : world.getEntities()) {
+            if (e instanceof Villager ex && e.getScoreboardTags().contains(WORKER_TAG)
+                    && ex.customName() != null) {
+                final String pn = PlainTextComponentSerializer.plainText().serialize(ex.customName());
+                if (pn.equals(w.name) || pn.startsWith(w.name + " ")) {
+                    convo.registerConversable(ex, w.npcId, w.name);
+                    return ex;
+                }
+            }
+        }
         final Villager v = (Villager) world.spawnEntity(w.home, EntityType.VILLAGER);
         v.customName(Component.text(w.name));
         v.setCustomNameVisible(true);
@@ -170,9 +190,34 @@ public final class NpcRoutineModule {
         v.setRemoveWhenFarAway(false);
         v.setInvulnerable(true);           // no queremos que un zombie termine con la rutina
         v.addScoreboardTag(WORKER_TAG);
-        v.setVillagerLevel(3);
+        final int h = w.name.hashCode() & 0x7fffffff;
+        v.setVillagerType(TYPES[h % TYPES.length]);   // ropaje variado segun el nombre
+        v.setVillagerLevel(5);             // maestro: muestra el distintivo del oficio
         convo.registerConversable(v, w.npcId, w.name);
         return v;
+    }
+
+    /**
+     * Barrida anti-clones: elimina cualquier aldeano etiquetado que el plugin ya no rastrea
+     * (restos de un reinicio con la casa en un chunk descargado, o de una recarga de chunk).
+     * Con nombres unicos, todo villager que no sea uno de los nuestros es un duplicado.
+     */
+    public void dedupe() {
+        for (final org.bukkit.entity.Entity e : world.getEntities()) {
+            if (!e.getScoreboardTags().contains(WORKER_TAG)) {
+                continue;
+            }
+            boolean tracked = false;
+            for (final Worker w : workers) {
+                if (e == w.entity) {
+                    tracked = true;
+                    break;
+                }
+            }
+            if (!tracked) {
+                e.remove();
+            }
+        }
     }
 
     /**

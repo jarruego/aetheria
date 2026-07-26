@@ -213,6 +213,7 @@ public final class SettlementModule implements Listener {
             return;
         }
         final var rng = ThreadLocalRandom.current();
+        boolean renamed = false;
         try (BufferedReader r = new BufferedReader(new FileReader(dataFile))) {
             String line;
             while ((line = r.readLine()) != null) {
@@ -239,6 +240,14 @@ public final class SettlementModule implements Listener {
                     c.deathAge = randomDeathAge(rng);
                     c.parent = "";
                 }
+                // Corrige nombres duplicados heredados de versiones antiguas (p.ej. tres "Tobias").
+                for (final Colono other : colonos) {
+                    if (other.name.equals(c.name)) {
+                        c.name = freshName(rng);
+                        renamed = true;
+                        break;
+                    }
+                }
                 routines.addColono("colono", c.name, new Location(world, c.x + 0.5, c.y, c.z + 0.5),
                         new Location(world, c.x + 6 + 0.5, c.y, c.z + 0.5), profFromKey(c.profKey));
                 if (c.retired) {
@@ -249,6 +258,9 @@ public final class SettlementModule implements Listener {
             }
         } catch (Exception e) {   // nunca hacemos caer el plugin por esto
             plugin.getLogger().warning("[Aetheria] no pude cargar colonos: " + e.getMessage());
+        }
+        if (renamed) {
+            save();   // persiste los nombres ya diferenciados
         }
     }
 
@@ -275,11 +287,48 @@ public final class SettlementModule implements Listener {
         return Villager.Profession.FARMER;
     }
 
+    /** Un nombre que NO este ya en uso por otro colono, nino o vecino del nucleo. */
+    private String freshName(java.util.Random rng) {
+        final java.util.Set<String> used = new java.util.HashSet<>();
+        for (final Colono c : colonos) {
+            used.add(c.name);
+        }
+        for (final Child ch : children) {
+            used.add(ch.name);
+        }
+        used.add("Nara");
+        used.add("Pol");
+        used.add("Sella");
+        final List<String> free = new ArrayList<>();
+        for (final String n : NAMES) {
+            if (!used.contains(n)) {
+                free.add(n);
+            }
+        }
+        if (!free.isEmpty()) {
+            return free.get(rng.nextInt(free.size()));
+        }
+        // Todos los nombres en uso: genera una variante unica ("Tobias II", "Tobias III"...).
+        final String base = NAMES[rng.nextInt(NAMES.length)];
+        for (int i = 2; ; i++) {
+            final String cand = base + " " + roman(i);
+            if (!used.contains(cand)) {
+                return cand;
+            }
+        }
+    }
+
+    private static String roman(int n) {
+        final String[] r = {"", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"};
+        return n < r.length ? r[n] : String.valueOf(n);
+    }
+
     private void reconcile() {
         gateway.getVillage().whenComplete((json, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
             if (err != null || json == null) {
                 return;
             }
+            routines.dedupe();  // borra aldeanos-clon que hayan quedado de reinicios/recargas
             ageAndDeath();      // envejecen; a los 65 se jubilan; de muy mayores mueren (lento)
             matureChildren();   // los ninos que ya han crecido se mudan a su casa
 
@@ -291,7 +340,7 @@ public final class SettlementModule implements Listener {
                 // Deficit grande = recuperar tras reinicio (adultos directos); +1 = nace un nino.
                 if (targetExtra - have >= 2) {
                     final var rng = ThreadLocalRandom.current();
-                    growAdult(colonos.size(), NAMES[rng.nextInt(NAMES.length)], 20 + rng.nextInt(40), "");
+                    growAdult(colonos.size(), freshName(rng), 20 + rng.nextInt(40), "");
                 } else {
                     bearChild();
                 }
@@ -313,7 +362,7 @@ public final class SettlementModule implements Listener {
     /** Nace un nino de un padre/madre del pueblo; jugara cerca de su casa y crecera con el tiempo. */
     private void bearChild() {
         final var rng = ThreadLocalRandom.current();
-        final String name = NAMES[rng.nextInt(NAMES.length)];
+        final String name = freshName(rng);
         // Padre/madre: un colono adulto no jubilado, si lo hay.
         final List<Colono> adults = new ArrayList<>();
         for (final Colono c : colonos) {

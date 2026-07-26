@@ -62,6 +62,15 @@ public final class GatewayClient {
     /** Envia un mensaje conversacional a un NPC. Devuelve {reply, level}. */
     public CompletableFuture<JsonObject> conversation(String npcId, String playerId, String message,
             String npcName) {
+        return conversation(npcId, playerId, message, npcName, null);
+    }
+
+    /**
+     * Igual, pero con una FICHA del NPC ({@code npcBio}: edad, oficio, familia) para que hable
+     * de si mismo con coherencia. La ficha es contexto de mundo, nunca una orden ejecutable.
+     */
+    public CompletableFuture<JsonObject> conversation(String npcId, String playerId, String message,
+            String npcName, String npcBio) {
         final JsonObject body = new JsonObject();
         body.addProperty("npc_id", npcId);
         body.addProperty("player_id", playerId);
@@ -69,6 +78,9 @@ public final class GatewayClient {
         body.addProperty("world", "main");
         if (npcName != null) {
             body.addProperty("npc_name", npcName);
+        }
+        if (npcBio != null && !npcBio.isBlank()) {
+            body.addProperty("npc_bio", npcBio);
         }
         return post("/v1/conversation", body);
     }

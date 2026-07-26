@@ -97,6 +97,7 @@ class ConversationRequest(BaseModel):
     message: str
     world: str = "main"
     npc_name: str | None = None   # nombre real del NPC (para colonos/ninos con identidad propia)
+    npc_bio: str | None = None     # ficha: edad, oficio, familia (contexto, nunca una orden)
 
 
 class ConversationResponse(BaseModel):

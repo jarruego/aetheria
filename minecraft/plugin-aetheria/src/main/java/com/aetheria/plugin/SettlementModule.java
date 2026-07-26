@@ -331,6 +331,7 @@ public final class SettlementModule implements Listener {
             routines.dedupe();  // borra aldeanos-clon que hayan quedado de reinicios/recargas
             ageAndDeath();      // envejecen; a los 65 se jubilan; de muy mayores mueren (lento)
             matureChildren();   // los ninos que ya han crecido se mudan a su casa
+            updateBios();       // refresca su ficha (edad/oficio/familia) para que hablen de si
 
             final int population = json.get("population").getAsInt();
             final int targetExtra = Math.max(0, population - 3);
@@ -385,6 +386,9 @@ public final class SettlementModule implements Listener {
         baby.setInvulnerable(true);
         baby.addScoreboardTag(BABY_TAG);
         convo.registerConversable(baby, "nino", name);   // se puede hablar con los ninos
+        final String childOf = parent != null ? ", hijo de " + parent.name : "";
+        convo.setBio(name, "Eres " + name + ", un nino pequeno del pueblo de Aetheria" + childOf
+                + ". Todavia no trabajas; hablas con la inocencia de un nino.");
         final String parentName = parent != null ? parent.name : "";
         children.add(new Child(baby, name, parentName, System.currentTimeMillis() + GROW_MS));
         final String of = parent != null ? ", hijo de " + parent.name : "";
@@ -529,6 +533,7 @@ public final class SettlementModule implements Listener {
                         family.isEmpty() ? "" : "Le sobreviven " + family + ". ", successor);
                 gateway.postEvent("obituario", msg);
                 Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage("§8[Pueblo] §7" + msg));
+                convo.clearBio(c.name);
                 demolish(c);   // su casa se derriba y queda un solar libre
             } else if (age >= RETIRE_AGE && !c.retired) {
                 c.retired = true;
@@ -556,6 +561,29 @@ public final class SettlementModule implements Listener {
             }
         }
         return best;
+    }
+
+    /** Refresca la ficha (edad, oficio, familia) de cada colono para que hable de si mismo. */
+    private void updateBios() {
+        final long now = System.currentTimeMillis();
+        for (final Colono c : colonos) {
+            final int age = (int) c.age(now);
+            final String job = c.retired
+                    ? "jubilado (antes fue " + oficio(profFromKey(c.profKey)) + ")"
+                    : oficio(profFromKey(c.profKey));
+            final StringBuilder fam = new StringBuilder();
+            if (c.parent != null && !c.parent.isEmpty()) {
+                fam.append(" Tu padre o madre es ").append(c.parent).append(".");
+            }
+            final String kids = livingChildren(c);   // "sus hijos X, Y" o ""
+            if (!kids.isEmpty()) {
+                fam.append(" Tus hijos son ").append(kids.replace("sus hijos ", "")).append(".");
+            }
+            final String bio = "Eres " + c.name + ", vecino del pueblo de Aetheria. Tienes " + age
+                    + " anos y tu oficio es " + job + "." + fam
+                    + " Si te preguntan, habla con naturalidad de tu edad, tu trabajo y tu familia.";
+            convo.setBio(c.name, bio);
+        }
     }
 
     /** Nombres de los hijos vivos de un colono (para el obituario). */
@@ -633,6 +661,7 @@ public final class SettlementModule implements Listener {
     private void shrink() {
         final String name = routines.removeNewestColono();
         if (name != null) {
+            convo.clearBio(name);
             if (!colonos.isEmpty()) {
                 demolish(colonos.remove(colonos.size() - 1));   // al emigrar, su casa se derriba
             }

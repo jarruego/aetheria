@@ -39,6 +39,7 @@ public final class ConversationManager implements Listener {
     private final AetheriaPlugin plugin;
     private final GatewayClient gateway;
     private final Map<UUID, NpcInfo> npcs = new ConcurrentHashMap<>();   // entidad -> info
+    private final Map<String, String> bios = new ConcurrentHashMap<>();  // nombre -> ficha (edad/oficio/familia)
     private final Map<UUID, UUID> talking = new ConcurrentHashMap<>();   // jugador -> entidad NPC
     // NPC con rutina cuya IA hemos pausado por estar hablando (para reanudarla al terminar).
     private final java.util.Set<UUID> paused = ConcurrentHashMap.newKeySet();
@@ -95,6 +96,20 @@ public final class ConversationManager implements Listener {
      */
     public void registerConversable(org.bukkit.entity.Entity entity, String npcId, String name) {
         npcs.put(entity.getUniqueId(), new NpcInfo(npcId, name));
+    }
+
+    /** Actualiza la ficha (edad, oficio, familia) de un NPC por su nombre, para que la use al hablar. */
+    public void setBio(String name, String bio) {
+        if (name != null && bio != null) {
+            bios.put(name, bio);
+        }
+    }
+
+    /** Olvida la ficha de un NPC (al morir o emigrar). */
+    public void clearBio(String name) {
+        if (name != null) {
+            bios.remove(name);
+        }
     }
 
     /** Da a cada guia una apariencia distinta (bioma + profesion) segun su clave. */
@@ -168,7 +183,8 @@ public final class ConversationManager implements Listener {
         }
 
         runSync(() -> player.sendMessage("§7Tu: §f" + msg));
-        gateway.conversation(info.npcId(), player.getUniqueId().toString(), msg, info.name())
+        gateway.conversation(info.npcId(), player.getUniqueId().toString(), msg, info.name(),
+                        bios.get(info.name()))
                 .whenComplete((json, err) -> runSync(() -> {
                     if (!player.isOnline()) {
                         return;

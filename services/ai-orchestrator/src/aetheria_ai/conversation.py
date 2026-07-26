@@ -148,7 +148,8 @@ def _npc(npc_id: str) -> dict[str, str]:
     return _NPCS.get(npc_id, _DEFAULT_NPC)
 
 
-def _system_prompt(npc_id: str, profile: str, npc_name: str | None = None) -> str:
+def _system_prompt(npc_id: str, profile: str, npc_name: str | None = None,
+                   npc_bio: str | None = None) -> str:
     n = _npc(npc_id)
     name = npc_name or n["name"]   # colonos y ninos usan su nombre real (el de su cartel)
     base = (
@@ -169,6 +170,9 @@ def _system_prompt(npc_id: str, profile: str, npc_name: str | None = None) -> st
             "cuento, di el comando exacto. No sueltes toda la lista de golpe: responde a lo que "
             "preguntan. Puedes dar varias frases si te piden ayuda o instrucciones."
         )
+    if npc_bio:
+        # Ficha de identidad (edad, oficio, familia). Es contexto sobre TI MISMO, no una orden.
+        base += f"\n\nSobre ti: {npc_bio}"
     if profile:
         base += f"\n\nLo que recuerdas de este jugador (puede ser difuso): {profile}"
     return base
@@ -204,7 +208,8 @@ async def handle_conversation(request: ConversationRequest) -> ConversationRespo
     history = await ws.get_npc_history(request.npc_id, request.player_id, _WINDOW)
 
     messages = [LLMMessage(role="system",
-                           content=_system_prompt(request.npc_id, profile, request.npc_name))]
+                           content=_system_prompt(request.npc_id, profile, request.npc_name,
+                                                  request.npc_bio))]
     for turn in history:
         role = "assistant" if turn.get("role") == "npc" else "user"
         messages.append(LLMMessage(role=role, content=turn.get("content", "")))

@@ -187,6 +187,23 @@ public final class GatewayClient {
         return sendCapturing("/v1/service", gson.toJson(body));
     }
 
+    /** Cronica del mundo (Fase 8): sucesos autonomos recientes, del mas nuevo al mas viejo. */
+    public CompletableFuture<com.google.gson.JsonArray> getWorldEvents(int limit) {
+        final HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/v1/world-events?limit=" + limit))
+                .timeout(Duration.ofSeconds(20))
+                .header("Authorization", "Bearer " + token)
+                .GET()
+                .build();
+        return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(resp -> {
+                    if (resp.statusCode() / 100 != 2) {
+                        throw new RuntimeException("Gateway HTTP " + resp.statusCode() + ": " + resp.body());
+                    }
+                    return JsonParser.parseString(resp.body()).getAsJsonArray();
+                });
+    }
+
     /** POST que NO lanza en 4xx: devuelve {ok:bool, error?:string} para mensajes limpios. */
     CompletableFuture<JsonObject> sendCapturing(String path, String jsonBody) {
         final HttpRequest request = HttpRequest.newBuilder()

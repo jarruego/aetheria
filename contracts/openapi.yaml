@@ -192,6 +192,25 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "422": { $ref: "#/components/responses/ValidationError" }
 
+  /v1/world-events:
+    get:
+      tags: [world]
+      summary: Crónica del mundo (Fase 8) — sucesos autónomos, del más reciente al más antiguo
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+      responses:
+        "200":
+          description: Lista de sucesos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WorldEvent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
 components:
   securitySchemes:
     internalToken:
@@ -371,6 +390,14 @@ components:
         actions:
           type: array
           items: { $ref: "#/components/schemas/PlanAction" }
+
+    WorldEvent:
+      type: object
+      required: [kind, description, created_at]
+      properties:
+        kind: { type: string, example: economy }
+        description: { type: string, example: "El pueblo trabajo: La Granja de Nara gano 8 AET..." }
+        created_at: { type: string, format: date-time }
 
 security:
   - internalToken: []

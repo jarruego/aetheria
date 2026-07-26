@@ -62,8 +62,9 @@ public final class AetheriaCommand implements CommandExecutor {
                 }
                 handleService(player, args[1].toLowerCase(), join(args, 2));
             }
+            case "cronica", "crónica" -> handleCronica(player);
             default -> player.sendMessage(
-                    "Subcomando desconocido: " + sub + " (usa ask|plan|npc|servicio)");
+                    "Subcomando desconocido: " + sub + " (usa ask|plan|npc|servicio|cronica)");
         }
         return true;
     }
@@ -151,6 +152,26 @@ public final class AetheriaCommand implements CommandExecutor {
                     player.sendMessage(String.format("§a[Aetheria] servicio realizado. Se cobraron §e%.0f AET§a.",
                             charged));
                     executor.execute(player, "servicio-" + service, data.getAsJsonArray("actions"));
+                }));
+    }
+
+    private void handleCronica(Player player) {
+        player.sendMessage("§7[Aetheria] consultando la cronica del mundo...");
+        gateway.getWorldEvents(8)
+                .whenComplete((events, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (err != null) {
+                        player.sendMessage("§c[Aetheria] error: " + rootMessage(err));
+                        return;
+                    }
+                    if (events.isEmpty()) {
+                        player.sendMessage("§7El mundo aun no ha vivido nada digno de cronica.");
+                        return;
+                    }
+                    player.sendMessage("§6=== Cronica del mundo ===");
+                    events.forEach(e -> {
+                        final var o = e.getAsJsonObject();
+                        player.sendMessage("§7- §f" + o.get("description").getAsString());
+                    });
                 }));
     }
 

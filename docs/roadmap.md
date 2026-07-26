@@ -78,9 +78,16 @@ Cada fase deja algo funcionando y verificable.
       elimina. Activable con npc-routines.enabled.
 - [ ] Agendas mas ricas (multiples tareas, oficios que producen) (futuro)
 
-## Fase 8 - El mundo evoluciona solo  (PENDIENTE)
-- [ ] Simulacion en el backend (cron/ticks) que evoluciona economia y ciudades aunque no
-      haya nadie conectado
+## Fase 8 - El mundo evoluciona solo  (COMPLETA en su nucleo)
+- [x] Simulacion economica por TICKS en el backend (world-state), corre aunque no haya
+      nadie conectado: los negocios del pueblo producen ingresos y pagan gastos, y el
+      saldo se persiste en cuentas/transacciones.
+- [x] Cronica del mundo (migracion 0005, world_events): cada suceso autonomo queda
+      registrado. Se consulta en el juego con /aetheria cronica ("que paso mientras no
+      estabas") y via /v1/world-events.
+- [x] Tick manual (POST /internal/sim/tick) para pruebas o un cron externo; bucle de
+      fondo cada SIM_TICK_SECONDS. Nunca lo mueve el LLM (simulacion por codigo).
+- [ ] Que la simulacion tambien haga crecer ciudades/estructuras, no solo dinero (futuro)
 
 ## Fase 9 - Estructuras sociales  (PENDIENTE)
 - [ ] Parcelas con propietarios, ciudades, gobiernos, contratos entre jugadores

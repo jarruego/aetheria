@@ -147,10 +147,16 @@ autodesplegado) YA están aplicados en el repo. Detalle: `docs/infra/fase4-oracl
 código** (`NpcRoutineModule`, no el LLM). Son conversables (Nara/granjera, Pol/vigilante) y
 resucitan si algo los borra. Activable con `npc-routines.enabled`.
 
-**Siguiente paso grande:** que el mundo evolucione solo aunque no haya nadie conectado
-(Fase 8, simulación por ticks/cron en el backend) y estructuras sociales —parcelas,
-ciudades, contratos entre jugadores— (Fase 9). El camino de escritura a la DB, la economía
-y los NPC vivos ya existen: se construye encima. → `docs/roadmap.md`
+**Fase 8 (el mundo evoluciona solo): COMPLETA en su núcleo.** Simulación económica por
+**ticks en el backend** (`world-state/simulation.py`) que corre aunque no haya nadie
+conectado: los negocios del pueblo producen ingresos y pagan gastos (persistido en
+cuentas/transacciones) y cada suceso se registra en la **crónica** (`world_events`,
+migración 0005). En el juego: `/aetheria cronica`. Tick manual `POST /internal/sim/tick`
+(o cron externo) + bucle cada `SIM_TICK_SECONDS`. Simulación por código, nunca el LLM.
+
+**Siguiente paso grande:** estructuras sociales —parcelas con propietarios, ciudades,
+contratos entre jugadores— (Fase 9). El camino de escritura a la DB, la economía, los NPC
+vivos y la simulación autónoma ya existen: se construye encima. → `docs/roadmap.md`
 
 ## Convenciones
 

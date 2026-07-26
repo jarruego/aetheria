@@ -24,9 +24,11 @@ from aetheria_world.models import (
     SummaryOut,
     SummaryUpsert,
     TransferIn,
+    WorldEventOut,
     WorldRef,
     WorldSummary,
 )
+from aetheria_world.simulation import run_tick
 
 router = APIRouter(prefix="/internal", tags=["world-state"])
 
@@ -312,3 +314,28 @@ async def record_plan_audit(body: PlanAudit) -> dict:
             body.rejection_reason, json.dumps(body.actions),
         )
     return {"status": "ok"}
+
+
+# --- Fase 8: el mundo evoluciona solo (simulacion + cronica) ---
+
+@router.get("/world-events", response_model=list[WorldEventOut])
+async def world_events(limit: int = 20) -> list[WorldEventOut]:
+    """Cronica de sucesos autonomos, del mas reciente al mas antiguo."""
+    _require_db()
+    rows = await pool().fetch(
+        "select kind, description, created_at from world_events order by created_at desc limit $1",
+        max(1, min(limit, 100)),
+    )
+    return [
+        WorldEventOut(kind=r["kind"], description=r["description"], created_at=r["created_at"].isoformat())
+        for r in rows
+    ]
+
+
+@router.post("/sim/tick")
+async def sim_tick() -> dict:
+    """Fuerza un tick de simulacion (util para pruebas o para un cron externo)."""
+    _require_db()
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            return await run_tick(conn)

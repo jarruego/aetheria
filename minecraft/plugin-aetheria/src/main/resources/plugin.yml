@@ -6,8 +6,8 @@ author: Aetheria
 description: Ejecuta planes validados de la IA (lista blanca). La IA propone; el plugin dispone.
 commands:
   aetheria:
-    description: Interactua con la IA de Aetheria (conversacion, planes y NPC)
-    usage: /aetheria <ask|plan|npc> ...
+    description: Interactua con la IA de Aetheria (conversacion, planes, NPC, servicios, cronica)
+    usage: /aetheria <ask|plan|npc|servicio|cronica> ...
     permission: aetheria.use
   home:
     description: Te teletransporta a tu casa guardada

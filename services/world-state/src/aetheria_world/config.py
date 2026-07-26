@@ -17,5 +17,11 @@ class Settings(BaseSettings):
     # En Docker el host es 'postgres'; en prod, la cadena de Supabase.
     database_url: str = "postgresql://aetheria:aetheria-local-dev@localhost:5432/aetheria"
 
+    # Fase 8: simulacion autonoma (el mundo evoluciona aunque no haya nadie conectado).
+    sim_enabled: bool = True
+    sim_tick_seconds: int = 300      # cada cuanto corre un tick economico
+    sim_income_min: float = 5.0      # ingreso minimo por negocio y tick (AET)
+    sim_income_max: float = 30.0     # ingreso maximo por negocio y tick (AET)
+
 
 settings = Settings()

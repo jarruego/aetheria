@@ -101,3 +101,11 @@ class PlanAudit(BaseModel):
     status: str        # 'approved' | 'rejected'
     rejection_reason: str | None = None
     actions: list = []
+
+
+# --- Cronica del mundo (Fase 8) ---
+
+class WorldEventOut(BaseModel):
+    kind: str          # 'economy' | 'market' | ...
+    description: str
+    created_at: str

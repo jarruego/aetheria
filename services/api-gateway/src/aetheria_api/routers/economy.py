@@ -31,3 +31,9 @@ async def balance(player_uuid: str):
 @router.post("/pay", dependencies=[Depends(require_internal_token)])
 async def pay(body: dict):
     return await _ws("POST", "/internal/transfer", json=body)
+
+
+@router.get("/world-events", dependencies=[Depends(require_internal_token)])
+async def world_events(limit: int = 20):
+    """Cronica del mundo (Fase 8): que ha pasado mientras no estabas."""
+    return await _ws("GET", f"/internal/world-events?limit={limit}")

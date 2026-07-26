@@ -43,3 +43,9 @@ async def reward(body: dict):
 async def world_events(limit: int = 20):
     """Cronica del mundo (Fase 8): que ha pasado mientras no estabas."""
     return await _ws("GET", f"/internal/world-events?limit={limit}")
+
+
+@router.get("/prosperity", dependencies=[Depends(require_internal_token)])
+async def prosperity():
+    """Estado de prosperidad del pueblo (para mostrarlo en el HUD)."""
+    return await _ws("GET", "/internal/world/prosperity")

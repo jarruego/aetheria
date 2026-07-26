@@ -66,17 +66,18 @@ public final class HudModule implements Listener, CommandExecutor {
     }
 
     private void updateSidebar(Player player) {
-        gateway.getBalance(player.getUniqueId().toString())
-                .whenComplete((json, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
-                    if (!player.isOnline()) {
-                        return;
-                    }
-                    final double balance = (err == null && json != null) ? json.get("balance").getAsDouble() : 0.0;
-                    render(player, balance);
-                }));
+        gateway.getBalance(player.getUniqueId().toString()).whenComplete((bal, e1) ->
+            gateway.getProsperity().whenComplete((pros, e2) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                if (!player.isOnline()) {
+                    return;
+                }
+                final double balance = (e1 == null && bal != null) ? bal.get("balance").getAsDouble() : 0.0;
+                final String level = (e2 == null && pros != null) ? pros.get("level").getAsString() : "estable";
+                render(player, balance, level);
+            })));
     }
 
-    private void render(Player player, double balance) {
+    private void render(Player player, double balance, String prosperity) {
         Scoreboard board = player.getScoreboard();
         if (board == null || board == Bukkit.getScoreboardManager().getMainScoreboard()) {
             board = Bukkit.getScoreboardManager().getNewScoreboard();
@@ -90,12 +91,13 @@ public final class HudModule implements Listener, CommandExecutor {
                 Component.text("§6✦ §eAetheria §6✦"));
         obj.setDisplaySlot(DisplaySlot.SIDEBAR);
         // Lineas de mayor (arriba) a menor (abajo).
-        line(obj, "§eTu saldo:", 6);
-        line(obj, String.format("§a%.2f AET", balance), 5);
-        line(obj, "§0", 4);
+        line(obj, "§eTu saldo:", 7);
+        line(obj, String.format("§a%.2f AET", balance), 6);
+        line(obj, "§0", 5);
+        line(obj, "§ePueblo: §f" + prosperity, 4);
         line(obj, "§eJugadores: §f" + Bukkit.getOnlinePlayers().size(), 3);
-        line(obj, "§eEconomia: §f/sell /shop", 2);
-        line(obj, "§7ayuda: /guia", 1);
+        line(obj, "§1", 2);
+        line(obj, "§7gana AET: /sell · ayuda: /guia", 1);
     }
 
     private void line(Objective obj, String text, int score) {

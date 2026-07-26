@@ -32,6 +32,7 @@ from aetheria_world.models import (
     WorldRef,
     WorldSummary,
 )
+from aetheria_world.simulation import prosperity as sim_prosperity
 from aetheria_world.simulation import run_tick
 
 router = APIRouter(prefix="/internal", tags=["world-state"])
@@ -363,6 +364,14 @@ async def sim_tick() -> dict:
     async with pool().acquire() as conn:
         async with conn.transaction():
             return await run_tick(conn)
+
+
+@router.get("/world/prosperity")
+async def world_prosperity() -> dict:
+    """Estado del pueblo (prospero/estable/en apuros) segun la riqueza de sus negocios."""
+    _require_db()
+    async with pool().acquire() as conn:
+        return await sim_prosperity(conn)
 
 
 # --- Fase 9: estructuras sociales (parcelas reclamables, con propietario y proteccion) ---

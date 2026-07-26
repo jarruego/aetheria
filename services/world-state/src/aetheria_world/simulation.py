@@ -66,19 +66,41 @@ async def _move(conn, src, dst, amount: decimal.Decimal, reason: str) -> None:
     )
 
 
+# Sucesos especiales: modifican la economia y le dan color a la cronica.
+_FESTIVALS = [
+    "Feria de la cosecha: el pueblo celebra y el comercio se dispara.",
+    "Llega una caravana de mercaderes y todos hacen negocio.",
+    "Bodas en la plaza: dias de bonanza para los negocios.",
+]
+_HARDSHIPS = [
+    "Una plaga arruina parte de la cosecha: tiempos dificiles.",
+    "Bandidos merodean los caminos y el comercio se resiente.",
+    "Una tormenta dana los talleres: gastos extra para repararlos.",
+]
+
+
 async def run_tick(conn) -> dict:
-    """Ejecuta UN tick economico. Devuelve un resumen de lo ocurrido."""
+    """Ejecuta UN tick economico (con festivales, penurias y sustos). Devuelve un resumen."""
     banco = await _account(conn, _BANCO, "system")
     total_income = decimal.Decimal(0)
     total_upkeep = decimal.Decimal(0)
     lines: list[str] = []
 
+    # Evento global del dia: festival (bonanza) o penuria (perdidas). Poco frecuentes.
+    roll = random.random()
+    festival = roll < 0.12
+    hardship = 0.12 <= roll < 0.24
+    boost = decimal.Decimal("1.6") if festival else decimal.Decimal(1)
+
     for owner_id, name, sector in _BUSINESSES:
         acc = await _account(conn, owner_id, "company")
-        income = _money(random.uniform(settings.sim_income_min, settings.sim_income_max))
+        income = _money(decimal.Decimal(str(random.uniform(
+            settings.sim_income_min, settings.sim_income_max))) * boost)
         upkeep = _money(income * _UPKEEP_RATIO)
+        # 1 de cada 4 ticks un negocio tiene un mal dia (gastos > ingresos): puede perder.
+        if random.random() < 0.25 or hardship:
+            upkeep += _money(decimal.Decimal(str(random.uniform(0.5, 1.5))) * income)
 
-        # El banco (mundo) paga el ingreso al negocio; el negocio paga sus gastos al banco.
         if income > 0:
             await _move(conn, banco, acc, income, f"produccion {sector}")
         if upkeep > 0:
@@ -87,29 +109,50 @@ async def run_tick(conn) -> dict:
         net = income - upkeep
         total_income += income
         total_upkeep += upkeep
-        lines.append(f"{name} gano {net} AET ({sector})")
+        lines.append(f"{name} {'gano' if net >= 0 else 'perdio'} {abs(net)} AET ({sector})")
 
     net_total = total_income - total_upkeep
-    description = "El pueblo trabajo: " + "; ".join(lines) + f". Balance neto {net_total} AET."
-    await conn.execute(
-        "insert into world_events (kind, description, data) values ($1, $2, $3::jsonb)",
-        "economy",
-        description,
-        _as_json({"income": str(total_income), "upkeep": str(total_upkeep), "net": str(net_total)}),
-    )
+    prov = await prosperity(conn)
+    description = ("El pueblo trabajo: " + "; ".join(lines)
+                  + f". Balance neto {net_total} AET. El pueblo esta {prov['level']}.")
+    await _event(conn, "economy", description,
+                 {"net": str(net_total), "prosperity": prov["level"], "wealth": prov["wealth"]})
 
-    # De vez en cuando, un vaiven de mercado (color, sin efecto sobre saldos por ahora).
-    if random.random() < 0.25:
+    if festival:
+        await _event(conn, "festival", random.choice(_FESTIVALS), {})
+    elif hardship:
+        await _event(conn, "hardship", random.choice(_HARDSHIPS), {})
+    elif random.random() < 0.25:
         pct = random.randint(-8, 8)
         verb = "subieron" if pct >= 0 else "bajaron"
-        await conn.execute(
-            "insert into world_events (kind, description, data) values ($1, $2, $3::jsonb)",
-            "market",
-            f"Los precios del mercado {verb} un {abs(pct)}%.",
-            _as_json({"pct": pct}),
-        )
+        await _event(conn, "market", f"Los precios del mercado {verb} un {abs(pct)}%.", {"pct": pct})
 
-    return {"income": str(total_income), "upkeep": str(total_upkeep), "net": str(net_total)}
+    return {"net": str(net_total), "prosperity": prov["level"], "wealth": prov["wealth"]}
+
+
+async def prosperity(conn) -> dict:
+    """Estado del pueblo segun la riqueza acumulada de sus negocios."""
+    row = await conn.fetchrow(
+        "select coalesce(sum(balance), 0) as total from accounts "
+        "where owner_type = 'company' and currency = 'AET'"
+    )
+    total = float(row["total"])
+    if total < 50:
+        level = "en apuros"
+    elif total < 500:
+        level = "estable"
+    elif total < 2000:
+        level = "prospero"
+    else:
+        level = "floreciente"
+    return {"level": level, "wealth": round(total, 2), "businesses": len(_BUSINESSES)}
+
+
+async def _event(conn, kind: str, description: str, data: dict) -> None:
+    await conn.execute(
+        "insert into world_events (kind, description, data) values ($1, $2, $3::jsonb)",
+        kind, description, _as_json(data),
+    )
 
 
 def _as_json(obj: dict) -> str:

@@ -196,6 +196,11 @@ public final class GatewayClient {
         return sendCapturing("/v1/service", gson.toJson(body));
     }
 
+    /** Estado de prosperidad del pueblo: {level, wealth, businesses}. */
+    public CompletableFuture<JsonObject> getProsperity() {
+        return getJson("/v1/prosperity");
+    }
+
     /** Cronica del mundo (Fase 8): sucesos autonomos recientes, del mas nuevo al mas viejo. */
     public CompletableFuture<com.google.gson.JsonArray> getWorldEvents(int limit) {
         final HttpRequest request = HttpRequest.newBuilder()

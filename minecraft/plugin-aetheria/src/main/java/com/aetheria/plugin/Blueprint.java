@@ -31,7 +31,11 @@ public final class Blueprint {
 
     private static final Map<String, List<Block>> CATALOG = Map.of(
             "platform", platform(),
-            "fountain", fountain());
+            "fountain", fountain(),
+            "garden", garden(),
+            "lamppost", lamppost(),
+            "statue", statue(),
+            "bigfountain", bigfountain());
 
     private Blueprint() {}
 
@@ -184,6 +188,65 @@ public final class Blueprint {
             }
         }
         return blocks;
+    }
+
+    private static List<Block> garden() {
+        final List<Block> b = new ArrayList<>();
+        final Material[] flores = {Material.POPPY, Material.DANDELION, Material.BLUE_ORCHID,
+                Material.ALLIUM, Material.OXEYE_DAISY, Material.CORNFLOWER};
+        int f = 0;
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                b.add(new Block(dx, 0, dz, Material.GRASS_BLOCK));
+                final boolean edge = Math.abs(dx) == 2 || Math.abs(dz) == 2;
+                if (edge) {
+                    b.add(new Block(dx, 1, dz, Material.OAK_FENCE));   // cerca
+                } else {
+                    b.add(new Block(dx, 1, dz, flores[(f++) % flores.length]));  // flores
+                }
+            }
+        }
+        b.add(new Block(-2, 2, -2, Material.LANTERN));   // farolillo en una esquina
+        return b;
+    }
+
+    private static List<Block> lamppost() {
+        final List<Block> b = new ArrayList<>();
+        b.add(new Block(0, 0, 0, Material.COBBLESTONE));
+        b.add(new Block(0, 1, 0, Material.OAK_FENCE));
+        b.add(new Block(0, 2, 0, Material.OAK_FENCE));
+        b.add(new Block(0, 3, 0, Material.LANTERN));
+        return b;
+    }
+
+    private static List<Block> statue() {
+        final List<Block> b = new ArrayList<>();
+        b.add(new Block(0, 0, 0, Material.CHISELED_STONE_BRICKS));   // pedestal
+        b.add(new Block(0, 1, 0, Material.QUARTZ_PILLAR));           // piernas
+        b.add(new Block(0, 2, 0, Material.QUARTZ_BLOCK));            // torso
+        b.add(new Block(1, 2, 0, Material.QUARTZ_SLAB));             // brazos
+        b.add(new Block(-1, 2, 0, Material.QUARTZ_SLAB));
+        b.add(new Block(0, 3, 0, Material.QUARTZ_BLOCK));            // cabeza
+        return b;
+    }
+
+    private static List<Block> bigfountain() {
+        final List<Block> b = new ArrayList<>();
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                b.add(new Block(dx, 0, dz, Material.QUARTZ_BLOCK));               // base 5x5
+                final boolean rim = Math.abs(dx) == 2 || Math.abs(dz) == 2;
+                if (rim) {
+                    b.add(new Block(dx, 1, dz, Material.QUARTZ_BLOCK));           // borde exterior
+                } else if (dx == 0 && dz == 0) {
+                    b.add(new Block(dx, 1, dz, Material.QUARTZ_PILLAR));          // pilar central
+                    b.add(new Block(dx, 2, dz, Material.WATER));                  // agua arriba
+                } else {
+                    b.add(new Block(dx, 1, dz, Material.WATER));                  // estanque
+                }
+            }
+        }
+        return b;
     }
 
     private static List<Block> fountain() {

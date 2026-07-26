@@ -216,8 +216,9 @@ public final class ArchitectModule implements CommandExecutor {
         player.sendMessage("§7  Tamano: pequena 80 · mediana 160 · grande 280 (base)");
         player.sendMessage("§7  Material x: madera 1.0 · piedra 1.3 · ladrillo 1.5 · lujo 2.0");
         player.sendMessage("§7  Amueblada: +40. (Ej.: mediana de piedra amueblada = 248 AET)");
-        player.sendMessage("§eOtros §7(/aetheria servicio decorador|urbanista <que>): la IA "
-                + "construye y cobra segun lo que hace.");
+        player.sendMessage("§eDecorador §7(/decorador): jardin, farola, estatua o fuente en tu "
+                + "parcela (15-60 AET).");
+        player.sendMessage("§eViaje §7(/warps): plaza, mercado, taberna, spawn.");
         player.sendMessage("§eParcelas §7(/claim): §fcomprar§7 (50, para siempre) o §falquilar§7 "
                 + "(10 + renta cada periodo; si no pagas, se libera). Protege tu terreno.");
         player.sendMessage("§eGanar §7: trabaja (mina/tala/cosecha/caza) o vende con /sell.");

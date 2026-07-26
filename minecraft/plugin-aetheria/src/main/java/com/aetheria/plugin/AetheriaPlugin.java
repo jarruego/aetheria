@@ -79,6 +79,11 @@ public final class AetheriaPlugin extends JavaPlugin {
                 final NpcRoutineModule routines =
                         new NpcRoutineModule(this, convo, gameWorld, village);
                 routines.start();
+
+                // Viaje rapido por los puntos de interes (plaza, mercado, taberna, spawn).
+                final WarpModule warps = new WarpModule(village, gameWorld);
+                Objects.requireNonNull(getCommand("warp")).setExecutor(warps);
+                Objects.requireNonNull(getCommand("warps")).setExecutor(warps);
             }
 
             // Fase 9: parcelas reclamables con propietario y proteccion.
@@ -94,6 +99,10 @@ public final class AetheriaPlugin extends JavaPlugin {
             final ArchitectModule architect = new ArchitectModule(this, gateway, claims);
             Objects.requireNonNull(getCommand("arquitecto")).setExecutor(architect);
             Objects.requireNonNull(getCommand("servicios")).setExecutor(architect);
+
+            // Decorador guiado: pequenas estructuras (jardin, farola, estatua, fuente).
+            final DecoratorModule decorator = new DecoratorModule(this, gateway, claims);
+            Objects.requireNonNull(getCommand("decorador")).setExecutor(decorator);
 
             // Vida del server: trabajos (ganar AET por tareas), mercado y HUD/guia.
             final JobsModule jobs = new JobsModule(this, gateway);

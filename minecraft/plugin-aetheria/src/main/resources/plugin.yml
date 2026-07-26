@@ -53,9 +53,21 @@ commands:
     description: Encarga una casa a medida (asistente guiado)
     usage: /arquitecto
     permission: aetheria.use
+  decorador:
+    description: Decora tu parcela (jardin, farola, estatua, fuente)
+    usage: /decorador
+    permission: aetheria.use
   servicios:
     description: Guia de servicios y precios
     usage: /servicios
+    permission: aetheria.use
+  warp:
+    description: Viaja rapido a un punto de interes
+    usage: /warp <plaza|mercado|taberna|spawn>
+    permission: aetheria.use
+  warps:
+    description: Lista los destinos de viaje rapido
+    usage: /warps
     permission: aetheria.use
 permissions:
   aetheria.use:

@@ -39,6 +39,7 @@ public final class VillageModule {
     private Location mercaderHome;
     private Location mercaderWork;
     private Location plaza;
+    private Location tavern;
 
     public VillageModule(AetheriaPlugin plugin, World world) {
         this.plugin = plugin;
@@ -52,6 +53,7 @@ public final class VillageModule {
     public Location mercaderHome() { return mercaderHome.clone(); }
     public Location mercaderWork() { return mercaderWork.clone(); }
     public Location plaza() { return plaza.clone(); }
+    public Location tavern() { return tavern.clone(); }
 
     /** Levanta la aldea al sur del spawn (detras del portal), en fila mirando al sur. */
     public void build() {
@@ -75,7 +77,7 @@ public final class VillageModule {
         // Plaza con pozo en el centro-sur, mercado detras y una taberna al oeste.
         this.plaza = buildPlaza(sx, sz + 20, baseY);
         this.mercaderWork = buildMarket(sx, sz + 30, baseY);
-        buildTavern(sx - 16, sz + 12, baseY);
+        this.tavern = buildTavern(sx - 16, sz + 12, baseY);
 
         // Caminos de grava que conectan el pueblo.
         path(sx, baseY, sz + 8, sz + 34);        // eje norte-sur (spawn -> plaza -> mercado)
@@ -261,8 +263,8 @@ public final class VillageModule {
         return new Location(world, cx + 0.5, floorY + 1, cz + 0.5);
     }
 
-    /** Taberna: casa de madera con barra, barriles y mesas. */
-    private void buildTavern(int cx, int cz, int floorY) {
+    /** Taberna: casa de madera con barra, barriles y mesas. Devuelve su centro. */
+    private Location buildTavern(int cx, int cz, int floorY) {
         final int half = 2;
         foundation(cx, cz, half, floorY, Material.SPRUCE_PLANKS, 5);
         for (int y = floorY + 1; y <= floorY + 3; y++) {
@@ -293,6 +295,7 @@ public final class VillageModule {
         set(cx - 1, floorY + 2, cz + 1, Material.OAK_PRESSURE_PLATE);
         set(cx + 1, floorY + 1, cz + 1, Material.LANTERN);
         placeWallSign(cx + 1, floorY + 2, cz + half + 1, BlockFace.SOUTH, "§6La", "§6Taberna");
+        return new Location(world, cx + 0.5, floorY + 1, cz + 0.5);
     }
 
     // ---------------- Utilidades ----------------

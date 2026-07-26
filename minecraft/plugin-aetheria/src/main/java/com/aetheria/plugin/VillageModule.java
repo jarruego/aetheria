@@ -54,24 +54,42 @@ public final class VillageModule {
         final Location spawn = world.getSpawnLocation();
         final int sx = spawn.getBlockX();
         final int sz = spawn.getBlockZ();
+        // Cota FIJA (nivel del spawn): estable entre reinicios. Usar getHighestBlockYAt haria
+        // que la aldea "trepara" en cada arranque (el tejado anterior pasa a ser lo mas alto).
+        final int baseY = spawn.getBlockY() - 1;
+
+        // Limpia el volumen de la aldea (quita restos/vegetacion) para un rebuild limpio.
+        clearArea(sx - 18, sx + 18, sz + 8, sz + 25, baseY + 1, baseY + 9);
 
         // Casas en fila (mirando al sur, +Z), lejos de la zona del portal (sz-2..sz+7).
-        this.naraHome = buildHouse(sx + 6, sz + 12, "Nara");
-        this.polHome = buildHouse(sx - 6, sz + 12, "Pol");
+        this.naraHome = buildHouse(sx + 6, sz + 12, baseY, "Nara");
+        this.polHome = buildHouse(sx - 6, sz + 12, baseY, "Pol");
         // Puestos de trabajo mas al sur.
-        this.naraWork = buildFarm(sx + 14, sz + 20);
-        this.polWork = buildGuardPost(sx - 14, sz + 20);
+        this.naraWork = buildFarm(sx + 14, sz + 20, baseY);
+        this.polWork = buildGuardPost(sx - 14, sz + 20, baseY);
         // Plaza con pozo en el centro-sur.
-        this.plaza = buildPlaza(sx, sz + 20);
+        this.plaza = buildPlaza(sx, sz + 20, baseY);
 
         plugin.getLogger().info("[Aetheria] Aldea construida cerca del spawn (2 casas, granja, "
                 + "puesto de guardia y plaza).");
     }
 
+    private void clearArea(int x0, int x1, int z0, int z1, int y0, int y1) {
+        for (int x = x0; x <= x1; x++) {
+            for (int z = z0; z <= z1; z++) {
+                for (int y = y0; y <= y1; y++) {
+                    final Block b = world.getBlockAt(x, y, z);
+                    if (!b.getType().isAir()) {
+                        b.setType(Material.AIR, false);
+                    }
+                }
+            }
+        }
+    }
+
     // ---------------- Edificios ----------------
 
-    private Location buildHouse(int cx, int cz, String name) {
-        final int floorY = world.getHighestBlockYAt(cx, cz);
+    private Location buildHouse(int cx, int cz, int floorY, String name) {
         final int half = 2;
         foundation(cx, cz, half, floorY, Material.STONE_BRICKS, 5);
 
@@ -113,8 +131,7 @@ public final class VillageModule {
         return new Location(world, cx + 0.5, floorY + 1, cz + 0.5);
     }
 
-    private Location buildFarm(int cx, int cz) {
-        final int floorY = world.getHighestBlockYAt(cx, cz);
+    private Location buildFarm(int cx, int cz, int floorY) {
         foundation(cx, cz, 2, floorY, Material.DIRT, 4);
         for (int dx = -2; dx <= 2; dx++) {
             for (int dz = -2; dz <= 2; dz++) {
@@ -137,8 +154,7 @@ public final class VillageModule {
         return new Location(world, cx + 3 + 0.5, floorY + 1, cz + 2 + 0.5);
     }
 
-    private Location buildGuardPost(int cx, int cz) {
-        final int floorY = world.getHighestBlockYAt(cx, cz);
+    private Location buildGuardPost(int cx, int cz, int floorY) {
         foundation(cx, cz, 1, floorY, Material.STONE_BRICKS, 5);
         // Cuatro pilares de muro con tejado y campana en el centro.
         for (int dx = -1; dx <= 1; dx += 2) {
@@ -159,8 +175,7 @@ public final class VillageModule {
         return new Location(world, cx + 0.5, floorY + 1, cz - 2 + 0.5);
     }
 
-    private Location buildPlaza(int cx, int cz) {
-        final int floorY = world.getHighestBlockYAt(cx, cz);
+    private Location buildPlaza(int cx, int cz, int floorY) {
         foundation(cx, cz, 3, floorY, Material.STONE_BRICKS, 5);
         // Pozo central: anillo de piedra con agua, postes y tejadillo.
         for (int dx = -1; dx <= 1; dx++) {
@@ -199,7 +214,7 @@ public final class VillageModule {
                 for (int y = 1; y <= clearHeight; y++) {
                     set(cx + dx, floorY + y, cz + dz, Material.AIR);
                 }
-                for (int y = floorY - 1; y >= floorY - 4; y--) {
+                for (int y = floorY - 1; y >= floorY - 8; y--) {
                     final Block b = world.getBlockAt(cx + dx, y, cz + dz);
                     if (b.getType().isAir() || b.isLiquid()) {
                         b.setType(Material.DIRT, false);

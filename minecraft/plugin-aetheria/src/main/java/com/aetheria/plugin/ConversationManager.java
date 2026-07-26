@@ -183,7 +183,13 @@ public final class ConversationManager implements Listener {
         }
 
         runSync(() -> player.sendMessage("§7Tu: §f" + msg));
-        gateway.conversation(info.npcId(), player.getUniqueId().toString(), msg, info.name(),
+        // Memoria POR INDIVIDUO: los colonos/ninos comparten npc_id generico ("colono"/"nino"),
+        // asi que se les da un id de memoria unico por nombre (si no, un aldeano "recordaria" lo
+        // que le contaste a otro). El orquestador resuelve la persona por el prefijo antes de ":".
+        final String memId = (info.npcId().equals("colono") || info.npcId().equals("nino"))
+                ? info.npcId() + ":" + info.name()
+                : info.npcId();
+        gateway.conversation(memId, player.getUniqueId().toString(), msg, info.name(),
                         bios.get(info.name()))
                 .whenComplete((json, err) -> runSync(() -> {
                     if (!player.isOnline()) {

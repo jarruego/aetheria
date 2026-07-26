@@ -4,25 +4,55 @@ El unico componente que **ejecuta** cambios en el mundo. La IA propone; el plugi
 
 ## Que hace hoy
 
+### Comandos `/aetheria`
 - `/aetheria ask <mensaje>`: conversa con un NPC (el backend decide el nivel 1/2/3; sin
   coste por defecto).
+- `/aetheria plan <objetivo>`: pide un plan; si viene **aprobado** por el validador,
+  ejecuta sus acciones de la **lista blanca** sobre el mundo real (ver abajo).
 - `/aetheria npc <spawn|remove> [clave]`: crea/elimina un NPC como **entidad real**
   (Villager persistente) en tu posicion.
-- `/sethome` / `/home`: guarda tu posicion y te teletransporta a tu casa (en los mundos
-  de juego; **persistida en la base de datos** via el gateway, una casa por servidor).
-  Al entrar, el jugador se registra en la DB (Fase 5).
-- `/aetheria plan <objetivo>`: pide un plan; si viene **aprobado** por el validador,
-  ejecuta sus acciones de la **lista blanca** sobre el mundo real:
-  - `SAY` — el NPC habla.
-  - `MOVE_TO` — el NPC hace *pathfinding* hacia el jugador.
-  - `GIVE_ITEM` — entrega items (material real, cantidad acotada).
-  - `PLACE_BLUEPRINT` — coloca una estructura de un catalogo acotado (`platform`,
-    `fountain`) unos bloques por delante.
-  - `OPEN_TRADE` — abre un mercader con ofertas.
+- `/aetheria servicio <arquitecto|decorador|urbanista> <que quieres>`: encargo de PAGO a la
+  IA; solo se cobra si el validador aprueba el plan.
+- `/aetheria cronica`: te da la **Cronica de Aetheria** (un libro maquetado, lo mas reciente
+  primero, con la vida del pueblo: nacimientos, bodas, muertes, fundaciones de aldea...).
+- `/aetheria schem <list|paste <n>|save <n>>`: esquematicos FAWE (solo si FAWE/WorldEdit esta
+  instalado; si no, avisa). Desde consola/RCON: `savecube`, `savecatalog`, `pastestreet`.
+
+### Acciones de la lista blanca (`PlanExecutor.WHITELIST`)
+- `SAY` — el NPC habla.
+- `MOVE_TO` — el NPC hace *pathfinding* hacia el jugador.
+- `GIVE_ITEM` — entrega items (material real, cantidad acotada).
+- `PLACE_BLUEPRINT` — coloca una estructura de un catalogo acotado unos bloques por delante.
+  Catalogo (`Blueprint`): `house`, `platform`, `fountain`, `garden`, `lamppost`, `statue`,
+  `bigfountain`.
+- `OPEN_TRADE` — abre un mercader con ofertas.
 
 El objetivo determina las acciones (heuristica por palabras clave en el backend, sin
 coste). Ej.: *"construye una fuente"* -> `PLACE_BLUEPRINT`; *"dame pan y ven"* ->
 `GIVE_ITEM` + `MOVE_TO`.
+
+### Otros comandos (mundos de juego)
+- `/sethome` · `/home`: casa **persistida en la DB** (una por servidor); al entrar el
+  jugador se registra en la DB (Fase 5).
+- `/balance` · `/pay <jugador> <cantidad>`: economia AET (Fase 6).
+- `/claim [comprar|alquilar] [pequena|mediana|grande]` · `/claim info` · `/unclaim`: parcelas
+  reclamables con propietario y proteccion (Fase 9).
+- `/arquitecto` · `/servicios` · `/decorador`: servicios guiados de PAGO (casa a medida,
+  decoracion); cobran solo si construyen. `/deshacer`: revierte con reembolso (`UndoModule`).
+- `/sell [all]` · `/worth` · `/shop`: mercado (`ShopModule`). `/guia`: relee el libro-guia.
+- `/warp <destino>` · `/warps`: viaje rapido a plaza/mercado/taberna/spawn.
+
+### Modulos (`AetheriaPlugin.onEnable`)
+- **Mundo de juego (`main`)**: `VillageModule` (aldea fisica), `SettlementModule` (pueblo vivo
+  procedural: colonos con genero/edad/oficio/familia, varias aldeas autofundadas, alcalde y
+  granero, proteccion anti-creeper), `NpcRoutineModule` (rutina + pathfinding), `JobsModule`,
+  `ShopModule`, `HudModule`, `ClaimModule`, `ArchitectModule`, `DecoratorModule`, `UndoModule`,
+  `WarpModule`, `ConversationManager`, `ReturnPortalModule`.
+- **Creativo (`creative`)**: en vez de la aldea viva, `CatalogModule` (galeria rotulada de todo
+  lo que sabemos construir) + los comandos de esquematicos FAWE.
+- **Lobby (`lobby`)**: `LobbyModule` (hub void con portales) + `LobbyGuideModule` (Aeon, el
+  conserje unico).
+- **Comun**: `SchematicModule` (solo si FAWE/WorldEdit esta presente), `PlayerSyncListener`.
 
 ## Rol del servidor (main vs lobby)
 

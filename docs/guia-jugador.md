@@ -78,10 +78,12 @@ Se venden **servicios**, nunca ventajas de combate: nadie compra poder, solo tra
 
 - `/sethome` — guarda tu casa aquí.
 - `/home` — vuelve a tu casa.
-- `/claim` — **reclama la parcela** (el chunk) donde estás. Puedes elegir:
-  - **Comprar** (pago único, ~50 AET): es tuya para siempre.
-  - **Alquilar** (depósito ~10 AET + una **renta** cada periodo): más barata de entrada, pero
-    si no puedes pagar la renta, la parcela **se libera** automáticamente.
+- `/claim` — **reclama la parcela** donde estás. Abre un menú para elegir **tamaño** y **modo**:
+  - **Tamaño**: pequeña (1×1 chunk), mediana (2×2) o grande (3×3).
+  - **Comprar** (pago único, tuya para siempre): 50 AET la pequeña, 200 la mediana, 450 la
+    grande (crece con el área).
+  - **Alquilar** (depósito + una **renta** cada periodo): más barata de entrada, pero si no
+    puedes pagar la renta, la parcela **se libera** automáticamente.
   Una vez tuya, nadie más puede romper ni poner bloques dentro.
 - `/claim info` — de quién es la parcela donde estás.
 - `/unclaim` — libera tu parcela.
@@ -93,21 +95,34 @@ El pueblo es grande: usa `/warps` para ver los destinos y viajar rápido a **pla
 
 ## El pueblo está vivo
 
-- **Vecinos con rutina**: Nara (granjera), Pol (vigilante) y Sella (comerciante) viven en
-  sus casas y trabajan en su granja / puesto de guardia / mercado. De día trabajan, al
-  atardecer se reúnen en la plaza y de noche vuelven a casa. Habla con ellos con **clic
-  derecho** (se paran a atenderte).
-- **Lugares**: una **plaza** con pozo, un **mercado** con puestos y una **taberna**,
-  conectados por caminos.
+- **Vecinos de verdad, generados solos**: el pueblo no tiene personajes fijos. Un mundo nuevo
+  empieza con **dos fundadores** (un hombre y una mujer) y la población **crece sola**: llegan
+  colonos, se casan, tienen **hijos**, envejecen, se jubilan y con los años mueren (y llega un
+  relevo). Cada vecino tiene **nombre, edad, oficio y familia**. Habla con cualquiera con
+  **clic derecho** (se para a atenderte) y te contará de su vida.
+- **Rutina diaria**: de día trabajan en su puesto (huerto, embarcadero, herrería, biblioteca...
+  según su oficio), al atardecer se reúnen en la plaza y de noche vuelven a casa. Los solteros
+  viven en una **casa pequeña**; al casarse se les construye una **mediana** para la familia.
+- **Varias aldeas**: cuando una aldea se llena, una pareja parte a **fundar otra nueva** con su
+  propio nombre, lejos. Al **entrar** en una aldea verás **su nombre en pantalla**. Cada aldea
+  tiene un **alcalde** (con su cartel en la plaza) y un **granero** donde los oficios van
+  dejando lo que producen (trigo, lana, hierro...).
+- **Las casas de los vecinos están protegidas**: no puedes romperlas ni ponerles bloques, y
+  **aguantan a los creepers y la TNT** (no hace falta reconstruir el pueblo). Eso sí, el
+  **terreno natural** (tierra, piedra, arena, minerales) junto a las casas **sí lo puedes
+  minar**. Cuando un vecino muere o emigra, su casa se derriba y el solar vuelve a ser hierba.
 - **La economía evoluciona sola**, haya o no gente conectada: los negocios producen,
   gastan, viven festivales y penurias. El pueblo puede estar **en apuros, estable,
-  próspero o floreciente** (lo ves en el marcador).
-- `/aetheria cronica` — la **crónica del mundo**: qué ha pasado mientras no estabas.
+  próspero o floreciente** (lo ves en el marcador, junto al nº de **Habitantes**).
+- `/aetheria cronica` — la **crónica del mundo**: un **libro** con lo que ha ido pasando
+  (nacimientos, bodas, muertes, fundaciones de aldeas, festivales...), de lo más reciente a lo
+  más antiguo.
 
 ## Otros comandos útiles
 
 - `/aetheria ask <mensaje>` — hablar con la IA.
 - `/aetheria plan <objetivo>` — pedir un plan a la IA (lo ejecuta si el validador lo aprueba).
+- `/deshacer` — revierte la última construcción del arquitecto/decorador (con reembolso).
 - `/guia` — te da otra vez el libro-guía.
 
 ## Cómo funciona por dentro (resumen)

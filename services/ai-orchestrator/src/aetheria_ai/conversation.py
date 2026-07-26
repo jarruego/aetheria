@@ -164,7 +164,10 @@ _MAX_SUMMARY = 700    # tope de la ficha (lo viejo se va difuminando)
 
 
 def _npc(npc_id: str) -> dict[str, str]:
-    return _NPCS.get(npc_id, _DEFAULT_NPC)
+    # La memoria es por individuo ("colono:Nombre"), pero la PERSONA se resuelve por el prefijo
+    # antes de ":" (todos los colonos comparten la persona generica "colono").
+    base = npc_id.split(":", 1)[0]
+    return _NPCS.get(base, _DEFAULT_NPC)
 
 
 def _system_prompt(npc_id: str, profile: str, npc_name: str | None = None,

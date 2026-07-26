@@ -71,9 +71,10 @@ En GitHub (`https://github.com/jarruego/aetheria`), verificado en local.
 Postgres+migraciones+world-state · F3 IA (adaptador LLM, conversación 3 niveles,
 planner→plan→**validador**).
 
-**Plugin Java (Paper): funcional.** `/aetheria ask|plan|npc|servicio` ejecuta planes
-aprobados por lista blanca (SAY, MOVE_TO, GIVE_ITEM, PLACE_BLUEPRINT, OPEN_TRADE; NPC
-Villager). `/sethome`+`/home` (en DB), `/balance`+`/pay` (economía). Se compila y despliega
+**Plugin Java (Paper): funcional.** `/aetheria ask|plan|npc|servicio|cronica|schem` ejecuta
+planes aprobados por lista blanca (SAY, MOVE_TO, GIVE_ITEM, PLACE_BLUEPRINT, OPEN_TRADE; NPC
+Villager). `/sethome`+`/home` (en DB), `/balance`+`/pay` (economía), `/deshacer` (revertir
+construcciones con reembolso). Se compila y despliega
 solo vía compose (one-shot `plugin-build`, copia el jar a main/lobby/creative). Detalle:
 `minecraft/plugin-aetheria/README.md`.
 
@@ -145,15 +146,20 @@ autodesplegado) YA están aplicados en el repo. Detalle: `docs/infra/fase4-oracl
 
 **Fase 7 (NPC vivos): COMPLETA en su núcleo.** Vecinos con **rutina diaria** por horario
 (trabajan de día, plaza al atardecer, casa de noche) que se mueven con **pathfinding por
-código** (`NpcRoutineModule`, no el LLM). Son conversables (Nara/granjera, Pol/vigilante) y
-resucitan si algo los borra. Activable con `npc-routines.enabled`.
+código** (`NpcRoutineModule`, no el LLM). Todos son **colonos procedurales** conversables
+(ver "servidor vivo") con persona propia (nombre, edad, oficio, familia); resucitan si algo
+los borra. Activable con `npc-routines.enabled`.
 
 **Fase 8 (el mundo evoluciona solo): COMPLETA en su núcleo.** Simulación económica por
 **ticks en el backend** (`world-state/simulation.py`) que corre aunque no haya nadie
 conectado: los negocios del pueblo producen ingresos y pagan gastos (persistido en
 cuentas/transacciones) y cada suceso se registra en la **crónica** (`world_events`,
-migración 0005). En el juego: `/aetheria cronica`. Tick manual `POST /internal/sim/tick`
-(o cron externo) + bucle cada `SIM_TICK_SECONDS`. Simulación por código, nunca el LLM.
+migración 0005). En el juego: `/aetheria cronica` (un **libro** maquetado, máx. 50 páginas,
+lo más reciente primero, con icono por tipo y fecha en los sucesos notables; la economía se
+resume a cambios de prosperidad). Tick manual `POST /internal/sim/tick` (o cron externo) +
+bucle cada `SIM_TICK_SECONDS`. Simulación por código, nunca el LLM. Población objetivo
+acotada (`sim_min_population=2`, `sim_max_population=20`; economía reequilibrada: upkeep 0.6,
+crecimiento lento).
 
 **Fase 9 (estructuras sociales): COMPLETA en su núcleo.** **Parcelas reclamables por chunk**
 con propietario, persistidas en `plots`. `/claim` (cuesta AET, integra la economía),
@@ -164,13 +170,39 @@ valida solape (409), fondos (400, sin cobrar) y propiedad. Roadmap F0–F9 al d�
 **Capa de "servidor vivo" (encima de F0–F9).** Para que al entrar se note vida:
 - **Aldea física** (`VillageModule`): el plugin construye a **cota fija** (no trepa entre
   reinicios) casas con puerta/ventanas/cama/cartel, granja con compostador, puesto de
-  guardia y plaza con pozo, al **sur del spawn** (el portal queda al norte). Los vecinos
-  viven y trabajan en esos edificios reales.
+  guardia y plaza con pozo, al **sur del spawn** (el portal queda al norte).
+- **Pueblo vivo con varias aldeas** (`SettlementModule`): NO hay NPC fijos (Nara/Pol/Sella
+  ya no existen); **toda** la población son **colonos generados por procedimiento**. Un mundo
+  nuevo arranca con **dos fundadores de distinto sexo**. Cada colono tiene **género** (m/f;
+  ~100 nombres por sexo), **edad** (envejece ~2 años/día real; se jubila a 65, muere ~80-90 y
+  su casa se **demuele y renaturaliza** —hierba, flores, brotes—), **oficio** y **familia**.
+  Los solteros viven en **casa pequeña** (1 cama); al **casarse** se les construye una
+  **mediana** (3 camas) y se derriban sus dos casitas. Nacen **hijos** solo de pareja casada
+  de distinto sexo (`bearChild`). Los recién llegados toman **el oficio que falta** en su
+  aldea (8 profesiones, cada una con un **puesto de trabajo temático**: huerto, embarcadero,
+  aprisco, taller de cantero, biblioteca, herrería, carnicería, taller de arquero). Al morir
+  alguien, un sucesor (preferentemente un hijo) **cambia de oficio** para cubrir la vacante
+  (evento *relevo*).
+- **Multi-aldea autofundada** (`foundNewTown`/`assignTown`, `PER_TOWN=8`): cuando una aldea
+  llega a 8 vecinos, una pareja parte a **fundar una aldea nueva** con nombre propio a 220-400
+  bloques (~24 nombres curados y luego "Aldea N"); se registra en la crónica (evento
+  *fundacion*). Al **entrar** en el radio (~48 bloques) de una aldea aparece **su nombre en
+  pantalla** (`onMove`, título de bienvenida). Cada aldea tiene **alcalde** (el vecino más
+  veterano) con su cartel en la plaza (evento *gobierno* al cambiar) y un **granero** (barril)
+  donde cada oficio deposita su producción física (trigo, lana, hierro...).
+- **Protección de la aldea**: las casas de colono y el núcleo del pueblo no se rompen ni ponen
+  (aparte de las parcelas F9) y **resisten explosiones** de creeper/TNT (`onExplode`). Ojo: el
+  **terreno natural** (tierra/piedra/arena/mineral) junto a una casa **SÍ es recolectable**
+  (`terrain()`); solo se protege lo construido (madera/ladrillo/cristal).
 - **Trabajos** (`JobsModule`): se gana AET por minar/talar/cosechar (maduros)/cazar;
   recompensa por lotes cada 20 s con action bar. **Mercado** (`ShopModule`): `/sell [all]`,
   `/worth`, `/shop`. Backend: `/internal/reward` → `/v1/reward` (paga desde la cuenta banco).
-- **HUD** (`HudModule`): marcador lateral (saldo + prosperidad del pueblo), bienvenida,
-  **libro-guía** en la 1ª conexión y `/guia`.
+- **HUD** (`HudModule`): marcador lateral (saldo + prosperidad + **Habitantes** (nº de
+  aldeanos vivos) + **Jugadores**), bienvenida, **libro-guía** en la 1ª conexión y `/guia`.
+- **Esquemáticos FAWE** (`SchematicModule`): `/aetheria schem list|paste|save` (jugadores) y
+  desde consola `savecube|savecatalog|pastestreet`. Solo activo si FAWE/WorldEdit está
+  instalado (se detecta en `AetheriaPlugin.onEnable`); el catálogo es la carpeta de
+  esquemáticos de FAWE.
 - **Conserje del lobby** (`LobbyGuideModule`): **un solo** NPC (Aeon) que ronda el lobby,
   con nombre sobre la cabeza; su persona en el orchestrator conoce **todo** el server y da
   los comandos exactos. Ya no hay un guía por portal.

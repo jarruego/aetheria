@@ -53,9 +53,23 @@ Cada fase deja algo funcionando y verificable.
 - [x] NPC con rutina: se detienen y te miran al hablarles; movimiento fiable (reemision de
       camino 2x/seg + rescate anti-atasco) por casa(~7)/trabajo(~13)/plaza(~3) desde el spawn
 - [x] Aldea FISICA (VillageModule): casas con puerta/ventanas/cama/cartel, granja, puesto de
-      guardia y plaza con pozo, a cota fija; los vecinos viven/trabajan en edificios reales
+      guardia y plaza con pozo, a cota fija
+- [x] PUEBLO VIVO PROCEDURAL (SettlementModule): sin NPC fijos; toda la poblacion son colonos
+      generados (genero m/f, ~100 nombres por sexo, edad que envejece/jubila/muere, oficio y
+      familia). Un mundo nuevo arranca con DOS fundadores de distinto sexo. Casa pequena de
+      soltero -> mediana al casarse; nacen hijos de pareja casada; puestos de trabajo tematicos
+      por oficio; al morir alguien un sucesor cambia de oficio (relevo)
+- [x] VARIAS ALDEAS autofundadas: al llegar a 8 vecinos, una pareja funda una aldea nueva con
+      nombre propio a 220-400 bloques (crónica: fundacion). Titulo de bienvenida con el nombre
+      del pueblo al entrar en su radio. Alcalde por aldea (cartel en la plaza) + granero donde
+      cada oficio deposita produccion fisica
+- [x] Proteccion de la aldea: casas de colono y nucleo a prueba de creeper/TNT; el terreno
+      natural (tierra/piedra/arena/mineral) junto a las casas SI es recolectable. Al morir o
+      emigrar un colono su casa se demuele y el solar se renaturaliza
+- [x] Esquematicos FAWE (SchematicModule): /aetheria schem list|paste|save y consola
+      savecube|savecatalog|pastestreet (solo si FAWE/WorldEdit esta instalado)
 - [x] Trabajos (ganar AET por minar/talar/cosechar/cazar) + Mercado (/sell,/worth,/shop)
-- [x] HUD lateral (saldo + prosperidad), bienvenida, libro-guia y /guia
+- [x] HUD lateral (saldo + prosperidad + Habitantes + Jugadores), bienvenida, libro-guia y /guia
 - [x] Conserje unico del lobby (Aeon) que ronda, con nombre y que conoce todo el server
 - [x] Sociedad que prospera/decae: festivales, penurias y prosperidad (en HUD y cronica)
 - [x] Guia del jugador (docs/guia-jugador.md)
@@ -87,11 +101,12 @@ Cada fase deja algo funcionando y verificable.
       atardecer y se van a casa de noche (NpcRoutineModule, mundo principal).
 - [x] Movimiento por CODIGO (pathfinding Paper: Mob.getPathfinder().moveTo), no por el LLM.
       La IA sigue solo proponiendo planes; las rutinas son deterministas.
-- [x] Son conversables (personas Nara/granjera y Pol/vigilante) y resucitan si algo los
-      elimina. Activable con npc-routines.enabled.
+- [x] Son conversables (colonos procedurales con persona propia: nombre, edad, oficio y
+      familia) y resucitan si algo los elimina. Activable con npc-routines.enabled.
 - [x] Agendas mas ricas: los vecinos PASEAN/exploran el pueblo a ratos (no clavados en el
       puesto) y hay SOCIEDAD (matrimonios que conviven, viudedad, familias). Ver "servidor vivo".
-- [ ] Oficios que PRODUCEN recursos fisicos (futuro)
+- [x] Oficios que PRODUCEN recursos fisicos: cada oficio deposita su produccion (trigo, lana,
+      hierro, pescado...) en el granero (barril) de su aldea.
 
 ## Fase 8 - El mundo evoluciona solo  (COMPLETA en su nucleo)
 - [x] Simulacion economica por TICKS en el backend (world-state), corre aunque no haya
@@ -104,7 +119,9 @@ Cada fase deja algo funcionando y verificable.
       fondo cada SIM_TICK_SECONDS. Nunca lo mueve el LLM (simulacion por codigo).
 - [x] La prosperidad hace crecer la plaza FISICAMENTE (faroles, jardines, bancos y puestos
       de mercado que se construyen solos con el tiempo), no solo dinero (civic.txt, persistido).
-- [ ] Que crezcan barrios/ciudades enteras, no solo la plaza (futuro)
+- [x] Que crezcan aldeas ENTERAS, no solo la plaza: al llenarse una aldea (8 vecinos) se funda
+      otra con nombre propio lejos (SettlementModule.foundNewTown). Poblacion acotada a 2..20.
+- [ ] Ciudades grandes con barrios y varios gremios (futuro)
 
 ## Fase 9 - Estructuras sociales  (COMPLETA en su nucleo)
 - [x] Parcelas reclamables por chunk, con PROPIETARIO, persistidas en la tabla plots.
@@ -113,8 +130,11 @@ Cada fase deja algo funcionando y verificable.
       (ClaimModule con cache en memoria chunk->propietario; cero red por bloque).
 - [x] Validaciones en el backend: solape (409), fondos insuficientes (400, sin cobrar),
       propiedad al liberar (404 si no es tuya).
-- [ ] Ciudades, gobiernos y contratos formales entre jugadores (futuro; tablas cities/
-      contracts ya existen para apoyarlo)
+- [x] Gobierno de aldea: cada pueblo tiene ALCALDE (el vecino mas veterano) con su cartel en
+      la plaza; se anuncia en la cronica al relevo (evento gobierno). Los recien llegados toman
+      el oficio que le falta a la aldea (equilibrio de oficios).
+- [ ] Ciudades y contratos formales entre jugadores (futuro; tablas cities/contracts ya
+      existen para apoyarlo)
 
 ## Mejoras transversales  (EN CURSO)
 - [x] Seguridad: filtro de contenido en respuestas de NPC (sanitize_chat_text tambien a la

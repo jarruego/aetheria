@@ -46,7 +46,8 @@ Un LLM nunca ejecuta comandos. Ver docs/architecture/security-flow.md.
 
 ## Estado del proyecto
 
-Fases 0-6 completas (verificado en local). Ver docs/roadmap.md para el detalle.
+Fases F0-F9 completas en su nucleo (verificado en local); solo F4 Cloud queda pendiente (por
+capacidad de Oracle). Ver docs/roadmap.md para el detalle.
 
 - **F0-F3 (backend + IA):** microservicios FastAPI, Postgres con migraciones versionadas,
   world-state, adaptador LLM intercambiable, conversacion en 3 niveles y el nucleo de
@@ -62,8 +63,17 @@ Fases 0-6 completas (verificado en local). Ver docs/roadmap.md para el detalle.
   `/pay`) y **servicios inteligentes de pago** (Arquitecto/Decorador/Urbanista): la IA
   construye por encargo y solo se cobra si el plan pasa el validador. Se venden servicios,
   nunca ventajas. Ver docs/adr/0011.
-- **Siguiente:** F7 NPC vivos (rutinas/pathfinding), F8 el mundo evoluciona solo, F9
-  estructuras sociales. F4 Cloud (Oracle/Terraform) pendiente de capacidad.
+- **F7 (NPC vivos):** vecinos con rutina diaria y pathfinding por codigo. Toda la poblacion
+  son colonos generados por procedimiento (con genero, edad, oficio y familia); no hay NPC
+  fijos.
+- **F8 (el mundo evoluciona solo):** simulacion economica por ticks que corre aunque no haya
+  nadie conectado, con cronica (`/aetheria cronica`). El pueblo crece o mengua, y al llenarse
+  una aldea (8 vecinos) se **funda otra con nombre propio** lejos (varias aldeas).
+- **F9 (estructuras sociales):** parcelas reclamables por chunk con propietario y proteccion
+  (`/claim`); cada aldea tiene alcalde y un granero donde los oficios producen.
+- **Extras:** esquematicos FAWE (`/aetheria schem ...`, si FAWE esta instalado), titulos de
+  bienvenida al entrar en una aldea, casas a prueba de creeper.
+- **Siguiente:** F4 Cloud (Oracle/Terraform) pendiente de capacidad.
 
 IA a coste cero por defecto (`LLM_PROVIDER=stub`); nivel 3 real gratis con Ollama local.
 
@@ -72,15 +82,16 @@ IA a coste cero por defecto (`LLM_PROVIDER=stub`); nivel 3 real gratis con Ollam
 Requisitos: Docker, Python 3.12+, Git.
 
 ```
-cp .env.example .env
-docker compose up -d
+./scripts/dev-up.ps1        # modo LEAN (solo main, = lo que corre en cloud)
+./scripts/dev-up-full.ps1   # modo FULL local (lobby + main + creative + End)
 ```
 
-Comprobar salud:
+Crea `.env` desde `.env.example` si falta. Comprobar salud:
 
 ```
-curl http://localhost:8080/health
-curl http://localhost:8090/health
+curl http://localhost:8080/health   # API Gateway
+curl http://localhost:8090/health   # AI Orchestrator
+curl http://localhost:8070/health   # World-State
 ```
 
 ## Licencia

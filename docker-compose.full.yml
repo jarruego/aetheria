@@ -11,7 +11,7 @@ name: aetheria
 services:
   # Reactiva el lobby (hub de bienvenida / portales a mundos).
   lobby:
-    image: itzg/minecraft-server
+    image: itzg/minecraft-server:java25
     environment:
       EULA: "TRUE"
       TYPE: "PAPER"
@@ -48,7 +48,7 @@ services:
 
   # Mundo CREATIVO: servidor Paper en modo creativo (mundo plano), backend de Velocity.
   creative:
-    image: itzg/minecraft-server
+    image: itzg/minecraft-server:java25
     environment:
       EULA: "TRUE"
       TYPE: "PAPER"

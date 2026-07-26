@@ -10,14 +10,17 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Tag;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.entity.Display;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.TextDisplay;
 import org.bukkit.entity.Villager;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -148,6 +151,7 @@ public final class SettlementModule implements Listener {
     private final File dataFile;
     private final File civicFile;
     private final File nameFile;   // village.txt: una linea por aldea "nombre;cx;cz;baseY"
+    private final File buildingsFile;   // buildings.txt: "vid;profKey;cx;cz;baseY" por edificio
     private final java.util.Map<java.util.UUID, Integer> inTown = new java.util.HashMap<>();
 
     private static final int PER_TOWN = 8;   // al llenarse, una pareja funda otra aldea lejos
@@ -173,6 +177,25 @@ public final class SettlementModule implements Listener {
 
     private final List<Town> towns = new ArrayList<>();
     private final java.util.Map<Integer, String> alcaldes = new java.util.HashMap<>();  // vid -> alcalde
+
+    /** Un EDIFICIO de oficio del pueblo (mercado, biblioteca, herreria...). Es PERMANENTE: no
+     *  se derriba al morir su aldeano; lo hereda otro del mismo oficio o espera a que llegue uno. */
+    private static final class Building {
+        final int vid;
+        final String profKey;
+        final int cx;
+        final int cz;
+        final int baseY;
+        Building(int vid, String profKey, int cx, int cz, int baseY) {
+            this.vid = vid;
+            this.profKey = profKey;
+            this.cx = cx;
+            this.cz = cz;
+            this.baseY = baseY;
+        }
+    }
+
+    private final List<Building> buildings = new ArrayList<>();
 
     /** Altura del SUELO real (ignora hojas, troncos y plantas), escaneando hacia abajo. */
     private int groundY(int x, int z) {
@@ -326,15 +349,18 @@ public final class SettlementModule implements Listener {
         this.dataFile = new File(plugin.getDataFolder(), "colonos.txt");
         this.civicFile = new File(plugin.getDataFolder(), "civic.txt");
         this.nameFile = new File(plugin.getDataFolder(), "village.txt");
+        this.buildingsFile = new File(plugin.getDataFolder(), "buildings.txt");
     }
 
     public void start() {
-        world.getEntities().stream()   // limpia bebes huerfanos de sesiones anteriores
-                .filter(e -> e.getScoreboardTags().contains(BABY_TAG))
+        world.getEntities().stream()   // limpia bebes huerfanos y paneles viejos de sesiones anteriores
+                .filter(e -> e.getScoreboardTags().contains(BABY_TAG)
+                        || e.getScoreboardTags().contains(PANEL_TAG))
                 .forEach(org.bukkit.entity.Entity::remove);
         final boolean fresh = !dataFile.exists();
-        loadTowns();   // las aldeas (nombre + centro) ANTES que los colonos (que las referencian)
-        load();        // reaparecen los colonos ya existentes en sus casas (sin reconstruir)
+        loadTowns();       // las aldeas (nombre + centro) ANTES que los colonos y edificios
+        loadBuildings();   // los edificios de oficio (permanentes)
+        load();            // reaparecen los colonos ya existentes en sus casas (sin reconstruir)
         loadCivic();
         if (fresh && colonos.isEmpty()) {
             // Mundo NUEVO: dos fundadores, un hombre y una mujer (asi pueden formar una familia),
@@ -394,7 +420,7 @@ public final class SettlementModule implements Listener {
                     }
                 }
                 routines.addColono("colono", c.name, new Location(world, c.x + 0.5, c.y, c.z + 0.5),
-                        new Location(world, c.x + 9 + 0.5, c.y, c.z + 0.5), profFromKey(c.profKey),
+                        ensureBuilding(c.vid, profFromKey(c.profKey)), profFromKey(c.profKey),
                         townCenter(c.vid));
                 if (c.retired) {
                     routines.retire(c.name);
@@ -762,9 +788,11 @@ public final class SettlementModule implements Listener {
         Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
                 pal[0], pal[1], pal[2], pal[3], true, 1, name);   // 1 cama (soltero)
         deflood(cx, fy, cz, 1);                            // por si algo de agua se colo
-        final int wy = buildWorkplace(cx, cz, prof);       // puesto de trabajo tematico, al este
         pathTo(cx, cz, center);                            // sendero que sigue el relieve a la plaza
         placed.add(new int[] {cx, cz});
+        // Trabaja en el EDIFICIO de su oficio (mercado/biblioteca/herreria...), compartido y
+        // permanente; se levanta si su aldea aun no tiene uno de ese oficio.
+        final Location workspot = ensureBuilding(vid, prof);
 
         final Colono c = new Colono();
         c.name = name;
@@ -783,7 +811,6 @@ public final class SettlementModule implements Listener {
         save();
 
         final Location home = new Location(world, cx + 0.5, fy + 1, cz + 0.5);
-        final Location workspot = new Location(world, cx + 9 + 0.5, wy + 1, cz + 0.5);
         routines.addColono("colono", name, home, workspot, prof, center);
         final String pueblo = towns.get(Math.max(0, Math.min(vid, towns.size() - 1))).name;
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
@@ -860,10 +887,11 @@ public final class SettlementModule implements Listener {
         Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
                 pal[0], pal[1], pal[2], pal[3], true, 3, a.name + " y " + b.name);   // 3 camas
         deflood(cx, fy, cz, 1);                                          // por si se colo agua
-        final int wy = buildWorkplace(cx, cz, profFromKey(a.profKey));   // taller familiar
         pathTo(cx, cz, center);
+        final Location workA = ensureBuilding(a.vid, profFromKey(a.profKey));
+        final Location workB = ensureBuilding(b.vid, profFromKey(b.profKey));
 
-        demolish(a);   // sus dos casas pequenas (y puestos) se derriban y liberan solar
+        demolish(a);   // solo sus dos casas pequenas se derriban (los edificios son permanentes)
         demolish(b);
 
         a.x = cx;  a.y = fy + 1;  a.z = cz;  a.floors = 1;  a.spouse = b.name;
@@ -871,14 +899,10 @@ public final class SettlementModule implements Listener {
         placed.add(new int[] {cx, cz});
         save();
 
-        // Casa y puesto compartidos, pero con destinos LIGERAMENTE distintos para que la pareja
-        // no se apile en la misma casilla (si no, sus nombres se cruzan en pantalla).
-        routines.setHomeWork(a.name,
-                new Location(world, cx + 1.0, fy + 1, cz + 0.5),
-                new Location(world, cx + 9 + 1.0, wy + 1, cz + 0.5));
-        routines.setHomeWork(b.name,
-                new Location(world, cx, fy + 1, cz + 1.5),
-                new Location(world, cx + 9.0, wy + 1, cz + 1.5));
+        // Casa compartida (con destinos ligeramente distintos para no apilarse), pero cada uno
+        // trabaja en el edificio de SU oficio.
+        routines.setHomeWork(a.name, new Location(world, cx + 1.0, fy + 1, cz + 0.5), workA);
+        routines.setHomeWork(b.name, new Location(world, cx, fy + 1, cz + 1.5), workB);
 
         final String msg = a.name + " y " + b.name
                 + " se han casado y se han mudado juntos a una casa nueva.";
@@ -919,6 +943,9 @@ public final class SettlementModule implements Listener {
                     final String antes = oficio(profFromKey(heir.profKey));
                     heir.profKey = c.profKey;   // cambia de oficio para cubrir la vacante
                     routines.setProfession(heir.name, profFromKey(c.profKey));
+                    routines.setHomeWork(heir.name,     // pasa a trabajar en el edificio del oficio
+                            new Location(world, heir.x + 0.5, heir.y, heir.z + 0.5),
+                            ensureBuilding(heir.vid, profFromKey(c.profKey)));
                     successor = heir.name;
                     if (!antes.equals(oficioDelDifunto)) {
                         relevo = heir.name + ", que era " + antes + ", se hace " + oficioDelDifunto
@@ -977,6 +1004,183 @@ public final class SettlementModule implements Listener {
         return child != null ? child : best;
     }
 
+    private void loadBuildings() {
+        buildings.clear();
+        if (!buildingsFile.exists()) {
+            return;
+        }
+        try (BufferedReader r = new BufferedReader(new FileReader(buildingsFile))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                final String[] f = line.split(";", -1);
+                if (f.length >= 5) {
+                    final int cx = Integer.parseInt(f[2]);
+                    final int cz = Integer.parseInt(f[3]);
+                    buildings.add(new Building(Integer.parseInt(f[0]), f[1], cx, cz,
+                            Integer.parseInt(f[4])));
+                    placed.add(new int[] {cx, cz});   // que las casas no se planten encima
+                }
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Aetheria] no pude cargar edificios: " + e.getMessage());
+        }
+    }
+
+    private void saveBuildings() {
+        try (FileWriter w = new FileWriter(buildingsFile, false)) {
+            for (final Building b : buildings) {
+                w.write(b.vid + ";" + b.profKey + ";" + b.cx + ";" + b.cz + ";" + b.baseY + "\n");
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Aetheria] no pude guardar edificios: " + e.getMessage());
+        }
+    }
+
+    /** Punto de trabajo del EDIFICIO del oficio en esa aldea; lo levanta si aun no existe.
+     *  Los edificios son PERMANENTES: no se derriban al morir su aldeano (los hereda otro). */
+    private Location ensureBuilding(int vid, Villager.Profession prof) {
+        final String key = profKey(prof);
+        for (final Building b : buildings) {
+            if (b.vid == vid && b.profKey.equals(key)) {
+                return new Location(world, b.cx + 0.5, b.baseY + 1, b.cz + 0.5);
+            }
+        }
+        final int[] spot = findBuildSpot(townCenter(vid), colonos.size() + buildings.size());
+        if (spot == null) {
+            return townCenter(vid);   // sin sitio ahora: trabaja en la plaza de momento
+        }
+        final int cx = spot[0];
+        final int cz = spot[1];
+        final int fy = spot[2];
+        final BlockFace door = towardPlaza(townCenter(vid), cx, cz);
+        prepareTerrain(cx, cz, fy);
+        // Generador PROPIO de puestos de trabajo (no un cascaron de casa): cada oficio tiene su
+        // diseno con elementos de Minecraft acordes (forja con fraguas y yunque, huerto, biblioteca...).
+        Blueprint.workplaceShowcase(world, cx, fy, cz, key);
+        tradeSign(cx, fy, cz, prof, door);
+        deflood(cx, fy, cz, 1);
+        pathTo(cx, cz, townCenter(vid));
+        placed.add(new int[] {cx, cz});
+        buildings.add(new Building(vid, key, cx, cz, fy));
+        saveBuildings();
+        gateway.postEvent("edificio", "El pueblo levanta " + buildingName(prof) + " en "
+                + towns.get(Math.max(0, Math.min(vid, towns.size() - 1))).name + ".");
+        return new Location(world, cx + 0.5, fy + 1, cz + 0.5);
+    }
+
+    /** Cartel del oficio delante del puesto de trabajo (se pone una sola vez, no trepa). */
+    private void tradeSign(int cx, int fy, int cz, Villager.Profession prof, BlockFace door) {
+        final int sx = cx + door.getModX() * 3;
+        final int sz = cz + door.getModZ() * 3;
+        final int gy = groundY(sx, sz);
+        world.getBlockAt(sx, gy + 1, sz).setType(Material.OAK_FENCE, false);
+        final Block b = world.getBlockAt(sx, gy + 2, sz);
+        b.setType(Material.OAK_SIGN, false);
+        if (b.getBlockData() instanceof org.bukkit.block.data.Rotatable rot) {
+            rot.setRotation(door.getOppositeFace());
+            b.setBlockData(rot, false);
+        }
+        if (b.getState() instanceof org.bukkit.block.Sign s) {
+            s.getSide(org.bukkit.block.sign.Side.FRONT).line(1, Component.text("§6" + tradeLabel(prof)));
+            s.update(true);
+        }
+    }
+
+    private static String tradeLabel(Villager.Profession p) {
+        return buildingName(p).replaceFirst("^una? ", "");
+    }
+
+    private static String buildingName(Villager.Profession p) {
+        if (p == Villager.Profession.FARMER) return "una Granja";
+        if (p == Villager.Profession.FISHERMAN) return "una Pescaderia";
+        if (p == Villager.Profession.SHEPHERD) return "un Corral";
+        if (p == Villager.Profession.MASON) return "una Canteria";
+        if (p == Villager.Profession.LIBRARIAN) return "una Biblioteca";
+        if (p == Villager.Profession.TOOLSMITH) return "una Herreria";
+        if (p == Villager.Profession.BUTCHER) return "una Carniceria";
+        if (p == Villager.Profession.FLETCHER) return "un Taller de arquero";
+        return "un Taller";
+    }
+
+    private static Material[] buildingPalette(Villager.Profession p) {
+        if (p == Villager.Profession.TOOLSMITH || p == Villager.Profession.MASON) {
+            return new Material[] {Material.STONE_BRICKS, Material.DEEPSLATE_BRICKS,
+                Material.DARK_OAK_PLANKS, Material.COBBLESTONE};
+        }
+        if (p == Villager.Profession.LIBRARIAN) {
+            return new Material[] {Material.OAK_PLANKS, Material.OAK_LOG, Material.DARK_OAK_PLANKS,
+                Material.BOOKSHELF};
+        }
+        if (p == Villager.Profession.BUTCHER || p == Villager.Profession.FARMER) {
+            return new Material[] {Material.STRIPPED_OAK_WOOD, Material.OAK_LOG, Material.DARK_OAK_PLANKS,
+                Material.BRICKS};
+        }
+        return new Material[] {Material.SPRUCE_PLANKS, Material.SPRUCE_LOG, Material.DARK_OAK_PLANKS,
+            Material.STONE_BRICKS};
+    }
+
+    /** Coloca dentro del edificio los enseres tipicos del oficio (contra la pared del fondo). */
+    private void buildingInterior(int cx, int cz, int fy, Villager.Profession prof, BlockFace door) {
+        final int ax = door.getModX();
+        final int az = door.getModZ();
+        final int px = ax != 0 ? 0 : 1;
+        final int pz = az != 0 ? 0 : 1;
+        final int bx = cx - ax * 2;   // centro de la pared del fondo
+        final int bz = cz - az * 2;
+        final int y = fy + 1;
+        if (prof == Villager.Profession.LIBRARIAN) {
+            for (int d = -1; d <= 1; d++) {
+                put(bx + px * d, y, bz + pz * d, Material.BOOKSHELF);
+                put(bx + px * d, y + 1, bz + pz * d, Material.BOOKSHELF);
+            }
+            put(cx, y, cz, Material.LECTERN);
+        } else if (prof == Villager.Profession.TOOLSMITH) {
+            put(bx, y, bz, Material.BLAST_FURNACE);
+            put(bx + px, y, bz + pz, Material.FURNACE);
+            put(bx - px, y, bz - pz, Material.SMITHING_TABLE);
+            put(cx + px, y, cz + pz, Material.ANVIL);
+            put(cx - px, y, cz - pz, Material.GRINDSTONE);
+        } else if (prof == Villager.Profession.MASON) {
+            put(bx, y, bz, Material.STONECUTTER);
+            put(bx + px, y, bz + pz, Material.CHISELED_STONE_BRICKS);
+            put(bx - px, y, bz - pz, Material.STONE);
+        } else if (prof == Villager.Profession.FARMER) {
+            put(bx, y, bz, Material.COMPOSTER);
+            put(bx + px, y, bz + pz, Material.BARREL);
+            put(bx - px, y, bz - pz, Material.HAY_BLOCK);
+        } else if (prof == Villager.Profession.FISHERMAN) {
+            put(bx, y, bz, Material.BARREL);
+            put(bx + px, y, bz + pz, Material.BARREL);
+            put(bx - px, y, bz - pz, Material.BARREL);
+        } else if (prof == Villager.Profession.SHEPHERD) {
+            put(bx, y, bz, Material.LOOM);
+            put(bx + px, y, bz + pz, Material.WHITE_WOOL);
+            put(bx - px, y, bz - pz, Material.HAY_BLOCK);
+        } else if (prof == Villager.Profession.BUTCHER) {
+            put(bx, y, bz, Material.SMOKER);
+            put(bx + px, y, bz + pz, Material.BARREL);
+            put(cx, y, cz, Material.CAMPFIRE);
+        } else if (prof == Villager.Profession.FLETCHER) {
+            put(bx, y, bz, Material.FLETCHING_TABLE);
+            put(bx + px, y, bz + pz, Material.BARREL);
+            put(bx - px, y, bz - pz, Material.HAY_BLOCK);
+        } else {
+            put(bx, y, bz, Material.BARREL);
+        }
+    }
+
+    /** True si el bloque forma parte de un edificio de oficio (para protegerlo, nunca se rompe). */
+    private boolean buildingAt(Block b) {
+        for (final Building bd : buildings) {
+            final int fy = bd.baseY;
+            if (b.getX() >= bd.cx - 5 && b.getX() <= bd.cx + 5 && b.getZ() >= bd.cz - 5
+                    && b.getZ() <= bd.cz + 5 && b.getY() >= fy && b.getY() <= fy + 12) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Vida civica de cada aldea: un ALCALDE (el vecino mas veterano) con su cartel en la plaza,
      * y un GRANERO donde cada oficio deposita algo de su produccion (la economia se vuelve
@@ -993,7 +1197,7 @@ public final class SettlementModule implements Listener {
                 }
             }
             final String alcalde = alc != null ? alc.name : "";
-            mayorSign(t, alcalde);
+            infoPanel(vid, t, alcalde);
             final String prev = alcaldes.get(vid);
             if (!alcalde.isEmpty() && !alcalde.equals(prev)) {
                 if (prev != null) {
@@ -1005,29 +1209,45 @@ public final class SettlementModule implements Listener {
         }
     }
 
-    private void mayorSign(Town t, String alcalde) {
-        final int sx = t.cx;
-        final int sz = t.cz - 4;
-        final int gy = groundY(sx, sz);
-        if (world.getBlockAt(sx, gy + 1, sz).getType().isAir()
-                || world.getBlockAt(sx, gy + 1, sz).getType() == Material.OAK_FENCE) {
-            world.getBlockAt(sx, gy + 1, sz).setType(Material.OAK_FENCE, false);
+    private static final String PANEL_TAG = "aetheria_panel";
+
+    /** Panel HOLOGRAFICO de color (Text Display) flotando sobre la plaza: nombre del pueblo,
+     *  alcalde, habitantes y prosperidad — como una pantalla de informacion, sin carteles. */
+    private void infoPanel(int vid, Town t, String alcalde) {
+        final int gy = groundY(t.cx, t.cz);
+        // Limpia posibles carteles/poste viejos apilados (bug anterior) sobre el punto del cartel.
+        for (int yy = gy; yy <= gy + 20; yy++) {
+            final Material m = world.getBlockAt(t.cx, yy, t.cz - 4).getType();
+            if (m == Material.OAK_SIGN || m == Material.OAK_WALL_SIGN || m == Material.OAK_FENCE) {
+                world.getBlockAt(t.cx, yy, t.cz - 4).setType(Material.AIR, false);
+            }
         }
-        final org.bukkit.block.Block b = world.getBlockAt(sx, gy + 2, sz);
-        if (b.getType() != Material.OAK_SIGN) {
-            b.setType(Material.OAK_SIGN, false);
+        final Location loc = new Location(world, t.cx + 0.5, gy + 3.4, t.cz + 0.5);
+        final String tag = PANEL_TAG + "_" + vid;
+        TextDisplay panel = null;
+        for (final org.bukkit.entity.Entity e : world.getNearbyEntities(loc, 10, 10, 10)) {
+            if (e instanceof TextDisplay td && e.getScoreboardTags().contains(tag)) {
+                panel = td;
+                break;
+            }
         }
-        if (b.getBlockData() instanceof org.bukkit.block.data.Rotatable rot) {
-            rot.setRotation(BlockFace.SOUTH);
-            b.setBlockData(rot, false);
+        if (panel == null) {
+            panel = (TextDisplay) world.spawnEntity(loc, EntityType.TEXT_DISPLAY);
+            panel.addScoreboardTag(PANEL_TAG);
+            panel.addScoreboardTag(tag);
+            panel.setBillboard(Display.Billboard.CENTER);   // siempre mira al jugador
+            panel.setSeeThrough(false);
+            panel.setPersistent(true);
+            panel.setBackgroundColor(Color.fromARGB(190, 15, 15, 25));
+            panel.setAlignment(TextDisplay.TextAlignment.CENTER);
         }
-        if (b.getState() instanceof org.bukkit.block.Sign s) {
-            s.getSide(org.bukkit.block.sign.Side.FRONT).line(0, Component.text("§6" + t.name));
-            s.getSide(org.bukkit.block.sign.Side.FRONT).line(1, Component.text("§0Alcalde:"));
-            s.getSide(org.bukkit.block.sign.Side.FRONT).line(2,
-                    Component.text("§1" + (alcalde.isEmpty() ? "sin nombrar" : alcalde)));
-            s.update(true);
-        }
+        final int hab = countInTown(vid);
+        panel.text(Component.text(
+                "§6§l" + t.name + "\n"
+                + "§r§8· pueblo de Aetheria ·\n \n"
+                + "§7Alcalde: §e" + (alcalde.isEmpty() ? "sin nombrar" : alcalde) + "\n"
+                + "§7Habitantes: §a" + hab));
+        panel.teleport(loc);
     }
 
     /** Cada oficio deposita 1 unidad de su produccion en el granero (barril) de su aldea. */
@@ -1201,7 +1421,7 @@ public final class SettlementModule implements Listener {
     private Colono ownerAt(Block b) {
         for (final Colono c : colonos) {
             final int fy = c.y - 1;
-            if (b.getX() >= c.x - 6 && b.getX() <= c.x + 12 && b.getZ() >= c.z - 6 && b.getZ() <= c.z + 6
+            if (b.getX() >= c.x - 6 && b.getX() <= c.x + 7 && b.getZ() >= c.z - 6 && b.getZ() <= c.z + 6
                     && b.getY() >= fy && b.getY() <= fy + c.floors * 6 + 8) {
                 return c;
             }
@@ -1243,6 +1463,11 @@ public final class SettlementModule implements Listener {
                     + "no puedes destruir ni coger nada suyo.");
             return true;
         }
+        if (buildingAt(b)) {
+            player.sendMessage("§cEsto es un edificio del pueblo (donde trabajan los aldeanos). "
+                    + "No puedes destruirlo.");
+            return true;
+        }
         if (inVillageCore(b)) {
             player.sendMessage("§cEsto pertenece al pueblo de Aetheria. No puedes tocarlo.");
             return true;
@@ -1268,12 +1493,12 @@ public final class SettlementModule implements Listener {
      *  de bloques a volar). Asi no hay que reconstruir: sencillamente no se rompen. */
     @EventHandler(ignoreCancelled = true)
     public void onExplode(EntityExplodeEvent e) {
-        e.blockList().removeIf(b -> ownerAt(b) != null || inVillageCore(b));
+        e.blockList().removeIf(b -> ownerAt(b) != null || buildingAt(b) || inVillageCore(b));
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onBlockExplode(BlockExplodeEvent e) {
-        e.blockList().removeIf(b -> ownerAt(b) != null || inVillageCore(b));
+        e.blockList().removeIf(b -> ownerAt(b) != null || buildingAt(b) || inVillageCore(b));
     }
 
     /** Al ENTRAR en la zona de una aldea, aparece SU nombre en pantalla dando la bienvenida. */
@@ -1484,7 +1709,7 @@ public final class SettlementModule implements Listener {
     /** Demuele la casa de un colono (al morir o emigrar): la retira y deja un solar de cesped. */
     private void demolish(Colono c) {
         final int fy = c.y - 1;
-        for (int dx = -6; dx <= 12; dx++) {   // cubre la casa (±6) y el puesto de trabajo (al este)
+        for (int dx = -6; dx <= 7; dx++) {    // solo la CASA (los edificios de oficio son permanentes)
             for (int dz = -6; dz <= 6; dz++) {
                 for (int y = fy; y <= fy + c.floors * 6 + 8; y++) {
                     if (!world.getBlockAt(c.x + dx, y, c.z + dz).getType().isAir()) {

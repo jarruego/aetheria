@@ -160,7 +160,7 @@ services:
 
   # Main: mundo persistente (economia, ciudades, IA). Solo accesible via Velocity.
   main:
-    image: itzg/minecraft-server
+    image: itzg/minecraft-server:java25   # Java 25: FAWE 2.15.3 requiere class v69 (piston); en 21 no arranca
     environment:
       EULA: "TRUE"
       TYPE: "PAPER"

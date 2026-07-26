@@ -418,6 +418,9 @@ public final class Blueprint {
         // jugador (beds<0): salon/cocina/dormitorio por planta como antes.
         if (beds >= 1) {
             furnishVillager(world, cx, cz, floorY, halfX, halfZ, door, beds);
+        } else if (beds == 0) {
+            // Cascaron VACIO (para edificios de oficio: el interior lo pone quien lo llama).
+            set(world, cx, floorY + 4, cz, Material.LANTERN);   // solo una luz colgante
         } else {
             for (int fl = 0; fl < floors; fl++) {
                 final int shrink = (setback && fl == floors - 1 && floors > 1) ? 1 : 0;

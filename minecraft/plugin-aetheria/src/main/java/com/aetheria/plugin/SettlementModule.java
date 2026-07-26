@@ -1,5 +1,9 @@
 package com.aetheria.plugin;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -59,6 +63,89 @@ public final class SettlementModule {
     }
 
     private final List<Child> children = new ArrayList<>();
+    private final List<int[]> placed = new ArrayList<>();   // (x,z) de las casas ya colocadas
+    private final List<String> records = new ArrayList<>(); // colonos persistidos (nombre;oficio;x;y;z)
+    private final File dataFile;
+
+    /** Altura del SUELO real (ignora hojas, troncos y plantas), escaneando hacia abajo. */
+    private int groundY(int x, int z) {
+        int y = world.getHighestBlockYAt(x, z);
+        for (int i = 0; i < 40 && y > world.getMinHeight() + 1; i++, y--) {
+            final Material m = world.getBlockAt(x, y, z).getType();
+            final String n = m.name();
+            final boolean tree = n.contains("LEAVES") || n.contains("LOG") || n.contains("_WOOD")
+                    || n.contains("MUSHROOM_BLOCK");
+            if (m.isSolid() && !tree) {
+                return y;
+            }
+        }
+        return y;
+    }
+
+    /** True si (x,z) esta demasiado cerca de otra casa o del centro del pueblo. */
+    private boolean tooClose(int x, int z) {
+        final Location plaza = village.plaza();
+        if (Math.hypot(x - plaza.getX(), z - plaza.getZ()) < 16) {
+            return true;
+        }
+        for (final int[] p : placed) {
+            if (Math.hypot(x - p[0], z - p[1]) < 13) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Busca un sitio LLANO ya existente para una casa: prueba posiciones aleatorias alrededor
+     * del pueblo (mas lejos conforme crece) y elige la mas plana sin agua. Devuelve {cx,cz,fy}.
+     */
+    private int[] findBuildSpot(int index) {
+        final var rng = ThreadLocalRandom.current();
+        final Location plaza = village.plaza();
+        final int px = plaza.getBlockX();
+        final int pz = plaza.getBlockZ();
+        int[] best = null;
+        int bestFlat = Integer.MAX_VALUE;
+        for (int t = 0; t < 24; t++) {
+            final double ang = rng.nextDouble() * Math.PI * 2;
+            final int dist = 20 + index * 2 + rng.nextInt(34);
+            final int cx = px + (int) Math.round(Math.cos(ang) * dist);
+            final int cz = pz + (int) Math.round(Math.sin(ang) * dist);
+            if (tooClose(cx, cz)) {
+                continue;
+            }
+            int min = Integer.MAX_VALUE;
+            int max = Integer.MIN_VALUE;
+            long sum = 0;
+            boolean water = false;
+            for (int dx = -4; dx <= 4 && !water; dx++) {
+                for (int dz = -4; dz <= 4; dz++) {
+                    final int gy = groundY(cx + dx, cz + dz);
+                    if (world.getBlockAt(cx + dx, gy, cz + dz).isLiquid()) {
+                        water = true;
+                        break;
+                    }
+                    min = Math.min(min, gy);
+                    max = Math.max(max, gy);
+                    sum += gy;
+                }
+            }
+            if (water) {
+                continue;
+            }
+            final int flat = max - min;
+            final int fy = Math.round(sum / 81f);
+            if (flat <= 2) {
+                return new int[] {cx, cz, fy};   // sitio ya casi llano: perfecto
+            }
+            if (flat < bestFlat) {
+                bestFlat = flat;
+                best = new int[] {cx, cz, fy};
+            }
+        }
+        return best;   // el mas llano encontrado (o null si todo estaba pegado)
+    }
 
     public SettlementModule(AetheriaPlugin plugin, GatewayClient gateway, VillageModule village,
             NpcRoutineModule routines, World world) {
@@ -67,19 +154,68 @@ public final class SettlementModule {
         this.village = village;
         this.routines = routines;
         this.world = world;
+        plugin.getDataFolder().mkdirs();
+        this.dataFile = new File(plugin.getDataFolder(), "colonos.txt");
     }
 
     public void start() {
-        // Red de caminos: avenida este-oeste y prolongacion de la calle mayor hacia el barrio.
-        final int sx = village.spawnX();
-        final int sz = village.spawnZ();
-        road(sx - 40, sx + 40, sz + 38, sz + 38);
-        road(sx, sx, sz + 34, sz + 38);
         world.getEntities().stream()   // limpia bebes huerfanos de sesiones anteriores
                 .filter(e -> e.getScoreboardTags().contains(BABY_TAG))
                 .forEach(org.bukkit.entity.Entity::remove);
+        load();   // reaparecen los colonos ya existentes en sus casas (sin reconstruir)
         plugin.getServer().getScheduler().runTaskTimer(plugin, this::reconcile, PERIOD, PERIOD);
-        plugin.getLogger().info("[Aetheria] Pueblo vivo: reconciliando poblacion cada 60 s.");
+        plugin.getLogger().info("[Aetheria] Pueblo vivo: reconciliando poblacion cada 60 s ("
+                + records.size() + " colonos cargados).");
+    }
+
+    /** Reaparece a los colonos guardados en sus casas (los bloques ya persisten en el mundo). */
+    private void load() {
+        if (!dataFile.exists()) {
+            return;
+        }
+        try (BufferedReader r = new BufferedReader(new FileReader(dataFile))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                final String[] f = line.split(";");
+                if (f.length < 5) {
+                    continue;
+                }
+                final String name = f[0];
+                final Villager.Profession prof = profFromKey(f[1]);
+                final int x = Integer.parseInt(f[2]);
+                final int y = Integer.parseInt(f[3]);
+                final int z = Integer.parseInt(f[4]);
+                routines.addColono("colono", name, new Location(world, x + 0.5, y, z + 0.5),
+                        village.plaza(), prof);
+                placed.add(new int[] {x, z});
+                records.add(line);
+            }
+        } catch (Exception e) {   // nunca hacemos caer el plugin por esto
+            plugin.getLogger().warning("[Aetheria] no pude cargar colonos: " + e.getMessage());
+        }
+    }
+
+    private void save() {
+        try (FileWriter w = new FileWriter(dataFile, false)) {
+            for (final String rec : records) {
+                w.write(rec + "\n");
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Aetheria] no pude guardar colonos: " + e.getMessage());
+        }
+    }
+
+    private static String profKey(Villager.Profession p) {
+        return p.getKey().getKey();
+    }
+
+    private static Villager.Profession profFromKey(String key) {
+        for (final Villager.Profession p : PROFS) {
+            if (p.getKey().getKey().equals(key)) {
+                return p;
+            }
+        }
+        return Villager.Profession.FARMER;
     }
 
     private void reconcile() {
@@ -191,20 +327,27 @@ public final class SettlementModule {
     }
 
     private void growAdult(int index, String name) {
-        final Location slot = village.expansionSlot(index);
-        final int cx = slot.getBlockX();
-        final int cz = slot.getBlockZ();
-        final int fy = village.baseY();
+        final int[] spot = findBuildSpot(index);
+        if (spot == null) {
+            return;   // no encontro sitio libre; lo reintenta el proximo ciclo
+        }
+        final int cx = spot[0];
+        final int cz = spot[1];
+        final int fy = spot[2];
         final var rng = ThreadLocalRandom.current();
         final Villager.Profession prof = PROFS[rng.nextInt(PROFS.length)];
         final Material[] pal = COMBOS[rng.nextInt(COMBOS.length)];
         final int floors = 1 + rng.nextInt(2);
+        final BlockFace door = towardPlaza(cx, cz);        // la puerta mira al pueblo
 
-        yard(cx, cz, fy);                                   // nivela patio (suelo + desbroce)
-        Blueprint.buildHouse(world, cx, cz, fy, BlockFace.NORTH, 3, floors,
+        prepareTerrain(cx, cz, fy);                        // tala arboles + nivela SUAVE al suelo real
+        Blueprint.buildHouse(world, cx, cz, fy, door, 3, floors,
                 pal[0], pal[1], pal[2], pal[3], true, name);
-        professionFeature(cx, cz, fy, prof, rng);          // rasgo del oficio
-        road(cx, cx, village.spawnZ() + 38, cz - 4);       // camino a la avenida
+        professionFeature(cx, cz, fy, prof, rng);
+        pathTo(cx, cz, village.plaza());                   // sendero que sigue el relieve al pueblo
+        placed.add(new int[] {cx, cz});
+        records.add(name + ";" + profKey(prof) + ";" + cx + ";" + (fy + 1) + ";" + cz);
+        save();
 
         final Location home = new Location(world, cx + 0.5, fy + 1, cz + 0.5);
         routines.addColono("colono", name, home, village.plaza(), prof);
@@ -213,63 +356,80 @@ public final class SettlementModule {
         plugin.getLogger().info("[Aetheria] Pueblo vivo: +1 colono (" + name + ", " + prof + ").");
     }
 
+    private BlockFace towardPlaza(int cx, int cz) {
+        final Location plaza = village.plaza();
+        final int dx = plaza.getBlockX() - cx;
+        final int dz = plaza.getBlockZ() - cz;
+        if (Math.abs(dx) >= Math.abs(dz)) {
+            return dx >= 0 ? BlockFace.EAST : BlockFace.WEST;
+        }
+        return dz >= 0 ? BlockFace.SOUTH : BlockFace.NORTH;
+    }
+
+    /** Tala arboles del hueco y nivela SUAVE (poco) el terreno al nivel del suelo real. */
+    private void prepareTerrain(int cx, int cz, int fy) {
+        for (int dx = -5; dx <= 5; dx++) {
+            for (int dz = -5; dz <= 5; dz++) {
+                final int x = cx + dx;
+                final int z = cz + dz;
+                for (int y = fy + 1; y <= fy + 14; y++) {   // despeja/tala por encima
+                    if (!world.getBlockAt(x, y, z).getType().isAir()) {
+                        world.getBlockAt(x, y, z).setType(Material.AIR, false);
+                    }
+                }
+                final int gy = groundY(x, z);
+                if (gy < fy) {                               // rellena lo que falta (poco)
+                    for (int y = gy + 1; y <= fy; y++) {
+                        world.getBlockAt(x, y, z).setType(Material.DIRT, false);
+                    }
+                }
+                world.getBlockAt(x, fy, z).setType(Material.GRASS_BLOCK, false);
+            }
+        }
+    }
+
+    /** Sendero (dirt path) que sigue el relieve desde la casa hacia la plaza. */
+    private void pathTo(int cx, int cz, Location plaza) {
+        int x = cx;
+        int z = cz;
+        final int tx = plaza.getBlockX();
+        final int tz = plaza.getBlockZ();
+        for (int guard = 0; (x != tx || z != tz) && guard < 130; guard++) {
+            if (Math.abs(tx - x) >= Math.abs(tz - z)) {
+                x += Integer.signum(tx - x);
+            } else {
+                z += Integer.signum(tz - z);
+            }
+            final int gy = groundY(x, z);
+            final Material below = world.getBlockAt(x, gy, z).getType();
+            if (below == Material.WATER || below == Material.LAVA) {
+                continue;
+            }
+            if (below == Material.GRASS_BLOCK || below == Material.DIRT || below == Material.STONE
+                    || below == Material.GRAVEL || below == Material.COARSE_DIRT) {
+                world.getBlockAt(x, gy, z).setType(Material.DIRT_PATH, false);
+            }
+            world.getBlockAt(x, gy + 1, z).setType(Material.AIR, false);
+            world.getBlockAt(x, gy + 2, z).setType(Material.AIR, false);
+        }
+    }
+
     private void shrink() {
         final String name = routines.removeNewestColono();
         if (name != null) {
+            if (!records.isEmpty()) {
+                records.remove(records.size() - 1);
+            }
+            if (!placed.isEmpty()) {
+                placed.remove(placed.size() - 1);
+            }
+            save();
             Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                     "§7[Pueblo] " + name + " ha hecho las maletas y ha emigrado a otra tierra."));
             plugin.getLogger().info("[Aetheria] Pueblo vivo: -1 colono (" + name + " emigra).");
         }
     }
 
-    /** Nivela un patio 13x13 al nivel del pueblo: suelo de cesped, relleno abajo y desbroce arriba. */
-    private void yard(int cx, int cz, int fy) {
-        for (int dx = -6; dx <= 6; dx++) {
-            for (int dz = -6; dz <= 6; dz++) {
-                for (int y = fy - 1; y >= fy - 7; y--) {
-                    final var b = world.getBlockAt(cx + dx, y, cz + dz);
-                    if (b.getType().isAir() || b.isLiquid()) {
-                        b.setType(Material.DIRT, false);
-                    } else {
-                        break;
-                    }
-                }
-                world.getBlockAt(cx + dx, fy, cz + dz).setType(Material.GRASS_BLOCK, false);
-                for (int y = fy + 1; y <= fy + 16; y++) {
-                    if (!world.getBlockAt(cx + dx, y, cz + dz).getType().isAir()) {
-                        world.getBlockAt(cx + dx, y, cz + dz).setType(Material.AIR, false);
-                    }
-                }
-            }
-        }
-    }
-
-    /** Camino de grava recto (nivelado) entre dos puntos, al nivel del pueblo. */
-    private void road(int x0, int x1, int z0, int z1) {
-        final int fy = village.baseY();
-        final int xa = Math.min(x0, x1);
-        final int xb = Math.max(x0, x1);
-        final int za = Math.min(z0, z1);
-        final int zb = Math.max(z0, z1);
-        for (int x = xa; x <= xb; x++) {
-            for (int z = za; z <= zb; z++) {
-                for (int y = fy - 1; y >= fy - 7; y--) {
-                    final var b = world.getBlockAt(x, y, z);
-                    if (b.getType().isAir() || b.isLiquid()) {
-                        b.setType(Material.DIRT, false);
-                    } else {
-                        break;
-                    }
-                }
-                world.getBlockAt(x, fy, z).setType(Material.GRAVEL, false);
-                for (int y = fy + 1; y <= fy + 4; y++) {
-                    if (!world.getBlockAt(x, y, z).getType().isAir()) {
-                        world.getBlockAt(x, y, z).setType(Material.AIR, false);
-                    }
-                }
-            }
-        }
-    }
 
     /** Un pequeno rasgo junto a la casa segun el oficio (al este). Profession ya no es enum. */
     private void professionFeature(int cx, int cz, int fy, Villager.Profession prof, java.util.Random rng) {

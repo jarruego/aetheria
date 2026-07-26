@@ -79,6 +79,8 @@ services:
     environment:
       # Sobrescribe DATABASE_URL de .env para apuntar al servicio 'postgres'.
       DATABASE_URL: postgresql://${POSTGRES_USER:-aetheria}:${POSTGRES_PASSWORD:-aetheria-local-dev}@postgres:5432/${POSTGRES_DB:-aetheria}
+      # Fase 8: cada cuanto evoluciona la economia del pueblo (segundos).
+      SIM_TICK_SECONDS: "${SIM_TICK_SECONDS:-180}"
     ports:
       # SOLO localhost: read-model interno, sin autenticacion propia.
       - "127.0.0.1:8070:8070"

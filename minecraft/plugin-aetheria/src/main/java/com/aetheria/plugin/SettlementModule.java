@@ -220,10 +220,12 @@ public final class SettlementModule implements Listener {
         int[] best = null;
         int bestFlat = Integer.MAX_VALUE;
         // Banda COMPACTA alrededor de la plaza (no crece con la poblacion): la aldea se agrupa
-        // en anillos en vez de ensancharse sin fin. Los caminos a la plaza las conectan.
-        for (int t = 0; t < 48; t++) {
+        // en anillos en vez de ensancharse sin fin. Los caminos a la plaza las conectan. Si en
+        // la banda cercana no cabe (agua, construcciones...), se amplia la busqueda para no
+        // quedarse SIN fundar el pueblo en spawns dificiles.
+        for (int t = 0; t < 80; t++) {
             final double ang = rng.nextDouble() * Math.PI * 2;
-            final int dist = 16 + rng.nextInt(26);
+            final int dist = 16 + rng.nextInt(t < 40 ? 26 : 90);
             final int cx = px + (int) Math.round(Math.cos(ang) * dist);
             final int cz = pz + (int) Math.round(Math.sin(ang) * dist);
             if (tooClose(cx, cz)) {
@@ -464,7 +466,10 @@ public final class SettlementModule implements Listener {
                 final var rng = ThreadLocalRandom.current();
                 // Hasta tener 2 adultos fundadores, llegan adultos directos; luego, nacen ninos.
                 if (adults < 2 || target - have >= 2) {
-                    final String g = randGender(rng);
+                    // Los dos fundadores son de distinto sexo (para que puedan formar familia).
+                    final String g = adults == 1
+                            ? ("f".equals(colonos.get(0).gender) ? "m" : "f")
+                            : randGender(rng);
                     growAdult(colonos.size(), freshName(g, rng), g, 20 + rng.nextInt(40), "");
                 } else if (!bearChild()) {
                     final String g = randGender(rng);   // sin pareja fertil, llega un inmigrante

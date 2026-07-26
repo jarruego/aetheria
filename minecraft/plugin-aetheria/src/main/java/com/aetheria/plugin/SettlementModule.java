@@ -38,6 +38,8 @@ public final class SettlementModule implements Listener {
         Villager.Profession.FISHERMAN, Villager.Profession.SHEPHERD, Villager.Profession.MASON,
         Villager.Profession.LIBRARIAN, Villager.Profession.TOOLSMITH, Villager.Profession.BUTCHER,
         Villager.Profession.FLETCHER};
+    private static final Material[] FLOWERS = {Material.POPPY, Material.DANDELION,
+        Material.BLUE_ORCHID, Material.ALLIUM, Material.OXEYE_DAISY, Material.CORNFLOWER};
     private static final Material[][] COMBOS = {
         {Material.OAK_PLANKS, Material.SPRUCE_LOG, Material.DARK_OAK_PLANKS, Material.COBBLESTONE},
         {Material.STONE_BRICKS, Material.CHISELED_STONE_BRICKS, Material.COBBLESTONE, Material.MOSSY_STONE_BRICKS},
@@ -52,6 +54,7 @@ public final class SettlementModule implements Listener {
     private final ConversationManager convo;
     private final World world;
     private int farmRadius = 2;   // los cultivos del pueblo se amplian con el tiempo
+    private int civic = 0;        // mejoras civicas de la plaza ya construidas (persistido)
 
     private static final String BABY_TAG = "aetheria_baby";
     private static final long GROW_MS = 6 * 60 * 1000L;   // un bebe tarda ~6 min en hacerse adulto
@@ -105,6 +108,7 @@ public final class SettlementModule implements Listener {
     private final List<int[]> placed = new ArrayList<>();   // (x,z) de las casas ya colocadas
     private final List<Colono> colonos = new ArrayList<>(); // colonos adultos (con edad), persistidos
     private final File dataFile;
+    private final File civicFile;
 
     /** Altura del SUELO real (ignora hojas, troncos y plantas), escaneando hacia abajo. */
     private int groundY(int x, int z) {
@@ -196,6 +200,7 @@ public final class SettlementModule implements Listener {
         this.world = world;
         plugin.getDataFolder().mkdirs();
         this.dataFile = new File(plugin.getDataFolder(), "colonos.txt");
+        this.civicFile = new File(plugin.getDataFolder(), "civic.txt");
     }
 
     public void start() {
@@ -203,6 +208,7 @@ public final class SettlementModule implements Listener {
                 .filter(e -> e.getScoreboardTags().contains(BABY_TAG))
                 .forEach(org.bukkit.entity.Entity::remove);
         load();   // reaparecen los colonos ya existentes en sus casas (sin reconstruir)
+        loadCivic();
         plugin.getServer().getScheduler().runTaskTimer(plugin, this::reconcile, PERIOD, PERIOD);
         plugin.getLogger().info("[Aetheria] Pueblo vivo: reconciliando poblacion cada 60 s ("
                 + colonos.size() + " colonos cargados).");
@@ -430,6 +436,7 @@ public final class SettlementModule implements Listener {
         if (!level.equals("prospero") && !level.equals("floreciente")) {
             return;
         }
+        maybeCivic(level);   // la prosperidad tambien mejora la plaza (no solo el dinero)
         if (farmRadius >= 7 || ThreadLocalRandom.current().nextInt(100) >= 45) {
             return;
         }
@@ -458,6 +465,96 @@ public final class SettlementModule implements Listener {
         if (planted > 0) {
             Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                     "§7[Pueblo] Los granjeros han ampliado los cultivos del pueblo."));
+        }
+    }
+
+    // Mejoras civicas de la plaza, en orden: (dx, dz, tipo) respecto al centro de la plaza.
+    // tipo: 0 farola, 1 jardin, 2 banco, 3 puesto de mercado.
+    private static final int[][] CIVIC = {
+        {5, 5, 0}, {-5, 5, 0}, {5, -5, 0}, {-5, -5, 0},        // faroles en las esquinas
+        {8, 0, 1}, {-8, 0, 1}, {0, 8, 1}, {0, -8, 1},          // jardines en los lados
+        {9, 6, 3}, {-9, 6, 3},                                  // dos puestos de mercado
+        {7, -7, 2}, {-7, -7, 2}, {7, 7, 2}, {-7, 7, 2},        // bancos
+        {11, 0, 0}, {-11, 0, 0}, {0, 11, 0}, {0, -11, 0},      // mas faroles (caminos)
+    };
+
+    /** Cuando el pueblo prospera, mejora fisicamente la plaza (no solo el dinero). */
+    private void maybeCivic(String level) {
+        if (civic >= CIVIC.length) {
+            return;
+        }
+        final int chance = level.equals("floreciente") ? 45 : 22;
+        if (ThreadLocalRandom.current().nextInt(100) >= chance) {
+            return;
+        }
+        final int[] u = CIVIC[civic];
+        final Location plaza = village.plaza();
+        buildCivic(plaza.getBlockX() + u[0], plaza.getBlockZ() + u[1], u[2]);
+        civic++;
+        saveCivic();
+        Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
+                "§7[Pueblo] La prosperidad se nota: el pueblo ha mejorado la plaza."));
+        gateway.postEvent("mejora", "El pueblo, prospero, ha embellecido su plaza.");
+    }
+
+    private void buildCivic(int x, int z, int type) {
+        final int gy = groundY(x, z);
+        switch (type) {
+            case 0 -> {   // farola
+                world.getBlockAt(x, gy, z).setType(Material.COBBLESTONE, false);
+                world.getBlockAt(x, gy + 1, z).setType(Material.OAK_FENCE, false);
+                world.getBlockAt(x, gy + 2, z).setType(Material.OAK_FENCE, false);
+                world.getBlockAt(x, gy + 3, z).setType(Material.LANTERN, false);
+            }
+            case 1 -> {   // jardin 3x3 con cerca y flores
+                int f = 0;
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        world.getBlockAt(x + dx, gy, z + dz).setType(Material.GRASS_BLOCK, false);
+                        final boolean edge = Math.abs(dx) == 1 || Math.abs(dz) == 1;
+                        world.getBlockAt(x + dx, gy + 1, z + dz).setType(
+                                edge ? Material.OAK_FENCE : FLOWERS[(f++) % FLOWERS.length], false);
+                    }
+                }
+                world.getBlockAt(x, gy + 2, z).setType(Material.LANTERN, false);
+            }
+            case 2 -> {   // banco (dos escalones mirando al centro) con farol
+                world.getBlockAt(x, gy + 1, z).setType(Material.OAK_STAIRS, false);
+                world.getBlockAt(x + 1, gy + 1, z).setType(Material.OAK_STAIRS, false);
+                world.getBlockAt(x - 1, gy + 1, z).setType(Material.OAK_FENCE, false);
+                world.getBlockAt(x - 1, gy + 2, z).setType(Material.LANTERN, false);
+            }
+            default -> { // puesto de mercado: mostrador con toldo y barril
+                world.getBlockAt(x, gy + 1, z).setType(Material.OAK_FENCE, false);
+                world.getBlockAt(x + 1, gy + 1, z).setType(Material.OAK_FENCE, false);
+                world.getBlockAt(x, gy + 2, z).setType(Material.OAK_SLAB, false);
+                world.getBlockAt(x + 1, gy + 2, z).setType(Material.OAK_SLAB, false);
+                world.getBlockAt(x, gy + 3, z).setType(Material.RED_WOOL, false);
+                world.getBlockAt(x + 1, gy + 3, z).setType(Material.WHITE_WOOL, false);
+                world.getBlockAt(x, gy + 1, z + 1).setType(Material.BARREL, false);
+            }
+        }
+    }
+
+    private void loadCivic() {
+        if (!civicFile.exists()) {
+            return;
+        }
+        try (BufferedReader r = new BufferedReader(new FileReader(civicFile))) {
+            final String line = r.readLine();
+            if (line != null && !line.isBlank()) {
+                civic = Math.max(0, Math.min(CIVIC.length, Integer.parseInt(line.trim())));
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Aetheria] no pude cargar civic: " + e.getMessage());
+        }
+    }
+
+    private void saveCivic() {
+        try (FileWriter w = new FileWriter(civicFile, false)) {
+            w.write(Integer.toString(civic));
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Aetheria] no pude guardar civic: " + e.getMessage());
         }
     }
 

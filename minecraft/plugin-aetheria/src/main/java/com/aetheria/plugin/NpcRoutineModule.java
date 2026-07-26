@@ -89,6 +89,39 @@ public final class NpcRoutineModule {
         }
     }
 
+    private static final int BASE = 3;   // Nara, Pol y Sella son fijos
+
+    /** Cuantos colonos (vecinos extra al nucleo) hay ahora mismo. */
+    public int colonoCount() {
+        return Math.max(0, workers.size() - BASE);
+    }
+
+    /** Da de alta un colono nuevo (con oficio al azar) que vive y trabaja donde se indica. */
+    public void addColono(String npcId, String name, Location home, Location work) {
+        final Worker w = new Worker(npcId, name, home, work, village.plaza());
+        w.entity = spawnWorker(w);
+        if (w.entity instanceof Villager v) {
+            final Villager.Profession[] profs = {Villager.Profession.FARMER,
+                Villager.Profession.LIBRARIAN, Villager.Profession.FISHERMAN,
+                Villager.Profession.FLETCHER, Villager.Profession.SHEPHERD, Villager.Profession.MASON,
+                Villager.Profession.BUTCHER, Villager.Profession.TOOLSMITH};
+            v.setProfession(profs[java.util.concurrent.ThreadLocalRandom.current().nextInt(profs.length)]);
+        }
+        workers.add(w);
+    }
+
+    /** Da de baja al colono mas reciente (emigra). Nunca toca al nucleo. Devuelve su nombre. */
+    public String removeNewestColono() {
+        if (workers.size() <= BASE) {
+            return null;
+        }
+        final Worker w = workers.remove(workers.size() - 1);
+        if (w.entity != null) {
+            w.entity.remove();
+        }
+        return w.name;
+    }
+
     private void clearOld() {
         world.getEntities().stream()
                 .filter(e -> e.getScoreboardTags().contains(WORKER_TAG))

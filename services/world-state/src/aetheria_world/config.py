@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     sim_income_min: float = 5.0      # ingreso minimo por negocio y tick (AET)
     sim_income_max: float = 30.0     # ingreso maximo por negocio y tick (AET)
 
+    # Pueblo vivo: la poblacion crece/mengua con la prosperidad (limites).
+    sim_min_population: int = 3
+    sim_max_population: int = 14
+
     # Fase 9: reclamar una parcela (un chunk).
     claim_price: float = 50.0            # compra fija (para siempre)
     claim_rent_deposit: float = 10.0     # deposito al alquilar

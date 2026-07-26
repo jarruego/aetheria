@@ -201,6 +201,11 @@ public final class GatewayClient {
         return getJson("/v1/prosperity");
     }
 
+    /** Estado del pueblo vivo: {population, level, wealth}. */
+    public CompletableFuture<JsonObject> getVillage() {
+        return getJson("/v1/village");
+    }
+
     /** Cronica del mundo (Fase 8): sucesos autonomos recientes, del mas nuevo al mas viejo. */
     public CompletableFuture<com.google.gson.JsonArray> getWorldEvents(int limit) {
         final HttpRequest request = HttpRequest.newBuilder()

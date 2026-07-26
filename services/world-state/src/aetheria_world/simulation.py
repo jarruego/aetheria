@@ -149,6 +149,44 @@ async def prosperity(conn) -> dict:
     return {"level": level, "wealth": round(total, 2), "businesses": len(_BUSINESSES)}
 
 
+async def evolve_population(conn) -> dict:
+    """Ajusta la poblacion OBJETIVO del pueblo segun su prosperidad (crece o emigra)."""
+    prov = await prosperity(conn)
+    row = await conn.fetchrow("select population from settlement where world = 'main'")
+    pop = row["population"] if row else settings.sim_min_population
+    old = pop
+    level = prov["level"]
+    r = random.random()
+    if level == "floreciente" and pop < settings.sim_max_population and r < 0.35:
+        pop += 1
+    elif level == "prospero" and pop < settings.sim_max_population and r < 0.15:
+        pop += 1
+    elif level == "en apuros" and pop > settings.sim_min_population and r < 0.30:
+        pop -= 1
+
+    if pop != old:
+        await conn.execute(
+            "update settlement set population = $1, updated_at = now() where world = 'main'", pop)
+        if pop > old:
+            await _event(conn, "growth",
+                         "El pueblo prospera: llega un nuevo vecino a instalarse.", {"population": pop})
+        else:
+            await _event(conn, "decline",
+                         "Tiempos duros: un vecino hace las maletas y emigra.", {"population": pop})
+    return {"population": pop, "level": level}
+
+
+async def village_state(conn) -> dict:
+    """Estado del pueblo: poblacion, prosperidad y riqueza."""
+    row = await conn.fetchrow("select population from settlement where world = 'main'")
+    prov = await prosperity(conn)
+    return {
+        "population": row["population"] if row else settings.sim_min_population,
+        "level": prov["level"],
+        "wealth": prov["wealth"],
+    }
+
+
 async def _event(conn, kind: str, description: str, data: dict) -> None:
     await conn.execute(
         "insert into world_events (kind, description, data) values ($1, $2, $3::jsonb)",
@@ -205,7 +243,8 @@ async def simulation_loop() -> None:
             async with pool().acquire() as conn:
                 async with conn.transaction():
                     summary = await run_tick(conn)
-                    rent = await collect_rent(conn)   # cobra alquileres vencidos
-            logger.info("Tick economico: %s | renta: %s", summary, rent)
+                    rent = await collect_rent(conn)       # cobra alquileres vencidos
+                    village = await evolve_population(conn)  # el pueblo crece o mengua
+            logger.info("Tick: %s | renta: %s | pueblo: %s", summary, rent, village)
         except Exception:  # noqa: BLE001 - la simulacion nunca debe tumbar el servicio
             logger.exception("Fallo un tick de simulacion (se continua).")

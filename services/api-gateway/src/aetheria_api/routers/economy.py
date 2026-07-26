@@ -49,3 +49,9 @@ async def world_events(limit: int = 20):
 async def prosperity():
     """Estado de prosperidad del pueblo (para mostrarlo en el HUD)."""
     return await _ws("GET", "/internal/world/prosperity")
+
+
+@router.get("/village", dependencies=[Depends(require_internal_token)])
+async def village():
+    """Estado del pueblo vivo (poblacion, prosperidad) para que el plugin reconcilie."""
+    return await _ws("GET", "/internal/village")

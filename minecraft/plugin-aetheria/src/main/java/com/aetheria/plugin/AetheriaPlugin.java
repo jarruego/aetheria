@@ -80,6 +80,9 @@ public final class AetheriaPlugin extends JavaPlugin {
                         new NpcRoutineModule(this, convo, gameWorld, village);
                 routines.start();
 
+                // Pueblo vivo: crece (casas + colonos) o mengua (emigracion) segun prosperidad.
+                new SettlementModule(this, gateway, village, routines, gameWorld).start();
+
                 // Viaje rapido por los puntos de interes (plaza, mercado, taberna, spawn).
                 final WarpModule warps = new WarpModule(village, gameWorld);
                 Objects.requireNonNull(getCommand("warp")).setExecutor(warps);

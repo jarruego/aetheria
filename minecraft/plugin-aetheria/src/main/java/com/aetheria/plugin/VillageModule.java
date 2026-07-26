@@ -40,6 +40,9 @@ public final class VillageModule {
     private Location mercaderWork;
     private Location plaza;
     private Location tavern;
+    private int sx;
+    private int sz;
+    private int baseY;
 
     public VillageModule(AetheriaPlugin plugin, World world) {
         this.plugin = plugin;
@@ -54,6 +57,17 @@ public final class VillageModule {
     public Location mercaderWork() { return mercaderWork.clone(); }
     public Location plaza() { return plaza.clone(); }
     public Location tavern() { return tavern.clone(); }
+    public int baseY() { return baseY; }
+
+    /** Centro de la casa nº i de expansion (rejilla de filas al sur del pueblo, 16 aparte). */
+    public Location expansionSlot(int i) {
+        final int perRow = 5;
+        final int col = i % perRow;
+        final int row = i / perRow;
+        final int x = sx + (col - perRow / 2) * 16;
+        final int z = sz + 42 + row * 16;
+        return new Location(world, x, baseY, z);
+    }
 
     /** Levanta la aldea al sur del spawn (detras del portal), en fila mirando al sur. */
     public void build() {
@@ -63,6 +77,9 @@ public final class VillageModule {
         // Cota FIJA (nivel del spawn): estable entre reinicios. Usar getHighestBlockYAt haria
         // que la aldea "trepara" en cada arranque (el tejado anterior pasa a ser lo mas alto).
         final int baseY = spawn.getBlockY() - 1;
+        this.sx = sx;
+        this.sz = sz;
+        this.baseY = baseY;
 
         // Limpia el volumen de la aldea (quita restos/vegetacion) para un rebuild limpio.
         clearArea(sx - 24, sx + 24, sz + 8, sz + 36, baseY + 1, baseY + 9);

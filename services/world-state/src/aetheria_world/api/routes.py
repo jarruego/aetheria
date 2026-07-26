@@ -34,8 +34,10 @@ from aetheria_world.models import (
     WorldSummary,
 )
 from aetheria_world.simulation import collect_rent as sim_collect_rent
+from aetheria_world.simulation import evolve_population as sim_evolve_population
 from aetheria_world.simulation import prosperity as sim_prosperity
 from aetheria_world.simulation import run_tick
+from aetheria_world.simulation import village_state as sim_village_state
 
 router = APIRouter(prefix="/internal", tags=["world-state"])
 
@@ -361,11 +363,14 @@ async def world_events(limit: int = 20) -> list[WorldEventOut]:
 
 @router.post("/sim/tick")
 async def sim_tick() -> dict:
-    """Fuerza un tick de simulacion (util para pruebas o para un cron externo)."""
+    """Fuerza un tick completo (economia + renta + poblacion). Pruebas o cron externo."""
     _require_db()
     async with pool().acquire() as conn:
         async with conn.transaction():
-            return await run_tick(conn)
+            economy = await run_tick(conn)
+            await sim_collect_rent(conn)
+            village = await sim_evolve_population(conn)
+    return {"economy": economy, "village": village}
 
 
 @router.get("/world/prosperity")
@@ -374,6 +379,14 @@ async def world_prosperity() -> dict:
     _require_db()
     async with pool().acquire() as conn:
         return await sim_prosperity(conn)
+
+
+@router.get("/village")
+async def village() -> dict:
+    """Estado del pueblo vivo: poblacion objetivo, prosperidad y riqueza."""
+    _require_db()
+    async with pool().acquire() as conn:
+        return await sim_village_state(conn)
 
 
 # --- Fase 9: estructuras sociales (parcelas reclamables, con propietario y proteccion) ---

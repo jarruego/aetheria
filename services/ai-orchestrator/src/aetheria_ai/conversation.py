@@ -79,6 +79,13 @@ _NPCS: dict[str, dict[str, str]] = {
         "where": "en el mercado del pueblo, entre sus puestos de colores",
         "help": "hablar del comercio del pueblo y animar a comprar y vender (/sell, /shop)",
     },
+    # Colonos que llegan cuando el pueblo prospera (poblacion dinamica).
+    "colono": {
+        "name": "un vecino nuevo",
+        "trait": "un colono recien llegado, curioso y trabajador, ilusionado con su casa nueva",
+        "where": "en el pueblo, en una de las casas nuevas de las afueras",
+        "help": "contar como le va instalarse en el pueblo y charlar de la vida aqui",
+    },
 }
 _NPCS["guia-creativo"] = _NPCS["guia-creative"]  # alias por si acaso
 _DEFAULT_NPC = {

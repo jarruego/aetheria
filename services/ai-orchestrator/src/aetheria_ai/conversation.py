@@ -15,12 +15,31 @@ demorar la respuesta.
 from __future__ import annotations
 
 import asyncio
+import time
 
 from aetheria_ai.config import settings
 from aetheria_ai.llm.base import LLMMessage
 from aetheria_ai.llm.factory import get_local_provider, get_provider
 from aetheria_ai.models.plan import ConversationRequest, ConversationResponse
+from aetheria_ai.validator.text_safety import sanitize_chat_text
 from aetheria_ai import world_state_client as ws
+
+# Rate-limit por jugador: nunca mas de _RL_MAX llamadas al LLM en _RL_WINDOW segundos.
+# Protege la cartera (el Nivel 3 puede ser de pago) y evita el spam a un NPC.
+_RL_WINDOW = 10.0
+_RL_MAX = 5
+_rl_hits: dict[str, list[float]] = {}
+
+
+def _rate_limited(player_id: str) -> bool:
+    now = time.monotonic()
+    hits = [t for t in _rl_hits.get(player_id, []) if now - t < _RL_WINDOW]
+    if len(hits) >= _RL_MAX:
+        _rl_hits[player_id] = hits
+        return True
+    hits.append(now)
+    _rl_hits[player_id] = hits
+    return False
 
 # Intents deterministas de Nivel 1 (sin IA).
 _LEVEL1_INTENTS: dict[str, str] = {
@@ -200,6 +219,11 @@ async def handle_conversation(request: ConversationRequest) -> ConversationRespo
     if level == 1:
         return ConversationResponse(reply=_match_level1(request.message) or "", level=1)
 
+    # Rate-limit: si el jugador dispara demasiadas frases seguidas, no se llama al LLM.
+    if _rate_limited(request.player_id):
+        return ConversationResponse(reply="Dame un momento, que no me da la cabeza para tanto.",
+                                    level=1)
+
     provider = get_local_provider() if level == 2 else get_provider()
     model = settings.llm_model_l2 if level == 2 else settings.llm_model_l3
 
@@ -216,6 +240,9 @@ async def handle_conversation(request: ConversationRequest) -> ConversationRespo
     messages.append(LLMMessage(role="user", content=request.message))
 
     reply = await provider.complete(messages, model=model, max_tokens=200, temperature=0.8)
+    # Filtro de contenido: la respuesta del LLM tampoco es de fiar (suplantacion de avisos
+    # del servidor, saltos de linea, textos enormes). Se sanea antes de que llegue al chat.
+    reply = sanitize_chat_text(reply) or "..."
 
     # Guarda el turno; el recuento decide si toca consolidar.
     await ws.append_npc_message(request.npc_id, request.player_id, "player", request.message)

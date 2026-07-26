@@ -444,9 +444,9 @@ async def claim_plot(body: PlotClaimIn) -> dict:
                 acc["id"], banco["id"], up_front, reason,
             )
             await conn.execute(
-                "insert into plots (world_id, owner_id, min_x, min_z, max_x, max_z, rental, rent, rent_due) "
-                "values ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-                world_id, player_id, body.min_x, body.min_z, body.max_x, body.max_z,
+                "insert into plots (world_id, owner_id, min_x, min_z, max_x, max_z, base_y, "
+                "rental, rent, rent_due) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+                world_id, player_id, body.min_x, body.min_z, body.max_x, body.max_z, body.base_y,
                 body.rental, rent, rent_due,
             )
             modo = "en alquiler" if body.rental else "en propiedad"
@@ -485,7 +485,8 @@ async def list_plots(world: str) -> list[PlotOut]:
         world_id = await _world_id(conn, world)
         rows = await conn.fetch(
             """
-            select p.min_x, p.min_z, p.max_x, p.max_z, p.rental, p.rent, pl.java_uuid, pl.username
+            select p.min_x, p.min_z, p.max_x, p.max_z, p.base_y, p.rental, p.rent,
+                   pl.java_uuid, pl.username
             from plots p left join players pl on pl.id = p.owner_id
             where p.world_id = $1
             """,
@@ -496,6 +497,7 @@ async def list_plots(world: str) -> list[PlotOut]:
             owner_uuid=str(r["java_uuid"]) if r["java_uuid"] else None,
             owner_name=r["username"],
             world=world, min_x=r["min_x"], min_z=r["min_z"], max_x=r["max_x"], max_z=r["max_z"],
+            base_y=r["base_y"] if r["base_y"] is not None else 64,
             rental=r["rental"], rent=float(r["rent"]),
         )
         for r in rows

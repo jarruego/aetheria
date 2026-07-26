@@ -10,8 +10,12 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.Sign;
+import org.bukkit.block.data.Bisected;
 import org.bukkit.block.data.Directional;
 import org.bukkit.block.data.type.Bed;
+import org.bukkit.block.data.type.Door;
+import org.bukkit.block.data.type.Ladder;
+import org.bukkit.block.data.type.Stairs;
 import org.bukkit.block.sign.Side;
 import org.bukkit.entity.Player;
 
@@ -72,9 +76,14 @@ public final class Blueprint {
      */
     public static int place(Player player, String name) {
         if ("house".equals(name)) {
-            // Casa por defecto (mediana, madera, amueblada) para el servicio de una linea.
-            return buildHouse(player, 2, Material.OAK_PLANKS, Material.SPRUCE_LOG,
-                    Material.DARK_OAK_PLANKS, true);
+            // Casa por defecto (mediana, 2 plantas, madera) para el servicio de una linea.
+            final BlockFace f = player.getFacing();
+            final int cx = player.getLocation().getBlockX() + f.getModX() * 5;
+            final int cz = player.getLocation().getBlockZ() + f.getModZ() * 5;
+            final int fy = player.getWorld().getHighestBlockYAt(cx, cz);
+            return buildHouse(player.getWorld(), cx, cz, fy, f.getOppositeFace(), 3, 2,
+                    Material.OAK_PLANKS, Material.SPRUCE_LOG, Material.DARK_OAK_PLANKS,
+                    Material.BRICKS, true);
         }
         final List<Block> blocks = CATALOG.get(name);
         if (blocks == null) {
@@ -94,32 +103,33 @@ public final class Blueprint {
         return blocks.size();
     }
 
+    /** Caja que abarca una casa (para fotografiar el terreno antes de construir). */
+    public static int[] houseRegion(int cx, int cz, int floorY, int half, int floors) {
+        return new int[] {cx - half - 1, floorY - 8, cz - half - 1,
+                cx + half + 1, floorY + floors * 4 + 3, cz + half + 1};
+    }
+
     /**
-     * Construye una CASA PARAMETRICA unos bloques por delante del jugador, sobre cimentacion
-     * aplanada: tamano (half), materiales de muro/esquina/tejado y mobiliario opcional.
-     * Puerta del lado del jugador, ventanas, y cartel en la fachada.
+     * Construye una CASA a medida en (cx,cz) con la planta baja en floorY y la puerta en el
+     * lado {@code door}. Multiplanta con forjados, escalera de mano, TERRAZA con barandilla,
+     * puerta y ventanas de verdad, chimenea, mobiliario por estancias y un toque unico.
      */
-    public static int buildHouse(Player player, int half, Material wall, Material corner,
-            Material roof, boolean furniture) {
-        final World world = player.getWorld();
-        final BlockFace facing = player.getFacing();
-        // Centro de la casa, por delante de donde mira el jugador (segun su tamano).
-        final int cx = player.getLocation().getBlockX() + facing.getModX() * (half + 2);
-        final int cz = player.getLocation().getBlockZ() + facing.getModZ() * (half + 2);
-        final int fy = world.getHighestBlockYAt(cx, cz);
-        final BlockFace door = facing.getOppositeFace();   // la puerta mira al jugador
-        final int wallH = 3;
+    public static int buildHouse(World world, int cx, int cz, int floorY, BlockFace door,
+            int half, int floors, Material wall, Material corner, Material roof, Material accent,
+            boolean furniture) {
+        final int fh = 4;                          // altura por planta (3 muro + 1 forjado)
+        final int topY = floorY + floors * fh;     // nivel de la terraza
         int n = 0;
 
-        // Cimentacion: suelo, hueco interior despejado y relleno inferior.
+        // Cimentacion: suelo firme, hueco despejado y relleno inferior para que no flote.
         for (int dx = -half; dx <= half; dx++) {
             for (int dz = -half; dz <= half; dz++) {
-                world.getBlockAt(cx + dx, fy, cz + dz).setType(Material.STONE_BRICKS, false);
+                set(world, cx + dx, floorY, cz + dz, Material.STONE_BRICKS);
                 n++;
-                for (int dy = 1; dy <= 5; dy++) {
-                    world.getBlockAt(cx + dx, fy + dy, cz + dz).setType(Material.AIR, false);
+                for (int dy = 1; dy <= floors * fh + 3; dy++) {
+                    set(world, cx + dx, floorY + dy, cz + dz, Material.AIR);
                 }
-                for (int dy = fy - 1; dy >= fy - 6; dy--) {
+                for (int dy = floorY - 1; dy >= floorY - 8; dy--) {
                     final var b = world.getBlockAt(cx + dx, dy, cz + dz);
                     if (b.getType().isAir() || b.isLiquid()) {
                         b.setType(Material.DIRT, false);
@@ -129,54 +139,142 @@ public final class Blueprint {
                 }
             }
         }
-        // Muros: esquinas de un material y paredes de otro.
-        for (int y = fy + 1; y <= fy + wallH; y++) {
-            for (int dx = -half; dx <= half; dx++) {
-                for (int dz = -half; dz <= half; dz++) {
-                    if (Math.abs(dx) != half && Math.abs(dz) != half) {
-                        continue;
+
+        // Plantas: muros (con zocalo de acento), forjados y ventanas.
+        for (int fl = 0; fl < floors; fl++) {
+            final int by = floorY + fl * fh;
+            for (int y = by + 1; y <= by + fh - 1; y++) {
+                for (int dx = -half; dx <= half; dx++) {
+                    for (int dz = -half; dz <= half; dz++) {
+                        if (Math.abs(dx) != half && Math.abs(dz) != half) {
+                            continue;
+                        }
+                        final boolean isCorner = Math.abs(dx) == half && Math.abs(dz) == half;
+                        set(world, cx + dx, y, cz + dz, isCorner ? corner : (y == by + 1 ? accent : wall));
+                        n++;
                     }
-                    final boolean isCorner = Math.abs(dx) == half && Math.abs(dz) == half;
-                    world.getBlockAt(cx + dx, y, cz + dz).setType(isCorner ? corner : wall, false);
-                    n++;
+                }
+            }
+            if (fl < floors - 1) {   // forjado de la planta de arriba (la ultima lleva terraza)
+                for (int dx = -half + 1; dx <= half - 1; dx++) {
+                    for (int dz = -half + 1; dz <= half - 1; dz++) {
+                        set(world, cx + dx, by + fh, cz + dz, Material.SPRUCE_PLANKS);
+                    }
+                }
+            }
+            windows(world, cx, cz, by + 2, half, door);
+        }
+
+        // Puerta de verdad en la planta baja + escalon y faroles de entrada.
+        final int dgx = cx + door.getModX() * half;
+        final int dgz = cz + door.getModZ() * half;
+        set(world, dgx, floorY + 1, dgz, Material.AIR);
+        set(world, dgx, floorY + 2, dgz, Material.AIR);
+        placeDoor(world, dgx, floorY + 1, dgz, door.getOppositeFace());
+        placeStair(world, dgx + door.getModX(), floorY, dgz + door.getModZ(), door);
+        set(world, dgx + door.getModZ(), floorY + 2, dgz + door.getModX(), Material.LANTERN);
+        set(world, dgx - door.getModZ(), floorY + 2, dgz - door.getModX(), Material.LANTERN);
+
+        // Escalera de mano entre plantas + huecos en los forjados (esquina trasera-interior).
+        if (floors > 1) {
+            final int lx = cx - half + 1;
+            final int lz = cz - half + 1;
+            for (int y = floorY + 1; y < topY; y++) {
+                placeLadder(world, lx, y, lz, BlockFace.SOUTH);
+            }
+            for (int fl = 1; fl <= floors; fl++) {
+                set(world, lx, floorY + fl * fh, lz, Material.AIR);
+                set(world, lx, floorY + fl * fh - 1, lz, Material.AIR);
+                placeLadder(world, lx, floorY + fl * fh, lz, BlockFace.SOUTH);
+            }
+        }
+
+        // Terraza: suelo, barandilla de valla y un farol.
+        for (int dx = -half; dx <= half; dx++) {
+            for (int dz = -half; dz <= half; dz++) {
+                set(world, cx + dx, topY, cz + dz, roof);
+                n++;
+                if ((Math.abs(dx) == half || Math.abs(dz) == half) && floors > 1) {
+                    set(world, cx + dx, topY + 1, cz + dz, Material.OAK_FENCE);
                 }
             }
         }
-        // Tejado con alero.
-        for (int dx = -half - 1; dx <= half + 1; dx++) {
-            for (int dz = -half - 1; dz <= half + 1; dz++) {
-                world.getBlockAt(cx + dx, fy + wallH + 1, cz + dz).setType(roof, false);
-                n++;
-            }
+        if (floors > 1) {
+            set(world, cx + half - 1, topY + 1, cz - half + 2, Material.LANTERN);
+            set(world, cx - half + 1, topY, cz - half + 1, Material.AIR);   // salida de la escalera
         }
-        // Puerta (hueco de 1x2) del lado del jugador.
-        final int dgx = cx + door.getModX() * half;
-        final int dgz = cz + door.getModZ() * half;
-        world.getBlockAt(dgx, fy + 1, dgz).setType(Material.AIR, false);
-        world.getBlockAt(dgx, fy + 2, dgz).setType(Material.AIR, false);
-        // Ventanas: en los otros lados, a media altura.
-        for (final BlockFace side : new BlockFace[] {BlockFace.NORTH, BlockFace.SOUTH,
-                BlockFace.EAST, BlockFace.WEST}) {
-            if (side == door) {
-                continue;
-            }
-            world.getBlockAt(cx + side.getModX() * half, fy + 2, cz + side.getModZ() * half)
-                    .setType(Material.GLASS_PANE, false);
+
+        // Chimenea de ladrillo (toque unico: el lado depende de un seed simple).
+        final int chx = ((cx * 31 + cz) & 1) == 0 ? cx + half - 1 : cx - half + 1;
+        for (int y = floorY + 1; y <= topY + 1; y++) {
+            set(world, chx, y, cz + half - 1, Material.BRICKS);
         }
-        // Iluminacion siempre; mobiliario solo si se ha pagado.
-        world.getBlockAt(cx + 1, fy + 1, cz + 1).setType(Material.LANTERN, false);
+        set(world, chx, topY + 2, cz + half - 1, Material.CAMPFIRE);
+
+        // Mobiliario por estancias.
+        set(world, cx + 1, floorY + 1, cz + 1, Material.LANTERN);   // luz de la planta baja
         if (furniture) {
-            placeBed(world, cx, fy + 1, cz, BlockFace.EAST);
-            world.getBlockAt(cx - 1, fy + 1, cz + 1).setType(Material.CRAFTING_TABLE, false);
-            world.getBlockAt(cx + 1, fy + 1, cz - 1).setType(Material.CHEST, false);
-            world.getBlockAt(cx, fy + 1, cz + 1).setType(Material.FURNACE, false);
+            set(world, cx - half + 1, floorY + 1, cz - half + 1, Material.CRAFTING_TABLE);
+            set(world, cx - half + 1, floorY + 1, cz - half + 2, Material.FURNACE);
+            set(world, cx + half - 1, floorY + 1, cz - half + 1, Material.CHEST);
+            set(world, cx + half - 1, floorY + 1, cz + half - 1, Material.OAK_FENCE);      // mesa
+            set(world, cx + half - 1, floorY + 2, cz + half - 1, Material.OAK_PRESSURE_PLATE);
+            final int bedY = floorY + (floors - 1) * fh + 1;                                // dormitorio arriba
+            placeBed(world, cx, bedY, cz + half - 1, BlockFace.NORTH);
+            set(world, cx - half + 1, bedY, cz + half - 1, Material.LANTERN);
         }
-        // Cartel en la fachada, junto a la puerta (sobre un bloque solido de la pared).
-        final int px = door.getModX() != 0 ? 0 : 1;   // desplazamiento a lo largo de la pared
-        final int pz = door.getModZ() != 0 ? 0 : 1;
-        placeSign(world.getBlockAt(dgx + px + door.getModX(), fy + 2, dgz + pz + door.getModZ()),
+
+        // Cartel en la fachada, junto a la puerta.
+        final int sx = door.getModX() != 0 ? 0 : 1;
+        final int sz = door.getModZ() != 0 ? 0 : 1;
+        placeSign(world.getBlockAt(dgx + sx + door.getModX(), floorY + 2, dgz + sz + door.getModZ()),
                 door, "Tu casa");
         return n;
+    }
+
+    private static void set(World w, int x, int y, int z, Material m) {
+        w.getBlockAt(x, y, z).setType(m, false);
+    }
+
+    private static void windows(World w, int cx, int cz, int y, int half, BlockFace door) {
+        for (final BlockFace s : new BlockFace[] {BlockFace.NORTH, BlockFace.SOUTH,
+                BlockFace.EAST, BlockFace.WEST}) {
+            if (s == door) {
+                continue;
+            }
+            final int wx = cx + s.getModX() * half;
+            final int wz = cz + s.getModZ() * half;
+            set(w, wx, y, wz, Material.GLASS_PANE);
+            if (half >= 3) {   // fachadas grandes: una ventana mas a cada lado
+                final int ox = s.getModX() != 0 ? 0 : 1;
+                final int oz = s.getModZ() != 0 ? 0 : 1;
+                set(w, wx + ox, y, wz + oz, Material.GLASS_PANE);
+                set(w, wx - ox, y, wz - oz, Material.GLASS_PANE);
+            }
+        }
+    }
+
+    private static void placeDoor(World w, int x, int y, int z, BlockFace facing) {
+        final Door lower = (Door) Bukkit.createBlockData(Material.OAK_DOOR);
+        lower.setFacing(facing);
+        lower.setHalf(Bisected.Half.BOTTOM);
+        final Door upper = (Door) Bukkit.createBlockData(Material.OAK_DOOR);
+        upper.setFacing(facing);
+        upper.setHalf(Bisected.Half.TOP);
+        w.getBlockAt(x, y, z).setBlockData(lower, false);
+        w.getBlockAt(x, y + 1, z).setBlockData(upper, false);
+    }
+
+    private static void placeLadder(World w, int x, int y, int z, BlockFace facing) {
+        final Ladder l = (Ladder) Bukkit.createBlockData(Material.LADDER);
+        l.setFacing(facing);
+        w.getBlockAt(x, y, z).setBlockData(l, false);
+    }
+
+    private static void placeStair(World w, int x, int y, int z, BlockFace facing) {
+        final Stairs s = (Stairs) Bukkit.createBlockData(Material.STONE_BRICK_STAIRS);
+        s.setFacing(facing);
+        w.getBlockAt(x, y, z).setBlockData(s, false);
     }
 
     private static void placeBed(World world, int x, int y, int z, BlockFace facing) {

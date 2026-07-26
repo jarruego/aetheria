@@ -28,11 +28,18 @@ import org.jetbrains.annotations.NotNull;
  */
 public final class ClaimModule implements CommandExecutor, Listener {
 
+    // La proteccion cubre una banda vertical de +/-25 bloques alrededor de la altura a la
+    // que se reclamo (no toda la columna): asi se puede minar muy por debajo o volar por encima.
+    private static final int PROTECT_VERTICAL = 25;
+
+    /** Una parcela en la cache: quien es el dueno y a que altura se reclamo. */
+    private record Claim(UUID owner, int baseY) {}
+
     private final AetheriaPlugin plugin;
     private final GatewayClient gateway;
     private final String worldKey;
-    // chunk (empaquetado) -> UUID del propietario.
-    private final Map<Long, UUID> owners = new ConcurrentHashMap<>();
+    // chunk (empaquetado) -> parcela (propietario + altura de referencia).
+    private final Map<Long, Claim> owners = new ConcurrentHashMap<>();
 
     public ClaimModule(AetheriaPlugin plugin, GatewayClient gateway, String worldKey) {
         this.plugin = plugin;
@@ -55,7 +62,10 @@ public final class ClaimModule implements CommandExecutor, Listener {
                 }
                 final int chunkX = o.get("min_x").getAsInt() >> 4;
                 final int chunkZ = o.get("min_z").getAsInt() >> 4;
-                owners.put(key(chunkX, chunkZ), UUID.fromString(o.get("owner_uuid").getAsString()));
+                final int baseY = o.has("base_y") && !o.get("base_y").isJsonNull()
+                        ? o.get("base_y").getAsInt() : 64;
+                owners.put(key(chunkX, chunkZ),
+                        new Claim(UUID.fromString(o.get("owner_uuid").getAsString()), baseY));
             });
             plugin.getLogger().info("[Aetheria] Fase 9: " + owners.size()
                     + " parcelas cargadas en '" + worldKey + "'.");
@@ -79,11 +89,12 @@ public final class ClaimModule implements CommandExecutor, Listener {
         }
         // /claim  (o  /claim info)
         if (args.length >= 1 && args[0].equalsIgnoreCase("info")) {
-            final UUID owner = owners.get(key(chunkX, chunkZ));
-            if (owner == null) {
+            final Claim c = owners.get(key(chunkX, chunkZ));
+            if (c == null) {
                 player.sendMessage("§7Esta parcela esta libre. Usa §f/claim§7 para reclamarla.");
-            } else if (owner.equals(player.getUniqueId())) {
-                player.sendMessage("§aEsta parcela es tuya.");
+            } else if (c.owner().equals(player.getUniqueId())) {
+                player.sendMessage("§aEsta parcela es tuya. Protegida entre Y " + (c.baseY() - PROTECT_VERTICAL)
+                        + " y " + (c.baseY() + PROTECT_VERTICAL) + ".");
             } else {
                 player.sendMessage("§eEsta parcela pertenece a otra persona.");
             }
@@ -121,9 +132,10 @@ public final class ClaimModule implements CommandExecutor, Listener {
             player.sendMessage("§eEsta parcela ya esta reclamada.");
             return;
         }
+        final int baseY = player.getLocation().getBlockY();   // altura de referencia de la parcela
         player.sendMessage("§7[Aetheria] " + (rental ? "alquilando" : "comprando") + " esta parcela...");
         gateway.claimPlot(player.getUniqueId().toString(), player.getName(), worldKey,
-                        chunkX * 16, chunkZ * 16, chunkX * 16 + 15, chunkZ * 16 + 15, rental)
+                        chunkX * 16, chunkZ * 16, chunkX * 16 + 15, chunkZ * 16 + 15, baseY, rental)
                 .whenComplete((json, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
                     if (err != null) {
                         player.sendMessage("§c[Aetheria] error: " + err.getMessage());
@@ -133,7 +145,7 @@ public final class ClaimModule implements CommandExecutor, Listener {
                         player.sendMessage("§c[Aetheria] " + json.get("error").getAsString());
                         return;
                     }
-                    owners.put(key(chunkX, chunkZ), player.getUniqueId());
+                    owners.put(key(chunkX, chunkZ), new Claim(player.getUniqueId(), baseY));
                     final var data = json.has("data") ? json.getAsJsonObject("data") : null;
                     final double price = data != null && data.has("price") ? data.get("price").getAsDouble() : 0.0;
                     if (rental) {
@@ -149,8 +161,8 @@ public final class ClaimModule implements CommandExecutor, Listener {
     }
 
     private void handleUnclaim(Player player, int chunkX, int chunkZ) {
-        final UUID owner = owners.get(key(chunkX, chunkZ));
-        if (owner == null || !owner.equals(player.getUniqueId())) {
+        final Claim c = owners.get(key(chunkX, chunkZ));
+        if (c == null || !c.owner().equals(player.getUniqueId())) {
             player.sendMessage("§eNo tienes una parcela aqui.");
             return;
         }
@@ -181,15 +193,19 @@ public final class ClaimModule implements CommandExecutor, Listener {
         }
     }
 
-    /** True si el bloque esta en una parcela de OTRO jugador (no del que actua). */
+    /** True si el bloque esta en la banda protegida de una parcela de OTRO jugador. */
     private boolean isProtectedFromOthers(Block block, Player player) {
-        final UUID owner = owners.get(key(block.getX() >> 4, block.getZ() >> 4));
-        return owner != null && !owner.equals(player.getUniqueId());
+        final Claim c = owners.get(key(block.getX() >> 4, block.getZ() >> 4));
+        if (c == null || c.owner().equals(player.getUniqueId())) {
+            return false;
+        }
+        return Math.abs(block.getY() - c.baseY()) <= PROTECT_VERTICAL;   // solo dentro de la banda
     }
 
     /** True si ese jugador es el dueno de la parcela (chunk) indicada. */
     public boolean ownsChunk(UUID player, int chunkX, int chunkZ) {
-        return player.equals(owners.get(key(chunkX, chunkZ)));
+        final Claim c = owners.get(key(chunkX, chunkZ));
+        return c != null && c.owner().equals(player);
     }
 
     private static long key(int chunkX, int chunkZ) {

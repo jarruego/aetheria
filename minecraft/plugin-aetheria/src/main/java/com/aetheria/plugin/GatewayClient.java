@@ -222,7 +222,7 @@ public final class GatewayClient {
 
     /** Reclama una parcela (un chunk), en compra fija o alquiler. Devuelve {ok, error?, data}. */
     public CompletableFuture<JsonObject> claimPlot(String ownerUuid, String ownerName, String world,
-            int minX, int minZ, int maxX, int maxZ, boolean rental) {
+            int minX, int minZ, int maxX, int maxZ, int baseY, boolean rental) {
         final JsonObject body = new JsonObject();
         body.addProperty("owner_uuid", ownerUuid);
         body.addProperty("owner_name", ownerName);
@@ -231,6 +231,7 @@ public final class GatewayClient {
         body.addProperty("min_z", minZ);
         body.addProperty("max_x", maxX);
         body.addProperty("max_z", maxZ);
+        body.addProperty("base_y", baseY);
         body.addProperty("rental", rental);
         return sendCapturing("/v1/claims", gson.toJson(body));
     }

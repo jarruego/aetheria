@@ -103,6 +103,7 @@ public final class AetheriaPlugin extends JavaPlugin {
             final ArchitectModule architect = new ArchitectModule(this, gateway, claims, undo);
             Objects.requireNonNull(getCommand("arquitecto")).setExecutor(architect);
             Objects.requireNonNull(getCommand("servicios")).setExecutor(architect);
+            getServer().getPluginManager().registerEvents(architect, this);   // clic para colocar
 
             // Decorador guiado: pequenas estructuras (jardin, farola, estatua, fuente).
             final DecoratorModule decorator = new DecoratorModule(this, gateway, claims, undo);

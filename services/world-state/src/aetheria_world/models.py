@@ -121,6 +121,7 @@ class PlotClaimIn(BaseModel):
     min_z: int
     max_x: int
     max_z: int
+    base_y: int = 64           # altura a la que se reclamo (centro de la banda protegida)
     rental: bool = False       # True = alquiler; False = compra fija
 
 
@@ -139,5 +140,6 @@ class PlotOut(BaseModel):
     min_z: int
     max_x: int
     max_z: int
+    base_y: int = 64
     rental: bool = False
     rent: float = 0.0

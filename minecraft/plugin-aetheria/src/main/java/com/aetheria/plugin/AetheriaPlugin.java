@@ -71,8 +71,14 @@ public final class AetheriaPlugin extends JavaPlugin {
                 ret.build();
             }
 
-            // Fase 7: aldea fisica + vecinos con rutina diaria en el mundo principal.
-            if (getConfig().getBoolean("npc-routines.enabled", true)) {
+            // Mundo CREATIVO: en vez de la aldea viva, un CATALOGO (galeria rotulada de todo lo
+            // que sabemos construir). El resto del creativo se queda igual.
+            if (role.equals("creative")) {
+                new CatalogModule(this, getServer().getWorlds().get(0)).build();
+            }
+
+            // Fase 7: aldea fisica + vecinos con rutina diaria en el mundo principal (no en creativo).
+            if (!role.equals("creative") && getConfig().getBoolean("npc-routines.enabled", true)) {
                 final org.bukkit.World gameWorld = getServer().getWorlds().get(0);
                 final VillageModule village = new VillageModule(this, gameWorld);
                 village.build();

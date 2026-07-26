@@ -200,6 +200,16 @@ public final class SettlementModule implements Listener {
                         water = true;
                         break;
                     }
+                    // Agua SOBRE el suelo (mar/estanque adyacente): groundY baja hasta el fondo,
+                    // asi que hay que mirar tambien encima para no plantar la casa junto al agua.
+                    for (int y = gy + 1; y <= gy + 4 && !water; y++) {
+                        if (world.getBlockAt(cx + dx, y, cz + dz).isLiquid()) {
+                            water = true;
+                        }
+                    }
+                    if (water) {
+                        break;
+                    }
                     if (!natural(g.getType())) {
                         built = true;   // el propio suelo es algo puesto por alguien
                         break;
@@ -394,6 +404,7 @@ public final class SettlementModule implements Listener {
             ageAndDeath();      // envejecen; a los 65 se jubilan; de muy mayores mueren (lento)
             matureChildren();   // los ninos que ya han crecido se mudan a su casa
             maybeMarry();       // dos solteros pueden casarse y mudarse a una casa mediana nueva
+            repairHouses();     // mantenimiento: seca las casas que se hayan inundado
             updateBios();       // refresca su ficha (edad/oficio/familia) para que hablen de si
 
             // Todos los aldeanos son colonos (no hay vecinos "base"): el objetivo es la poblacion.
@@ -633,6 +644,7 @@ public final class SettlementModule implements Listener {
         prepareTerrain(cx, cz, fy);                        // tala arboles + nivela SUAVE al suelo real
         Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
                 pal[0], pal[1], pal[2], pal[3], true, 1, name);   // 1 cama (soltero)
+        deflood(cx, fy, cz, 1);                            // por si algo de agua se colo
         final int wy = buildWorkplace(cx, cz, prof);       // puesto de trabajo tematico, al este
         pathTo(cx, cz, village.plaza());                   // sendero que sigue el relieve al pueblo
         placed.add(new int[] {cx, cz});
@@ -718,6 +730,7 @@ public final class SettlementModule implements Listener {
         prepareTerrain(cx, cz, fy);
         Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
                 pal[0], pal[1], pal[2], pal[3], true, 3, a.name + " y " + b.name);   // 3 camas
+        deflood(cx, fy, cz, 1);                                          // por si se colo agua
         final int wy = buildWorkplace(cx, cz, profFromKey(a.profKey));   // taller familiar
         pathTo(cx, cz, village.plaza());
 
@@ -990,6 +1003,29 @@ public final class SettlementModule implements Listener {
     public void onPlace(BlockPlaceEvent e) {
         if (protect(e.getPlayer(), e.getBlock())) {
             e.setCancelled(true);
+        }
+    }
+
+    /** Seca una casa: quita el agua/lava que se haya colado dentro (±3 del centro, sin tocar
+     *  el estanque del pescador ni el huerto, que estan en el puesto al este). */
+    private void deflood(int cx, int fy, int cz, int floors) {
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+                for (int y = fy + 1; y <= fy + floors * 6 + 2; y++) {
+                    final Block b = world.getBlockAt(cx + dx, y, cz + dz);
+                    if (b.getType() == Material.WATER || b.getType() == Material.LAVA) {
+                        b.setType(Material.AIR, false);
+                    }
+                }
+            }
+        }
+    }
+
+    /** MANTENIMIENTO del pueblo (lo hace el propio servidor cada ciclo): seca las casas que se
+     *  hayan inundado. Asi, aunque algo se cuele, el pueblo lo repara solo. */
+    private void repairHouses() {
+        for (final Colono c : colonos) {
+            deflood(c.x, c.y - 1, c.z, c.floors);
         }
     }
 

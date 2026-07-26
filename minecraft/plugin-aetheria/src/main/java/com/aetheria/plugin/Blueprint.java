@@ -103,6 +103,154 @@ public final class Blueprint {
         return blocks.size();
     }
 
+    private static void wpFence(World w, int cx, int gy, int cz, int r) {
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dz = -r; dz <= r; dz++) {
+                if (Math.abs(dx) != r && Math.abs(dz) != r) {
+                    continue;
+                }
+                set(w, cx + dx, gy + 1, cz + dz,
+                        (dx == -r && dz == 0) ? Material.OAK_FENCE_GATE : Material.OAK_FENCE);
+            }
+        }
+    }
+
+    private static void wpCanopy(World w, int cx, int gy, int cz, Material roof) {
+        for (int dx = -1; dx <= 1; dx += 2) {
+            for (int dz = -1; dz <= 1; dz += 2) {
+                set(w, cx + dx, gy + 1, cz + dz, Material.OAK_FENCE);
+                set(w, cx + dx, gy + 2, cz + dz, Material.OAK_FENCE);
+            }
+        }
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                set(w, cx + dx, gy + 3, cz + dz, roof);
+            }
+        }
+    }
+
+    /**
+     * Puesto de trabajo TEMATICO para el catalogo (mundo creativo): construye directamente en
+     * (wx,gy,wz) la estructura del oficio. {@code profKey} en minusculas (farmer, fisherman...).
+     */
+    public static void workplaceShowcase(World w, int wx, int gy, int wz, String profKey) {
+        switch (profKey) {
+            case "farmer" -> {
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        if (dx == 0 && dz == 0) {
+                            set(w, wx, gy, wz, Material.WATER);
+                        } else {
+                            set(w, wx + dx, gy, wz + dz, Material.FARMLAND);
+                            set(w, wx + dx, gy + 1, wz + dz,
+                                    ((dx + dz) & 1) == 0 ? Material.WHEAT : Material.CARROTS);
+                        }
+                    }
+                }
+                set(w, wx + 2, gy + 1, wz, Material.COMPOSTER);
+                set(w, wx - 2, gy + 1, wz + 1, Material.HAY_BLOCK);
+                set(w, wx - 2, gy + 2, wz + 1, Material.CARVED_PUMPKIN);
+                wpFence(w, wx, gy, wz, 2);
+            }
+            case "fisherman" -> {
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        set(w, wx + dx, gy, wz + dz, Material.WATER);
+                    }
+                }
+                set(w, wx, gy + 1, wz, Material.LILY_PAD);
+                for (int dz = -1; dz <= 1; dz++) {
+                    set(w, wx + 2, gy + 1, wz + dz, Material.OAK_PLANKS);
+                }
+                set(w, wx + 2, gy + 2, wz + 1, Material.OAK_FENCE);
+                set(w, wx + 2, gy + 3, wz + 1, Material.LANTERN);
+                set(w, wx + 2, gy + 2, wz - 1, Material.BARREL);
+                set(w, wx - 2, gy + 1, wz, Material.BARREL);
+            }
+            case "shepherd" -> {
+                wpFence(w, wx, gy, wz, 2);
+                set(w, wx - 1, gy + 1, wz - 1, Material.WHITE_WOOL);
+                set(w, wx - 1, gy + 2, wz - 1, Material.WHITE_WOOL);
+                set(w, wx + 1, gy + 1, wz + 1, Material.BLACK_WOOL);
+                set(w, wx + 1, gy + 1, wz - 1, Material.HAY_BLOCK);
+                set(w, wx, gy + 1, wz, Material.SHORT_GRASS);
+            }
+            case "mason" -> {
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        set(w, wx + dx, gy, wz + dz, Material.STONE_BRICKS);
+                    }
+                }
+                set(w, wx, gy + 1, wz, Material.STONECUTTER);
+                set(w, wx + 1, gy + 1, wz, Material.CHISELED_STONE_BRICKS);
+                set(w, wx + 1, gy + 2, wz, Material.STONE_BRICK_WALL);
+                set(w, wx - 1, gy + 1, wz - 1, Material.POLISHED_ANDESITE);
+                set(w, wx - 1, gy + 1, wz + 1, Material.STONE_BRICK_STAIRS);
+                set(w, wx - 1, gy + 2, wz + 1, Material.STONE_BRICKS);
+            }
+            case "librarian" -> {
+                wpCanopy(w, wx, gy, wz, Material.OAK_SLAB);
+                set(w, wx, gy + 1, wz, Material.LECTERN);
+                set(w, wx + 1, gy + 1, wz, Material.BOOKSHELF);
+                set(w, wx - 1, gy + 1, wz, Material.BOOKSHELF);
+                set(w, wx + 1, gy + 2, wz, Material.BOOKSHELF);
+                set(w, wx - 1, gy + 2, wz, Material.BOOKSHELF);
+                set(w, wx, gy + 1, wz - 1, Material.LANTERN);
+            }
+            case "toolsmith" -> {
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        set(w, wx + dx, gy, wz + dz, Material.COBBLESTONE);
+                    }
+                }
+                wpCanopy(w, wx, gy, wz, Material.STONE_BRICK_SLAB);
+                set(w, wx - 1, gy + 1, wz, Material.FURNACE);
+                set(w, wx, gy + 1, wz, Material.BLAST_FURNACE);
+                set(w, wx + 1, gy + 1, wz, Material.FURNACE);
+                set(w, wx + 1, gy + 1, wz - 1, Material.ANVIL);
+                set(w, wx - 1, gy + 1, wz - 1, Material.GRINDSTONE);
+                set(w, wx, gy + 1, wz + 1, Material.CAMPFIRE);
+            }
+            case "butcher" -> {
+                wpCanopy(w, wx, gy, wz, Material.RED_WOOL);
+                set(w, wx - 1, gy + 1, wz, Material.SMOKER);
+                set(w, wx + 1, gy + 1, wz, Material.BARREL);
+                for (int dx = -1; dx <= 1; dx++) {
+                    set(w, wx + dx, gy + 1, wz + 1, Material.OAK_FENCE);
+                    set(w, wx + dx, gy + 2, wz + 1, Material.OAK_SLAB);
+                }
+            }
+            case "fletcher" -> {
+                set(w, wx, gy + 1, wz, Material.FLETCHING_TABLE);
+                set(w, wx + 1, gy + 1, wz, Material.HAY_BLOCK);
+                for (int dx = -1; dx <= 1; dx++) {
+                    set(w, wx + dx, gy + 1, wz - 2, Material.WHITE_WOOL);
+                    set(w, wx + dx, gy + 3, wz - 2, Material.WHITE_WOOL);
+                }
+                set(w, wx, gy + 2, wz - 2, Material.RED_WOOL);
+                set(w, wx - 1, gy + 2, wz - 2, Material.WHITE_WOOL);
+                set(w, wx + 1, gy + 2, wz - 2, Material.WHITE_WOOL);
+            }
+            default -> {
+                wpCanopy(w, wx, gy, wz, Material.OAK_SLAB);
+                set(w, wx, gy + 1, wz, Material.BARREL);
+                set(w, wx, gy + 2, wz, Material.LANTERN);
+            }
+        }
+    }
+
+    /** Coloca una decoracion del catalogo con su ORIGEN en (ox,oy,oz). Devuelve nº de bloques o -1. */
+    public static int placeAt(World world, int ox, int oy, int oz, String name) {
+        final List<Block> blocks = CATALOG.get(name);
+        if (blocks == null) {
+            return -1;
+        }
+        for (final Block b : blocks) {
+            world.getBlockAt(ox + b.dx(), oy + b.dy(), oz + b.dz()).setType(b.material(), false);
+        }
+        return blocks.size();
+    }
+
     /** Caja que abarca una casa (para fotografiar el terreno antes de construir). */
     public static int[] houseRegion(int cx, int cz, int floorY, int half, int floors) {
         return new int[] {cx - half - 1, floorY - 8, cz - half - 1,

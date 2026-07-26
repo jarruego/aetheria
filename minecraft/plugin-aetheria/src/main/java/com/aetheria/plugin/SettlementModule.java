@@ -13,9 +13,15 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Player;
 import org.bukkit.entity.Villager;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
 
 /**
  * Pueblo VIVO: reconcilia el mundo fisico con la poblacion objetivo de la simulacion (crece
@@ -23,7 +29,7 @@ import org.bukkit.entity.Villager;
  * (con el nombre del colono en el cartel y un rasgo segun su oficio), la conecta con un
  * camino al pueblo, y llega un colono con su rutina. Al decaer, un colono emigra.
  */
-public final class SettlementModule {
+public final class SettlementModule implements Listener {
 
     private static final long PERIOD = 1200L;   // reconcilia cada 60 s (una casa por vez)
     private static final String[] NAMES = {"Bruno", "Lena", "Tobias", "Mila", "Ada", "Iker",
@@ -81,6 +87,7 @@ public final class SettlementModule {
         int deathAge;
         String parent;
         boolean retired;
+        int floors = 1;   // plantas de su casa (para saber que region ocupa)
 
         double age(long now) {
             return initialAge + (now - bornMillis) * YEARS_PER_DAY / DAY_MS;
@@ -88,7 +95,8 @@ public final class SettlementModule {
 
         String toLine() {
             return name + ";" + profKey + ";" + x + ";" + y + ";" + z + ";" + bornMillis + ";"
-                    + initialAge + ";" + deathAge + ";" + (parent == null ? "" : parent) + ";" + retired;
+                    + initialAge + ";" + deathAge + ";" + (parent == null ? "" : parent) + ";"
+                    + retired + ";" + floors;
         }
     }
 
@@ -224,10 +232,11 @@ public final class SettlementModule {
                     c.deathAge = Integer.parseInt(f[7]);
                     c.parent = f[8];
                     c.retired = Boolean.parseBoolean(f[9]);
+                    c.floors = f.length >= 11 ? Integer.parseInt(f[10]) : 1;
                 } else {   // formato antiguo: se le asigna una edad plausible
                     c.bornMillis = System.currentTimeMillis();
                     c.initialAge = 20 + rng.nextInt(40);
-                    c.deathAge = 74 + rng.nextInt(19);
+                    c.deathAge = randomDeathAge(rng);
                     c.parent = "";
                 }
                 routines.addColono("colono", c.name, new Location(world, c.x + 0.5, c.y, c.z + 0.5),
@@ -420,8 +429,9 @@ public final class SettlementModule {
         c.z = cz;
         c.bornMillis = System.currentTimeMillis();
         c.initialAge = initialAge;
-        c.deathAge = 74 + rng.nextInt(19);
+        c.deathAge = randomDeathAge(rng);
         c.parent = parent;
+        c.floors = floors;
         colonos.add(c);
         save();
 
@@ -463,6 +473,7 @@ public final class SettlementModule {
                         family.isEmpty() ? "" : "Le sobreviven " + family + ". ", successor);
                 gateway.postEvent("obituario", msg);
                 Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage("§8[Pueblo] §7" + msg));
+                demolish(c);   // su casa se derriba y queda un solar libre
             } else if (age >= RETIRE_AGE && !c.retired) {
                 c.retired = true;
                 changed = true;
@@ -567,10 +578,7 @@ public final class SettlementModule {
         final String name = routines.removeNewestColono();
         if (name != null) {
             if (!colonos.isEmpty()) {
-                colonos.remove(colonos.size() - 1);
-            }
-            if (!placed.isEmpty()) {
-                placed.remove(placed.size() - 1);
+                demolish(colonos.remove(colonos.size() - 1));   // al emigrar, su casa se derriba
             }
             save();
             Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
@@ -579,6 +587,76 @@ public final class SettlementModule {
         }
     }
 
+
+    /** Edad de muerte: 65..110, concentrada en 80-90 (media de dos uniformes, pico ~87). */
+    private static int randomDeathAge(java.util.Random rng) {
+        return 65 + (rng.nextInt(46) + rng.nextInt(46)) / 2;
+    }
+
+    /** El colono cuya casa contiene ese bloque (o null). Para proteger casas de aldeano. */
+    private Colono ownerAt(Block b) {
+        for (final Colono c : colonos) {
+            final int fy = c.y - 1;
+            if (b.getX() >= c.x - 6 && b.getX() <= c.x + 7 && b.getZ() >= c.z - 6 && b.getZ() <= c.z + 6
+                    && b.getY() >= fy && b.getY() <= fy + c.floors * 4 + 6) {
+                return c;
+            }
+        }
+        return null;
+    }
+
+    /** True si el bloque esta en el nucleo del pueblo (casas base, mercado, taberna, plaza). */
+    private boolean inVillageCore(Block b) {
+        final int sx = village.spawnX();
+        final int sz = village.spawnZ();
+        final int by = village.baseY();
+        return b.getX() >= sx - 22 && b.getX() <= sx + 22 && b.getZ() >= sz + 8 && b.getZ() <= sz + 34
+                && b.getY() >= by - 1 && b.getY() <= by + 12;
+    }
+
+    private boolean protect(Player player, Block b) {
+        final Colono c = ownerAt(b);
+        if (c != null) {
+            player.sendMessage("§cEsta es la casa de §f" + c.name + "§c. Todavia vive en la aldea: "
+                    + "no puedes destruir ni coger nada suyo.");
+            return true;
+        }
+        if (inVillageCore(b)) {
+            player.sendMessage("§cEsto pertenece al pueblo de Aetheria. No puedes tocarlo.");
+            return true;
+        }
+        return false;
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onBreak(BlockBreakEvent e) {
+        if (protect(e.getPlayer(), e.getBlock())) {
+            e.setCancelled(true);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onPlace(BlockPlaceEvent e) {
+        if (protect(e.getPlayer(), e.getBlock())) {
+            e.setCancelled(true);
+        }
+    }
+
+    /** Demuele la casa de un colono (al morir o emigrar): la retira y deja un solar de cesped. */
+    private void demolish(Colono c) {
+        final int fy = c.y - 1;
+        for (int dx = -6; dx <= 7; dx++) {
+            for (int dz = -6; dz <= 6; dz++) {
+                for (int y = fy + 1; y <= fy + c.floors * 4 + 7; y++) {
+                    if (!world.getBlockAt(c.x + dx, y, c.z + dz).getType().isAir()) {
+                        world.getBlockAt(c.x + dx, y, c.z + dz).setType(Material.AIR, false);
+                    }
+                }
+                world.getBlockAt(c.x + dx, fy, c.z + dz).setType(Material.GRASS_BLOCK, false);
+            }
+        }
+        placed.removeIf(p -> p[0] == c.x && p[1] == c.z);   // libera el hueco
+    }
 
     /** Un pequeno rasgo junto a la casa segun el oficio (al este). Profession ya no es enum. */
     private void professionFeature(int cx, int cz, int fy, Villager.Profession prof, java.util.Random rng) {

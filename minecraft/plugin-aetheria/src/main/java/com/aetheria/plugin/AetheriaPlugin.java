@@ -81,7 +81,10 @@ public final class AetheriaPlugin extends JavaPlugin {
                 routines.start();
 
                 // Pueblo vivo: crece (casas + colonos) o mengua (emigracion) segun prosperidad.
-                new SettlementModule(this, gateway, village, routines, convo, gameWorld).start();
+                final SettlementModule settlement =
+                        new SettlementModule(this, gateway, village, routines, convo, gameWorld);
+                getServer().getPluginManager().registerEvents(settlement, this);   // protege sus casas
+                settlement.start();
 
                 // Viaje rapido por los puntos de interes (plaza, mercado, taberna, spawn).
                 final WarpModule warps = new WarpModule(village, gameWorld);

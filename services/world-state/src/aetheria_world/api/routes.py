@@ -11,6 +11,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException
 
+from aetheria_world.config import settings
 from aetheria_world.db import is_ready, pool
 from aetheria_world.models import (
     BalanceOut,
@@ -21,6 +22,9 @@ from aetheria_world.models import (
     HomeUpsert,
     PlanAudit,
     PlayerUpsert,
+    PlotClaimIn,
+    PlotOut,
+    PlotUnclaimIn,
     SummaryOut,
     SummaryUpsert,
     TransferIn,
@@ -339,3 +343,117 @@ async def sim_tick() -> dict:
     async with pool().acquire() as conn:
         async with conn.transaction():
             return await run_tick(conn)
+
+
+# --- Fase 9: estructuras sociales (parcelas reclamables, con propietario y proteccion) ---
+
+async def _world_id(conn, key: str):
+    """Id del mundo por su clave; lo crea si no existe (soporta 'creative', etc.)."""
+    row = await conn.fetchrow("select id from worlds where key = $1", key)
+    if row is None:
+        row = await conn.fetchrow(
+            "insert into worlds (key, display_name, persistent) values ($1, $2, true) returning id",
+            key, key.capitalize(),
+        )
+    return row["id"]
+
+
+async def _player_id(conn, java_uuid: str, name: str | None):
+    """Id interno del jugador por su java_uuid; lo registra si hace falta."""
+    pid = uuid.UUID(java_uuid)
+    row = await conn.fetchrow("select id from players where java_uuid = $1", pid)
+    if row is None:
+        row = await conn.fetchrow(
+            "insert into players (java_uuid, username) values ($1, $2) "
+            "on conflict (java_uuid) do update set last_seen = now() returning id",
+            pid, name or "desconocido",
+        )
+    return row["id"]
+
+
+@router.post("/plots/claim")
+async def claim_plot(body: PlotClaimIn) -> dict:
+    """Reclama una parcela (un chunk). Cobra en AET y falla si se solapa o no hay fondos."""
+    _require_db()
+    price = decimal.Decimal(str(settings.claim_price))
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            world_id = await _world_id(conn, body.world)
+            # Solape con una parcela existente en el mismo mundo.
+            overlap = await conn.fetchrow(
+                """
+                select 1 from plots
+                where world_id = $1
+                  and not ($3 < min_x or $2 > max_x or $5 < min_z or $4 > max_z)
+                limit 1
+                """,
+                world_id, body.min_x, body.max_x, body.min_z, body.max_z,
+            )
+            if overlap is not None:
+                raise HTTPException(status_code=409, detail="Esa parcela ya esta reclamada")
+
+            player_id = await _player_id(conn, body.owner_uuid, body.owner_name)
+            acc = await _account(conn, uuid.UUID(body.owner_uuid))
+            if acc["balance"] < price:
+                raise HTTPException(status_code=400, detail="Fondos insuficientes para reclamar")
+            banco = await _account(conn, _BANCO, owner_type="system")
+            await conn.execute("update accounts set balance = balance - $1 where id = $2", price, acc["id"])
+            await conn.execute("update accounts set balance = balance + $1 where id = $2", price, banco["id"])
+            await conn.execute(
+                "insert into transactions (from_account, to_account, amount, reason) values ($1, $2, $3, $4)",
+                acc["id"], banco["id"], price, "reclamar parcela",
+            )
+            await conn.execute(
+                "insert into plots (world_id, owner_id, min_x, min_z, max_x, max_z) "
+                "values ($1, $2, $3, $4, $5, $6)",
+                world_id, player_id, body.min_x, body.min_z, body.max_x, body.max_z,
+            )
+            await conn.execute(
+                "insert into world_events (kind, description) values ($1, $2)",
+                "social",
+                f"{body.owner_name or 'Alguien'} reclamo una parcela en {body.world}.",
+            )
+    return {"status": "ok", "price": float(price)}
+
+
+@router.post("/plots/unclaim")
+async def unclaim_plot(body: PlotUnclaimIn) -> dict:
+    """Libera una parcela propia (identificada por su esquina min). Sin reembolso."""
+    _require_db()
+    async with pool().acquire() as conn:
+        world_id = await _world_id(conn, body.world)
+        deleted = await conn.execute(
+            """
+            delete from plots
+            where world_id = $1 and min_x = $2 and min_z = $3
+              and owner_id = (select id from players where java_uuid = $4)
+            """,
+            world_id, body.min_x, body.min_z, uuid.UUID(body.owner_uuid),
+        )
+    if deleted.endswith("0"):
+        raise HTTPException(status_code=404, detail="No tienes una parcela ahi")
+    return {"status": "ok"}
+
+
+@router.get("/plots", response_model=list[PlotOut])
+async def list_plots(world: str) -> list[PlotOut]:
+    """Todas las parcelas de un mundo (el plugin lo usa para su cache de proteccion)."""
+    _require_db()
+    async with pool().acquire() as conn:
+        world_id = await _world_id(conn, world)
+        rows = await conn.fetch(
+            """
+            select p.min_x, p.min_z, p.max_x, p.max_z, pl.java_uuid, pl.username
+            from plots p left join players pl on pl.id = p.owner_id
+            where p.world_id = $1
+            """,
+            world_id,
+        )
+    return [
+        PlotOut(
+            owner_uuid=str(r["java_uuid"]) if r["java_uuid"] else None,
+            owner_name=r["username"],
+            world=world, min_x=r["min_x"], min_z=r["min_z"], max_x=r["max_x"], max_z=r["max_z"],
+        )
+        for r in rows
+    ]

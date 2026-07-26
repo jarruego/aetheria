@@ -109,3 +109,32 @@ class WorldEventOut(BaseModel):
     kind: str          # 'economy' | 'market' | ...
     description: str
     created_at: str
+
+
+# --- Estructuras sociales: parcelas (Fase 9) ---
+
+class PlotClaimIn(BaseModel):
+    owner_uuid: str
+    owner_name: str | None = None
+    world: str                 # clave del mundo ('main', 'creative'...)
+    min_x: int
+    min_z: int
+    max_x: int
+    max_z: int
+
+
+class PlotUnclaimIn(BaseModel):
+    owner_uuid: str
+    world: str
+    min_x: int
+    min_z: int
+
+
+class PlotOut(BaseModel):
+    owner_uuid: str | None = None
+    owner_name: str | None = None
+    world: str
+    min_x: int
+    min_z: int
+    max_x: int
+    max_z: int

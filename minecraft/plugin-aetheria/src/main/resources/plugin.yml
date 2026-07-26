@@ -25,6 +25,14 @@ commands:
     description: Paga AET a otro jugador
     usage: /pay <jugador> <cantidad>
     permission: aetheria.use
+  claim:
+    description: Reclama la parcela (chunk) donde estas
+    usage: /claim [info]
+    permission: aetheria.use
+  unclaim:
+    description: Libera tu parcela actual
+    usage: /unclaim
+    permission: aetheria.use
 permissions:
   aetheria.use:
     description: Permite usar los comandos de Aetheria

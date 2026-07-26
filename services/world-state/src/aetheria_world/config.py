@@ -23,5 +23,8 @@ class Settings(BaseSettings):
     sim_income_min: float = 5.0      # ingreso minimo por negocio y tick (AET)
     sim_income_max: float = 30.0     # ingreso maximo por negocio y tick (AET)
 
+    # Fase 9: coste de reclamar una parcela (un chunk) en AET.
+    claim_price: float = 50.0
+
 
 settings = Settings()

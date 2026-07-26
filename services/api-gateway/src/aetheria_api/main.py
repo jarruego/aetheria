@@ -5,7 +5,15 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from aetheria_api import __version__
-from aetheria_api.routers import conversation, economy, plans, players, system, world
+from aetheria_api.routers import (
+    conversation,
+    economy,
+    plans,
+    players,
+    social,
+    system,
+    world,
+)
 
 app = FastAPI(
     title="Aetheria API Gateway",
@@ -19,3 +27,4 @@ app.include_router(plans.router)
 app.include_router(world.router)
 app.include_router(players.router)
 app.include_router(economy.router)
+app.include_router(social.router)

@@ -74,6 +74,15 @@ public final class AetheriaPlugin extends JavaPlugin {
                         new NpcRoutineModule(this, convo, getServer().getWorlds().get(0));
                 routines.start();
             }
+
+            // Fase 9: parcelas reclamables con propietario y proteccion.
+            if (getConfig().getBoolean("claims.enabled", true)) {
+                final ClaimModule claims = new ClaimModule(this, gateway, role);
+                Objects.requireNonNull(getCommand("claim")).setExecutor(claims);
+                Objects.requireNonNull(getCommand("unclaim")).setExecutor(claims);
+                getServer().getPluginManager().registerEvents(claims, this);
+                claims.loadClaims();
+            }
         }
 
         getLogger().info("Aetheria habilitado (rol: " + role + "). Gateway: " + url);

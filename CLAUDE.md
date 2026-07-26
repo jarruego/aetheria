@@ -154,9 +154,16 @@ cuentas/transacciones) y cada suceso se registra en la **crónica** (`world_even
 migración 0005). En el juego: `/aetheria cronica`. Tick manual `POST /internal/sim/tick`
 (o cron externo) + bucle cada `SIM_TICK_SECONDS`. Simulación por código, nunca el LLM.
 
-**Siguiente paso grande:** estructuras sociales —parcelas con propietarios, ciudades,
-contratos entre jugadores— (Fase 9). El camino de escritura a la DB, la economía, los NPC
-vivos y la simulación autónoma ya existen: se construye encima. → `docs/roadmap.md`
+**Fase 9 (estructuras sociales): COMPLETA en su núcleo.** **Parcelas reclamables por chunk**
+con propietario, persistidas en `plots`. `/claim` (cuesta AET, integra la economía),
+`/claim info`, `/unclaim`. **Protección**: dentro de la parcela de otro nadie rompe/pone
+bloques (`ClaimModule` con caché en memoria chunk→dueño, cero red por bloque). El backend
+valida solape (409), fondos (400, sin cobrar) y propiedad. Roadmap F0–F9 al día.
+
+**Todas las fases del plan (F0–F9) están en su núcleo COMPLETAS.** Lo que queda son
+mejoras transversales (skins humanas para NPC, backups/monitorización, F4 cloud pendiente
+de capacidad Oracle) y profundizar cada sistema (ciudades/gobiernos, agendas de NPC más
+ricas, que la simulación haga crecer estructuras). → `docs/roadmap.md`
 
 ## Convenciones
 

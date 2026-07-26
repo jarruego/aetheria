@@ -204,6 +204,49 @@ public final class GatewayClient {
                 });
     }
 
+    // --- Estructuras sociales: parcelas (Fase 9) ---
+
+    /** Reclama una parcela (un chunk). Devuelve {ok, error?, data:{price}} (no lanza en 4xx). */
+    public CompletableFuture<JsonObject> claimPlot(String ownerUuid, String ownerName, String world,
+            int minX, int minZ, int maxX, int maxZ) {
+        final JsonObject body = new JsonObject();
+        body.addProperty("owner_uuid", ownerUuid);
+        body.addProperty("owner_name", ownerName);
+        body.addProperty("world", world);
+        body.addProperty("min_x", minX);
+        body.addProperty("min_z", minZ);
+        body.addProperty("max_x", maxX);
+        body.addProperty("max_z", maxZ);
+        return sendCapturing("/v1/claims", gson.toJson(body));
+    }
+
+    /** Libera una parcela propia (por su esquina min). Devuelve {ok, error?}. */
+    public CompletableFuture<JsonObject> unclaimPlot(String ownerUuid, String world, int minX, int minZ) {
+        final JsonObject body = new JsonObject();
+        body.addProperty("owner_uuid", ownerUuid);
+        body.addProperty("world", world);
+        body.addProperty("min_x", minX);
+        body.addProperty("min_z", minZ);
+        return sendCapturing("/v1/claims/unclaim", gson.toJson(body));
+    }
+
+    /** Todas las parcelas de un mundo (para la cache de proteccion del plugin). */
+    public CompletableFuture<com.google.gson.JsonArray> getClaims(String world) {
+        final HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/v1/claims?world=" + world))
+                .timeout(Duration.ofSeconds(20))
+                .header("Authorization", "Bearer " + token)
+                .GET()
+                .build();
+        return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(resp -> {
+                    if (resp.statusCode() / 100 != 2) {
+                        throw new RuntimeException("Gateway HTTP " + resp.statusCode() + ": " + resp.body());
+                    }
+                    return JsonParser.parseString(resp.body()).getAsJsonArray();
+                });
+    }
+
     /** POST que NO lanza en 4xx: devuelve {ok:bool, error?:string} para mensajes limpios. */
     CompletableFuture<JsonObject> sendCapturing(String path, String jsonBody) {
         final HttpRequest request = HttpRequest.newBuilder()

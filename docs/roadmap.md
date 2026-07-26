@@ -89,8 +89,15 @@ Cada fase deja algo funcionando y verificable.
       fondo cada SIM_TICK_SECONDS. Nunca lo mueve el LLM (simulacion por codigo).
 - [ ] Que la simulacion tambien haga crecer ciudades/estructuras, no solo dinero (futuro)
 
-## Fase 9 - Estructuras sociales  (PENDIENTE)
-- [ ] Parcelas con propietarios, ciudades, gobiernos, contratos entre jugadores
+## Fase 9 - Estructuras sociales  (COMPLETA en su nucleo)
+- [x] Parcelas reclamables por chunk, con PROPIETARIO, persistidas en la tabla plots.
+      /claim (cuesta AET, integra la economia F6), /claim info, /unclaim.
+- [x] PROTECCION: dentro de una parcela de otro nadie puede romper ni poner bloques
+      (ClaimModule con cache en memoria chunk->propietario; cero red por bloque).
+- [x] Validaciones en el backend: solape (409), fondos insuficientes (400, sin cobrar),
+      propiedad al liberar (404 si no es tuya).
+- [ ] Ciudades, gobiernos y contratos formales entre jugadores (futuro; tablas cities/
+      contracts ya existen para apoyarlo)
 
 ## Mejoras transversales  (PENDIENTE)
 - [ ] Seguridad: filtro de contenido en respuestas de NPC + rate-limit por jugador

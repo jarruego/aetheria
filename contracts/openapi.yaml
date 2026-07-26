@@ -211,6 +211,60 @@ paths:
                 items: { $ref: "#/components/schemas/WorldEvent" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /v1/claims:
+    get:
+      tags: [social]
+      summary: Parcelas de un mundo (Fase 9) — el plugin las cachea para proteger
+      parameters:
+        - name: world
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Lista de parcelas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Plot" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [social]
+      summary: Reclamar una parcela (un chunk). Cobra en AET; valida solape y fondos.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlotClaim" }
+      responses:
+        "200":
+          description: Parcela reclamada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  price: { type: number, example: 50 }
+        "400": { description: Fondos insuficientes }
+        "409": { description: La parcela ya está reclamada }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/claims/unclaim:
+    post:
+      tags: [social]
+      summary: Liberar una parcela propia (por su esquina mínima)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlotUnclaim" }
+      responses:
+        "200": { description: Parcela liberada }
+        "404": { description: No tienes una parcela ahí }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
 components:
   securitySchemes:
     internalToken:
@@ -398,6 +452,39 @@ components:
         kind: { type: string, example: economy }
         description: { type: string, example: "El pueblo trabajo: La Granja de Nara gano 8 AET..." }
         created_at: { type: string, format: date-time }
+
+    PlotClaim:
+      type: object
+      required: [owner_uuid, world, min_x, min_z, max_x, max_z]
+      properties:
+        owner_uuid: { type: string, format: uuid }
+        owner_name: { type: string }
+        world: { type: string, example: main }
+        min_x: { type: integer }
+        min_z: { type: integer }
+        max_x: { type: integer }
+        max_z: { type: integer }
+
+    PlotUnclaim:
+      type: object
+      required: [owner_uuid, world, min_x, min_z]
+      properties:
+        owner_uuid: { type: string, format: uuid }
+        world: { type: string, example: main }
+        min_x: { type: integer }
+        min_z: { type: integer }
+
+    Plot:
+      type: object
+      required: [world, min_x, min_z, max_x, max_z]
+      properties:
+        owner_uuid: { type: string, format: uuid, nullable: true }
+        owner_name: { type: string, nullable: true }
+        world: { type: string }
+        min_x: { type: integer }
+        min_z: { type: integer }
+        max_x: { type: integer }
+        max_z: { type: integer }
 
 security:
   - internalToken: []

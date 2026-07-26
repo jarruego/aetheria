@@ -1,5 +1,8 @@
 package com.aetheria.plugin;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 import org.bukkit.Bukkit;
@@ -7,6 +10,7 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.BlockFace;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Villager;
 
 /**
@@ -38,6 +42,24 @@ public final class SettlementModule {
     private final World world;
     private int farmRadius = 2;   // los cultivos del pueblo se amplian con el tiempo
 
+    private static final String BABY_TAG = "aetheria_baby";
+    private static final long GROW_MS = 6 * 60 * 1000L;   // un bebe tarda ~6 min en hacerse adulto
+
+    /** Un nino del pueblo creciendo: su entidad bebe, su nombre y cuando se hara adulto. */
+    private static final class Child {
+        final Villager baby;
+        final String name;
+        final long matureAt;
+
+        Child(Villager baby, String name, long matureAt) {
+            this.baby = baby;
+            this.name = name;
+            this.matureAt = matureAt;
+        }
+    }
+
+    private final List<Child> children = new ArrayList<>();
+
     public SettlementModule(AetheriaPlugin plugin, GatewayClient gateway, VillageModule village,
             NpcRoutineModule routines, World world) {
         this.plugin = plugin;
@@ -53,6 +75,9 @@ public final class SettlementModule {
         final int sz = village.spawnZ();
         road(sx - 40, sx + 40, sz + 38, sz + 38);
         road(sx, sx, sz + 34, sz + 38);
+        world.getEntities().stream()   // limpia bebes huerfanos de sesiones anteriores
+                .filter(e -> e.getScoreboardTags().contains(BABY_TAG))
+                .forEach(org.bukkit.entity.Entity::remove);
         plugin.getServer().getScheduler().runTaskTimer(plugin, this::reconcile, PERIOD, PERIOD);
         plugin.getLogger().info("[Aetheria] Pueblo vivo: reconciliando poblacion cada 60 s.");
     }
@@ -62,17 +87,71 @@ public final class SettlementModule {
             if (err != null || json == null) {
                 return;
             }
+            matureChildren();   // los ninos que ya han crecido se mudan a su casa
+
             final int population = json.get("population").getAsInt();
             final int targetExtra = Math.max(0, population - 3);
-            final int current = routines.colonoCount();
-            if (current < targetExtra) {
-                grow(current);
-            } else if (current > targetExtra) {
-                shrink();
+            final int adults = routines.colonoCount();
+            final int have = adults + children.size();
+            if (have < targetExtra) {
+                // Deficit grande = recuperar tras reinicio (adultos directos); +1 = nace un nino.
+                if (targetExtra - have >= 2) {
+                    growAdult(adults, NAMES[ThreadLocalRandom.current().nextInt(NAMES.length)]);
+                } else {
+                    bearChild();
+                }
+            } else if (have > targetExtra) {
+                if (!children.isEmpty()) {
+                    final Child c = children.remove(children.size() - 1);
+                    if (c.baby != null) {
+                        c.baby.remove();
+                    }
+                } else {
+                    shrink();
+                }
             }
             final String level = json.has("level") ? json.get("level").getAsString() : "estable";
             worldWork(level);   // los NPC mejoran el mundo (amplian cultivos) con el tiempo
         }));
+    }
+
+    /** Nace un nino: un bebe aldeano cerca de la plaza que crecera con el tiempo. */
+    private void bearChild() {
+        final var rng = ThreadLocalRandom.current();
+        final String name = NAMES[rng.nextInt(NAMES.length)];
+        final Location plaza = village.plaza();
+        final Location at = plaza.clone().add(rng.nextInt(5) - 2, 0, rng.nextInt(5) - 2);
+        final Villager baby = (Villager) world.spawnEntity(at, EntityType.VILLAGER);
+        baby.setBaby();
+        baby.customName(net.kyori.adventure.text.Component.text("§b" + name + " §7(nino)"));
+        baby.setCustomNameVisible(true);
+        baby.setPersistent(true);
+        baby.setRemoveWhenFarAway(false);
+        baby.setInvulnerable(true);
+        baby.addScoreboardTag(BABY_TAG);
+        children.add(new Child(baby, name, System.currentTimeMillis() + GROW_MS));
+        Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
+                "§d[Pueblo] §fHa nacido §b" + name + "§f en el pueblo."));
+        plugin.getLogger().info("[Aetheria] Pueblo vivo: nace un nino (" + name + ").");
+    }
+
+    /** Los ninos que han crecido se convierten en adultos con casa y oficio propios. */
+    private void matureChildren() {
+        final long now = System.currentTimeMillis();
+        final Iterator<Child> it = children.iterator();
+        while (it.hasNext()) {
+            final Child c = it.next();
+            if (now < c.matureAt) {
+                continue;
+            }
+            it.remove();
+            if (c.baby != null) {
+                c.baby.remove();
+            }
+            growAdult(routines.colonoCount(), c.name);
+            Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
+                    "§a[Pueblo] §b" + c.name + " §7ha crecido y se ha mudado a su propia casa."));
+        }
     }
 
     /** Los granjeros amplian los cultivos del pueblo cuando prospera (solo sobre suelo libre). */
@@ -111,13 +190,12 @@ public final class SettlementModule {
         }
     }
 
-    private void grow(int index) {
+    private void growAdult(int index, String name) {
         final Location slot = village.expansionSlot(index);
         final int cx = slot.getBlockX();
         final int cz = slot.getBlockZ();
         final int fy = village.baseY();
         final var rng = ThreadLocalRandom.current();
-        final String name = NAMES[rng.nextInt(NAMES.length)];
         final Villager.Profession prof = PROFS[rng.nextInt(PROFS.length)];
         final Material[] pal = COMBOS[rng.nextInt(COMBOS.length)];
         final int floors = 1 + rng.nextInt(2);

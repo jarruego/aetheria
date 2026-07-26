@@ -5,6 +5,7 @@ Los consume el API Gateway (y en Fase 3 el planner). Nunca devuelven bloques.
 
 from __future__ import annotations
 
+import decimal
 import json
 import uuid
 
@@ -12,6 +13,8 @@ from fastapi import APIRouter, HTTPException
 
 from aetheria_world.db import is_ready, pool
 from aetheria_world.models import (
+    BalanceOut,
+    ChargeIn,
     ConversationAppend,
     ConversationTurn,
     HomeOut,
@@ -20,6 +23,7 @@ from aetheria_world.models import (
     PlayerUpsert,
     SummaryOut,
     SummaryUpsert,
+    TransferIn,
     WorldRef,
     WorldSummary,
 )
@@ -217,6 +221,79 @@ async def put_summary(body: SummaryUpsert) -> dict:
             """,
             body.npc_key, body.player_uuid, body.summary,
         )
+    return {"status": "ok"}
+
+
+# --- Economia (Fase 6): cuentas, transferencias y cobro de servicios ---
+
+_STARTING_BALANCE = decimal.Decimal("100.00")
+_BANCO = uuid.UUID("00000000-0000-0000-0000-000000000000")  # cuenta del sistema (sumidero)
+
+
+async def _account(conn, owner_id: uuid.UUID, owner_type: str = "player"):
+    """Devuelve (o crea con saldo inicial) la cuenta AET de un propietario."""
+    row = await conn.fetchrow(
+        "select id, balance from accounts where owner_type = $1 and owner_id = $2 and currency = 'AET'",
+        owner_type, owner_id,
+    )
+    if row is None:
+        start = _STARTING_BALANCE if owner_type == "player" else decimal.Decimal(0)
+        row = await conn.fetchrow(
+            "insert into accounts (owner_type, owner_id, balance, currency) values ($1, $2, $3, 'AET') "
+            "returning id, balance",
+            owner_type, owner_id, start,
+        )
+    return row
+
+
+@router.get("/accounts/{player_uuid}", response_model=BalanceOut)
+async def get_balance(player_uuid: str) -> BalanceOut:
+    _require_db()
+    async with pool().acquire() as conn:
+        acc = await _account(conn, uuid.UUID(player_uuid))
+    return BalanceOut(balance=float(acc["balance"]))
+
+
+@router.post("/transfer")
+async def transfer(body: TransferIn) -> dict:
+    _require_db()
+    amount = decimal.Decimal(str(body.amount))
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="La cantidad debe ser positiva")
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            frm = await _account(conn, uuid.UUID(body.from_uuid))
+            if frm["balance"] < amount:
+                raise HTTPException(status_code=400, detail="Fondos insuficientes")
+            to = await _account(conn, uuid.UUID(body.to_uuid))
+            await conn.execute("update accounts set balance = balance - $1 where id = $2", amount, frm["id"])
+            await conn.execute("update accounts set balance = balance + $1 where id = $2", amount, to["id"])
+            await conn.execute(
+                "insert into transactions (from_account, to_account, amount, reason) values ($1, $2, $3, $4)",
+                frm["id"], to["id"], amount, body.reason or "transferencia",
+            )
+    return {"status": "ok"}
+
+
+@router.post("/charge")
+async def charge(body: ChargeIn) -> dict:
+    """Cobra a un jugador (por un servicio). El dinero va a la cuenta del sistema."""
+    _require_db()
+    amount = decimal.Decimal(str(body.amount))
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="La cantidad debe ser positiva")
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            acc = await _account(conn, uuid.UUID(body.uuid))
+            if acc["balance"] < amount:
+                raise HTTPException(status_code=400, detail="Fondos insuficientes")
+            banco = await _account(conn, _BANCO, owner_type="system")
+            await conn.execute("update accounts set balance = balance - $1 where id = $2", amount, acc["id"])
+            await conn.execute("update accounts set balance = balance + $1 where id = $2", amount, banco["id"])
+            await conn.execute(
+                "insert into transactions (from_account, to_account, amount, reason) values ($1, $2, $3, $4)",
+                acc["id"], banco["id"], amount, body.reason or "servicio",
+            )
     return {"status": "ok"}
 
 

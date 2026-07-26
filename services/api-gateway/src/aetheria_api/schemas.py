@@ -60,3 +60,19 @@ class PlanResponse(BaseModel):
     actions: list[PlanAction] = Field(default_factory=list)
     reversible: bool = True
     estimated_cost: int = 0
+
+
+class ServiceRequest(BaseModel):
+    """Un jugador contrata un servicio inteligente de PAGO (Arquitecto IA, etc.)."""
+
+    player_uuid: str
+    service: str = Field(max_length=40)
+    description: str = Field(max_length=2000)
+    world: str = "main"
+
+
+class ServiceResponse(BaseModel):
+    status: PlanStatus
+    reason: str | None = None
+    charged: float = 0.0
+    actions: list[PlanAction] = Field(default_factory=list)

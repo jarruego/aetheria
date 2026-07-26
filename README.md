@@ -46,7 +46,26 @@ Un LLM nunca ejecuta comandos. Ver docs/architecture/security-flow.md.
 
 ## Estado del proyecto
 
-Fase 0 - Fundacion (en curso). Ver docs/roadmap.md para el plan por fases.
+Fases 0-6 completas (verificado en local). Ver docs/roadmap.md para el detalle.
+
+- **F0-F3 (backend + IA):** microservicios FastAPI, Postgres con migraciones versionadas,
+  world-state, adaptador LLM intercambiable, conversacion en 3 niveles y el nucleo de
+  seguridad: la IA propone un plan, un validador determinista lo aprueba/rechaza y el
+  plugin solo ejecuta acciones de una lista blanca.
+- **Red Minecraft:** Velocity como unico punto de entrada; perfiles lean (solo main) y
+  full (lobby + main + creative). Bedrock via Geyser/Floodgate. Plugin Java (Paper) que se
+  compila y despliega solo con docker compose.
+- **F5 (el mundo recuerda):** jugadores, casas y memoria de NPC persisten en la DB. Los
+  NPC tienen persona humana y memoria en dos capas (turnos recientes verbatim + ficha
+  evolutiva del jugador que condensa lo antiguo). Auditoria de cada plan de la IA.
+- **F6 (economia y servicios IA):** moneda AET con cuentas y transferencias (`/balance`,
+  `/pay`) y **servicios inteligentes de pago** (Arquitecto/Decorador/Urbanista): la IA
+  construye por encargo y solo se cobra si el plan pasa el validador. Se venden servicios,
+  nunca ventajas. Ver docs/adr/0011.
+- **Siguiente:** F7 NPC vivos (rutinas/pathfinding), F8 el mundo evoluciona solo, F9
+  estructuras sociales. F4 Cloud (Oracle/Terraform) pendiente de capacidad.
+
+IA a coste cero por defecto (`LLM_PROVIDER=stub`); nivel 3 real gratis con Ollama local.
 
 ## Puesta en marcha (desarrollo local)
 

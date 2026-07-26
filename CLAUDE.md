@@ -70,10 +70,25 @@ En GitHub (`https://github.com/jarruego/aetheria`), verificado en local.
 Postgres+migraciones+world-state · F3 IA (adaptador LLM, conversación 3 niveles,
 planner→plan→**validador**).
 
-**Plugin Java (Paper): funcional.** `/aetheria ask|plan|npc` ejecuta planes aprobados por
-lista blanca (SAY, MOVE_TO, GIVE_ITEM, PLACE_BLUEPRINT, OPEN_TRADE; NPC Villager).
-`/sethome`+`/home`. Se compila y despliega solo vía compose (one-shot `plugin-build`,
-copia el jar a main/lobby/creative). Detalle: `minecraft/plugin-aetheria/README.md`.
+**Plugin Java (Paper): funcional.** `/aetheria ask|plan|npc|servicio` ejecuta planes
+aprobados por lista blanca (SAY, MOVE_TO, GIVE_ITEM, PLACE_BLUEPRINT, OPEN_TRADE; NPC
+Villager). `/sethome`+`/home` (en DB), `/balance`+`/pay` (economía). Se compila y despliega
+solo vía compose (one-shot `plugin-build`, copia el jar a main/lobby/creative). Detalle:
+`minecraft/plugin-aetheria/README.md`.
+
+**Fase 5 (el mundo recuerda): COMPLETA.** Camino de escritura plugin→gateway→world-state→
+Postgres (ADR-0010). Jugadores y casas persisten en DB; los NPC recuerdan (memoria en dos
+capas: ~10 turnos verbatim + **ficha evolutiva** del jugador que condensa lo viejo y poda
+lo ya resumido, migración 0004); persona humana por NPC + contexto de mundo/elenco;
+auditoría de planes.
+
+**Fase 6 (economía y servicios IA): COMPLETA en su núcleo (ADR-0011).** Moneda **AET**
+sobre `accounts`/`transactions` (sin migración nueva). Cuentas perezosas con 100 AET
+inicial; cuenta "banco" del sistema como sumidero. `/balance` y `/pay` (transferencias
+atómicas con control de fondos). **Servicios inteligentes de PAGO** (`/aetheria servicio
+<arquitecto|decorador|urbanista> <qué>`): la IA propone → validador aprueba → **solo
+entonces se cobra** (nunca se paga por un plan rechazado ni sin fondos). Se venden
+servicios, nunca ventajas.
 
 **Red Minecraft — dos perfiles, mismo repo:**
 - **lean** (`dev-up.ps1`; y lo que corre en cloud): solo `main`, sin lobby, End off,
@@ -127,12 +142,11 @@ ya existe (5/7 recursos), falta la instancia ARM → insistir con
 autodesplegado) YA están aplicados en el repo. Detalle: `docs/infra/fase4-oracle-handoff.md`
 (leerlo antes de tocar nada de cloud).
 
-**Pendiente clave — el mundo aún no "recuerda":** no existe todavía un **camino de
-escritura a la base de datos** desde el juego. `world-state` es de solo lectura; las casas
-(`/home`) se guardan en un fichero local del plugin; las tablas `npc_memory`, `plan_audit`,
-`contracts` existen pero nadie escribe en ellas. Construir ese camino (plugin/gateway →
-DB) es el siguiente paso grande para memoria de NPC, economía y persistencia real.
-→ `docs/roadmap.md`
+**Siguiente paso grande — NPC vivos (Fase 7):** hoy los guías son estáticos. Falta darles
+horarios, rutinas y movimiento (pathfinding por código), y después que el mundo evolucione
+solo aunque no haya nadie conectado (Fase 8, simulación por ticks) y estructuras sociales
+—parcelas, ciudades, contratos entre jugadores— (Fase 9). El camino de escritura a la DB y
+la economía ya existen: se construye encima. → `docs/roadmap.md`
 
 ## Convenciones
 

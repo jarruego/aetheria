@@ -56,12 +56,18 @@ Cada fase deja algo funcionando y verificable.
 - [x] Auditoria de planes (plan_audit): cada plan de la IA queda registrado
 - (La economia/encargos se traslada a la Fase 6: es un sistema grande por si mismo)
 
-## Fase 6 - Economia y servicios IA  (PENDIENTE)
-- [ ] Moneda, cuentas y transacciones (tablas accounts/transactions ya existen)
-- [ ] Profesiones y empresas
-- [ ] Encargos/contratos (contracts) entre jugadores y NPC
-- [ ] Servicios inteligentes de PAGO: Arquitecto IA, Urbanista IA, Decorador IA... (el
-      modelo de negocio de la vision: vender servicios, nunca ventajas)
+## Fase 6 - Economia y servicios IA  (COMPLETA en su nucleo)
+- [x] Moneda AET, cuentas y transacciones sobre accounts/transactions (ADR-0011, sin
+      migracion nueva). Cuentas perezosas con saldo inicial 100 AET; cuenta "banco" del
+      sistema como sumidero.
+- [x] Saldo y pagos entre jugadores: /balance y /pay (comandos in-game + /v1/balance,
+      /v1/pay). Transferencias atomicas con control de fondos insuficientes.
+- [x] Servicios inteligentes de PAGO: Arquitecto (50), Decorador (20), Urbanista (80).
+      /aetheria servicio <tipo> <que quieres>. Orden seguro: la IA propone -> validador
+      aprueba -> SOLO entonces se cobra (nunca se paga por un plan rechazado ni sin fondos).
+      El modelo de negocio de la vision: vender servicios, nunca ventajas.
+- [ ] Profesiones y empresas (futuro)
+- [ ] Encargos/contratos (contracts) entre jugadores y NPC (futuro)
 
 ## Fase 7 - NPC vivos (rutinas)  (PENDIENTE)
 - [ ] Horarios, rutinas y pathfinding por codigo (hoy los guias son estaticos)

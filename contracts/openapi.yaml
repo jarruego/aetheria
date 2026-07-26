@@ -133,6 +133,65 @@ paths:
         "404": { description: El jugador no tiene casa en ese servidor }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /v1/balance/{player_uuid}:
+    get:
+      tags: [economy]
+      summary: Saldo AET del jugador (crea la cuenta con saldo inicial si no existe)
+      parameters:
+        - name: player_uuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Saldo del jugador
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Balance" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/pay:
+    post:
+      tags: [economy]
+      summary: Transferir AET de un jugador a otro (atómico, con control de fondos)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Transfer" }
+      responses:
+        "200":
+          description: Transferencia realizada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { status: { type: string, example: ok } }
+        "400": { description: Fondos insuficientes o cantidad no válida }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/service:
+    post:
+      tags: [economy]
+      summary: Contratar un servicio inteligente de PAGO (Arquitecto/Decorador/Urbanista IA)
+      description: >
+        La IA propone un plan a partir de la descripción, el validador lo aprueba o rechaza
+        y SOLO si se aprueba se cobra el precio del servicio. Nunca se paga por un plan
+        rechazado ni sin fondos. Las acciones devueltas ya están validadas (lista blanca).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceRequest" }
+      responses:
+        "200":
+          description: Servicio aprobado (cobrado) o rechazado (con motivo)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
 components:
   securitySchemes:
     internalToken:
@@ -266,6 +325,52 @@ components:
         z: { type: number }
         yaw: { type: number }
         pitch: { type: number }
+
+    Balance:
+      type: object
+      required: [balance, currency]
+      properties:
+        balance: { type: number, example: 100.0 }
+        currency: { type: string, example: AET }
+
+    Transfer:
+      type: object
+      required: [from_uuid, to_uuid, amount]
+      properties:
+        from_uuid: { type: string, format: uuid }
+        to_uuid: { type: string, format: uuid }
+        amount: { type: number, minimum: 0, example: 25 }
+        reason: { type: string }
+
+    ServiceRequest:
+      type: object
+      required: [player_uuid, service, description]
+      properties:
+        player_uuid: { type: string, format: uuid }
+        service:
+          type: string
+          description: Tipo de servicio (arquitecto, decorador, urbanista, ...)
+          example: arquitecto
+        description: { type: string, example: "construye una casa pequeña de madera" }
+        world: { type: string, default: main }
+
+    ServiceResponse:
+      type: object
+      required: [status, charged, actions]
+      properties:
+        status:
+          type: string
+          enum: [approved, rejected]
+        reason:
+          type: string
+          description: Presente si status=rejected (plan rechazado o fondos insuficientes)
+        charged:
+          type: number
+          description: AET cobrados (0 si el servicio fue rechazado)
+          example: 50
+        actions:
+          type: array
+          items: { $ref: "#/components/schemas/PlanAction" }
 
 security:
   - internalToken: []

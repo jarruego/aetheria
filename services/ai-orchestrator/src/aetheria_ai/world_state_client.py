@@ -113,3 +113,19 @@ async def record_plan_audit(audit: dict) -> None:
             await client.post(f"{_base()}/internal/plan-audit", json=audit)
     except Exception:  # noqa: BLE001
         pass
+
+
+async def charge_player(player_uuid: str, amount: float, reason: str) -> bool:
+    """Cobra a un jugador. True si se cobro; False si no hay fondos o falla la red."""
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.post(
+                f"{_base()}/internal/charge",
+                json={"uuid": player_uuid, "amount": amount, "reason": reason},
+            )
+            if resp.status_code == 400:  # fondos insuficientes
+                return False
+            resp.raise_for_status()
+            return True
+    except Exception:  # noqa: BLE001 - sin poder cobrar, no se presta el servicio
+        return False

@@ -55,7 +55,15 @@ public final class AetheriaCommand implements CommandExecutor {
                 handlePlan(player, join(args, 1));
             }
             case "npc" -> handleNpc(player, args);
-            default -> player.sendMessage("Subcomando desconocido: " + sub + " (usa ask|plan|npc)");
+            case "servicio", "service" -> {
+                if (args.length < 3) {
+                    player.sendMessage("Uso: /aetheria servicio <arquitecto|decorador|urbanista> <que quieres>");
+                    return true;
+                }
+                handleService(player, args[1].toLowerCase(), join(args, 2));
+            }
+            default -> player.sendMessage(
+                    "Subcomando desconocido: " + sub + " (usa ask|plan|npc|servicio)");
         }
         return true;
     }
@@ -114,6 +122,35 @@ public final class AetheriaCommand implements CommandExecutor {
                         return;
                     }
                     executor.execute(player, defaultNpc, json.getAsJsonArray("actions"));
+                }));
+    }
+
+    private void handleService(Player player, String service, String description) {
+        player.sendMessage("§7[Aetheria] el servicio de §e" + service + " §7esta trabajando...");
+        final String world = player.getWorld().getName();
+        gateway.service(player.getUniqueId().toString(), service, description, world)
+                .whenComplete((json, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (err != null) {
+                        player.sendMessage("§c[Aetheria] error: " + rootMessage(err));
+                        return;
+                    }
+                    // sendCapturing envuelve la respuesta en {ok, error?, data?}.
+                    if (!json.get("ok").getAsBoolean()) {
+                        player.sendMessage("§c[Aetheria] " + json.get("error").getAsString());
+                        return;
+                    }
+                    final var data = json.getAsJsonObject("data");
+                    if (!"approved".equals(data.get("status").getAsString())) {
+                        final String reason = data.has("reason") && !data.get("reason").isJsonNull()
+                                ? data.get("reason").getAsString()
+                                : "no se pudo realizar";
+                        player.sendMessage("§c[Aetheria] servicio no realizado: " + reason);
+                        return;
+                    }
+                    final double charged = data.has("charged") ? data.get("charged").getAsDouble() : 0.0;
+                    player.sendMessage(String.format("§a[Aetheria] servicio realizado. Se cobraron §e%.0f AET§a.",
+                            charged));
+                    executor.execute(player, "servicio-" + service, data.getAsJsonArray("actions"));
                 }));
     }
 

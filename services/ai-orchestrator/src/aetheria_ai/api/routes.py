@@ -10,16 +10,25 @@ from fastapi import APIRouter
 
 from aetheria_ai.conversation import handle_conversation
 from aetheria_ai.models.plan import (
+    Actor,
+    ActorType,
     ConversationRequest,
     ConversationResponse,
     PlanRequest,
     PlanResponse,
+    PlanStatus,
+    ServiceRequest,
+    ServiceResponse,
 )
 from aetheria_ai.planner.planner import build_plan
 from aetheria_ai.validator.validator import validate_plan
-from aetheria_ai.world_state_client import record_plan_audit
+from aetheria_ai.world_state_client import charge_player, record_plan_audit
 
 router = APIRouter(prefix="/internal", tags=["internal"])
+
+# Precio de cada servicio inteligente (AET). Vender SERVICIOS, nunca ventajas.
+_SERVICE_PRICES = {"arquitecto": 50.0, "decorador": 20.0, "urbanista": 80.0}
+_DEFAULT_SERVICE_PRICE = 30.0
 
 
 @router.post("/conversation", response_model=ConversationResponse)
@@ -43,3 +52,43 @@ async def plans(request: PlanRequest) -> PlanResponse:
         "actions": [{"type": a.type.value, "params": a.params} for a in result.actions],
     })
     return result
+
+
+@router.post("/service", response_model=ServiceResponse)
+async def service(request: ServiceRequest) -> ServiceResponse:
+    """Servicio inteligente de PAGO: la IA construye/actua y se cobra en AET.
+
+    Orden importante: primero se valida el plan (gratis de calcular) y SOLO si es
+    aprobado se cobra. Asi el jugador nunca paga por un plan que el validador rechaza.
+    """
+    plan = await build_plan(
+        PlanRequest(
+            actor=Actor(type=ActorType.NPC, id=request.service),
+            goal=request.description,
+            world=request.world,
+        )
+    )
+    result = validate_plan(plan)
+    await record_plan_audit({
+        "plan_id": str(result.plan_id),
+        "actor_type": "service",
+        "actor_id": request.service,
+        "status": result.status.value,
+        "rejection_reason": result.rejection_reason,
+        "actions": [{"type": a.type.value, "params": a.params} for a in result.actions],
+    })
+
+    if result.status is not PlanStatus.APPROVED:
+        return ServiceResponse(
+            status=PlanStatus.REJECTED,
+            reason=result.rejection_reason or "No se pudo realizar el servicio.",
+        )
+
+    price = _SERVICE_PRICES.get(request.service.lower(), _DEFAULT_SERVICE_PRICE)
+    if not await charge_player(request.player_uuid, price, f"servicio {request.service}"):
+        return ServiceResponse(
+            status=PlanStatus.REJECTED,
+            reason=f"Fondos insuficientes. El servicio cuesta {price:.0f} AET.",
+        )
+
+    return ServiceResponse(status=PlanStatus.APPROVED, charged=price, actions=result.actions)

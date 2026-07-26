@@ -17,6 +17,14 @@ commands:
     description: Guarda tu posicion actual como casa
     usage: /sethome
     permission: aetheria.use
+  balance:
+    description: Muestra tu saldo
+    usage: /balance
+    permission: aetheria.use
+  pay:
+    description: Paga AET a otro jugador
+    usage: /pay <jugador> <cantidad>
+    permission: aetheria.use
 permissions:
   aetheria.use:
     description: Permite usar los comandos de Aetheria

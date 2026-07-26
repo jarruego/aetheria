@@ -140,4 +140,82 @@ public final class GatewayClient {
                     return JsonParser.parseString(resp.body()).getAsJsonObject();
                 });
     }
+
+    // --- Economia (Fase 6) ---
+
+    private CompletableFuture<JsonObject> getJson(String path) {
+        final HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + path))
+                .timeout(Duration.ofSeconds(20))
+                .header("Authorization", "Bearer " + token)
+                .GET()
+                .build();
+        return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(resp -> {
+                    if (resp.statusCode() / 100 != 2) {
+                        throw new RuntimeException("Gateway HTTP " + resp.statusCode() + ": " + resp.body());
+                    }
+                    return JsonParser.parseString(resp.body()).getAsJsonObject();
+                });
+    }
+
+    /** Saldo del jugador. */
+    public CompletableFuture<JsonObject> getBalance(String uuid) {
+        return getJson("/v1/balance/" + uuid);
+    }
+
+    /** Paga a otro jugador. Devuelve {ok:bool, error?:string} (no lanza por saldo insuficiente). */
+    public CompletableFuture<JsonObject> pay(String fromUuid, String toUuid, double amount) {
+        final JsonObject body = new JsonObject();
+        body.addProperty("from_uuid", fromUuid);
+        body.addProperty("to_uuid", toUuid);
+        body.addProperty("amount", amount);
+        return sendCapturing("/v1/pay", gson.toJson(body));
+    }
+
+    /**
+     * Contrata un servicio inteligente de PAGO (Arquitecto IA, etc.). La IA valida el plan
+     * y SOLO cobra si es aprobado. Devuelve el plan validado en {ok, data:{status,...}}.
+     */
+    public CompletableFuture<JsonObject> service(String playerUuid, String service, String description,
+            String world) {
+        final JsonObject body = new JsonObject();
+        body.addProperty("player_uuid", playerUuid);
+        body.addProperty("service", service);
+        body.addProperty("description", description);
+        body.addProperty("world", world);
+        return sendCapturing("/v1/service", gson.toJson(body));
+    }
+
+    /** POST que NO lanza en 4xx: devuelve {ok:bool, error?:string} para mensajes limpios. */
+    CompletableFuture<JsonObject> sendCapturing(String path, String jsonBody) {
+        final HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + path))
+                .timeout(Duration.ofSeconds(20))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + token)
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
+        return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(resp -> {
+                    final JsonObject out = new JsonObject();
+                    if (resp.statusCode() / 100 == 2) {
+                        out.addProperty("ok", true);
+                        try {
+                            out.add("data", JsonParser.parseString(resp.body()).getAsJsonObject());
+                        } catch (Exception ignored) {
+                            // sin cuerpo util
+                        }
+                    } else {
+                        out.addProperty("ok", false);
+                        try {
+                            out.addProperty("error",
+                                    JsonParser.parseString(resp.body()).getAsJsonObject().get("detail").getAsString());
+                        } catch (Exception e) {
+                            out.addProperty("error", "error " + resp.statusCode());
+                        }
+                    }
+                    return out;
+                });
+    }
 }

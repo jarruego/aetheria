@@ -74,6 +74,26 @@ class SummaryOut(BaseModel):
     summary: str
 
 
+# --- Economia (Fase 6) ---
+
+class BalanceOut(BaseModel):
+    balance: float
+    currency: str = "AET"
+
+
+class TransferIn(BaseModel):
+    from_uuid: str
+    to_uuid: str
+    amount: float
+    reason: str | None = None
+
+
+class ChargeIn(BaseModel):
+    uuid: str
+    amount: float
+    reason: str | None = None
+
+
 class PlanAudit(BaseModel):
     plan_id: str
     actor_type: str

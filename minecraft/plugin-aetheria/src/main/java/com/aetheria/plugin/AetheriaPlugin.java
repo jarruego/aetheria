@@ -54,6 +54,11 @@ public final class AetheriaPlugin extends JavaPlugin {
             Objects.requireNonNull(getCommand("home")).setExecutor(homeCmd);
             Objects.requireNonNull(getCommand("sethome")).setExecutor(homeCmd);
 
+            // Economia (Fase 6): saldo y pagos.
+            final EconomyCommand ecoCmd = new EconomyCommand(this, gateway);
+            Objects.requireNonNull(getCommand("balance")).setExecutor(ecoCmd);
+            Objects.requireNonNull(getCommand("pay")).setExecutor(ecoCmd);
+
             // Portal de vuelta al lobby (con su guia).
             if (getConfig().getBoolean("return-portal.enabled", true)) {
                 getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");

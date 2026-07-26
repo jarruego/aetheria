@@ -75,6 +75,22 @@ class PlanResponse(BaseModel):
     estimated_cost: int = 0
 
 
+class ServiceRequest(BaseModel):
+    """Un jugador contrata un servicio inteligente de PAGO (Arquitecto IA, etc.)."""
+
+    player_uuid: str
+    service: str          # 'arquitecto' | 'decorador' | 'urbanista' | ...
+    description: str
+    world: str = "main"
+
+
+class ServiceResponse(BaseModel):
+    status: PlanStatus    # approved | rejected
+    reason: str | None = None
+    charged: float = 0.0
+    actions: list[PlanAction] = Field(default_factory=list)
+
+
 class ConversationRequest(BaseModel):
     npc_id: str
     player_id: str

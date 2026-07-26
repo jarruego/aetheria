@@ -21,6 +21,17 @@ if ($secret -eq 'changeme-velocity-modern-forwarding-secret') {
     Write-Warning "VELOCITY_FORWARDING_SECRET usa el valor por defecto. Cambialo en .env para produccion."
 }
 
+# Modo de autenticacion: VELOCITY_ONLINE_MODE (.env). Si falta, premium (true).
+$omLine = Get-Content $envFile | Where-Object { $_ -match '^\s*VELOCITY_ONLINE_MODE\s*=' } | Select-Object -First 1
+$omRaw = if ($omLine) { (($omLine -replace '^\s*VELOCITY_ONLINE_MODE\s*=\s*', '') -split '#')[0].Trim() } else { 'true' }
+if ($omRaw -notin @('true', 'false')) { throw "VELOCITY_ONLINE_MODE debe ser true o false (valor: '$omRaw')." }
+$onlineMode = $omRaw
+if ($onlineMode -eq 'false') {
+    Write-Warning "VELOCITY_ONLINE_MODE=false: el proxy NO autentica contra Mojang."
+    Write-Warning "  Cualquiera puede entrar con el nick que quiera (incluido el tuyo). Usalo solo en LAN."
+    Write-Warning "  Los UUID son distintos a los premium: saldo, casas y parcelas NO se comparten."
+}
+
 # Parametros por modo
 if ($Mode -eq 'full') {
     $paperServers = @("lobby", "main", "creative")
@@ -51,14 +62,14 @@ $enc = [System.Text.UTF8Encoding]::new($false)
 
 # velocity.toml (sin secreto; servidores/try segun modo) + forwarding.secret
 $vtpl = (Get-Content (Join-Path $root "minecraft\proxy-velocity\velocity.toml.template") -Raw) -replace "`r`n", "`n"
-$vout = $vtpl.Replace('%%SERVERS%%', $servers).Replace('%%TRY%%', $try)
+$vout = $vtpl.Replace('%%SERVERS%%', $servers).Replace('%%TRY%%', $try).Replace('%%ONLINE_MODE%%', $onlineMode)
 [System.IO.File]::WriteAllText((Join-Path $gen "velocity\velocity.toml"), $vout, $enc)
 [System.IO.File]::WriteAllText((Join-Path $gen "velocity\forwarding.secret"), $secret, $enc)
 
 # config/paper-global.yml para cada servidor Paper (con el secreto inline)
 $tpl = (Get-Content (Join-Path $root "minecraft\paper-global.yml.template") -Raw) -replace "`r`n", "`n"
 foreach ($s in $paperServers) {
-    $out = $tpl.Replace('%%FORWARDING_SECRET%%', $secret)
+    $out = $tpl.Replace('%%FORWARDING_SECRET%%', $secret).Replace('%%ONLINE_MODE%%', $onlineMode)
     [System.IO.File]::WriteAllText((Join-Path $gen "$s\config\paper-global.yml"), $out, $enc)
 }
 
@@ -66,4 +77,5 @@ foreach ($s in $paperServers) {
 $bukkit = (Get-Content (Join-Path $root "minecraft\bukkit.yml.template") -Raw) -replace "`r`n", "`n"
 [System.IO.File]::WriteAllText((Join-Path $gen "main\bukkit.yml"), $bukkit.Replace('%%ALLOW_END%%', $allowEnd), $enc)
 
-Write-Host "Config de Minecraft generada (modo: $Mode) en minecraft/.generated/." -ForegroundColor Green
+$auth = if ($onlineMode -eq 'true') { 'premium' } else { 'OFFLINE (sin autenticar)' }
+Write-Host "Config de Minecraft generada (modo: $Mode | auth: $auth) en minecraft/.generated/." -ForegroundColor Green

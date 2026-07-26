@@ -18,6 +18,12 @@ backend (`services/`) y la persistencia en Supabase (`db/`).
 - Compatibilidad Java + Bedrock (móvil, consola) vía **Geyser + Floodgate**.
 - Las configuraciones se versionan aquí; los **jars, mundos y logs NO** (ver
   `.gitignore`). Se descargan/generan por script en el despliegue.
+- **Autenticación**: `VELOCITY_ONLINE_MODE` en `.env` (por defecto `true` = premium).
+  `gen-mc-config` lo escribe a la vez en `velocity.toml` y en el bloque `velocity` de
+  `paper-global.yml`: los dos deben coincidir o Paper rechaza los UUID del proxy.
+  Con `false` entra cualquier launcher sin cuenta (TLauncher), pero **cualquiera puede
+  suplantar cualquier nick** y los UUID son otros → saldo, casas, parcelas y memoria de
+  los NPC no se comparten con las cuentas premium. Solo para pruebas en LAN.
 
 En Fase 1 estos directorios se rellenan con configuración declarativa y las imágenes
 `itzg/mc-proxy` e `itzg/minecraft-server` en `docker-compose.yml`.

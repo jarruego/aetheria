@@ -9,6 +9,7 @@ proxies:
   velocity:
     enabled: true
     # online-mode del BLOQUE velocity (distinto de server.properties online-mode):
-    # debe quedarse en true para que Velocity asigne UUID/skin correctos.
-    online-mode: true
+    # debe valer LO MISMO que online-mode en velocity.toml para que Paper acepte los
+    # UUID que reenvia el proxy. gen-mc-config lo rellena desde VELOCITY_ONLINE_MODE.
+    online-mode: %%ONLINE_MODE%%
     secret: "%%FORWARDING_SECRET%%"

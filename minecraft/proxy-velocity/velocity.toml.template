@@ -7,8 +7,10 @@ config-version = "2.7"
 bind = "0.0.0.0:25565"
 motd = "<#00aaff>Aetheria</#00aaff> - civilizacion viva"
 show-max-players = 100
-online-mode = true
-force-key-authentication = true
+# online-mode lo pone gen-mc-config desde VELOCITY_ONLINE_MODE (.env). true = premium.
+# En false entra cualquiera con cualquier nick: solo para pruebas en LAN.
+online-mode = %%ONLINE_MODE%%
+force-key-authentication = %%ONLINE_MODE%%
 prevent-client-proxy-connections = false
 
 # Modern forwarding: el secreto vive en un fichero aparte (mismo valor en Paper).

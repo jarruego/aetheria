@@ -309,12 +309,13 @@ public final class SettlementModule implements Listener {
 
     /** Evalua una posicion: {fy (cota mas baja), irregularidad} si es tierra firme LLANA sin
      *  construir; null si hay agua/hielo, algo construido, o el desnivel es grande (barranco,
-     *  cueva, cuesta) en su huella (±5). */
+     *  cueva, cuesta). Escanea ±6: como la huella de una casa es ±3, deja al menos 3 bloques de
+     *  HUECO respecto a cualquier otra construccion (nada de casas pegadas). */
     private int[] evaluateSpot(int cx, int cz) {
         int min = Integer.MAX_VALUE;
         int max = Integer.MIN_VALUE;
-        for (int dx = -5; dx <= 5; dx++) {
-            for (int dz = -5; dz <= 5; dz++) {
+        for (int dx = -6; dx <= 6; dx++) {
+            for (int dz = -6; dz <= 6; dz++) {
                 final int gy = groundY(cx + dx, cz + dz);
                 final Block g = world.getBlockAt(cx + dx, gy, cz + dz);
                 if (g.isLiquid()) {

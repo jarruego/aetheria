@@ -89,7 +89,7 @@ public final class AetheriaPlugin extends JavaPlugin {
             // de portal): recibe y orienta al que llega. Mismo personaje/persona que el del lobby.
             if (role.equals("main")) {
                 final org.bukkit.World gw = getServer().getWorlds().get(0);
-                new LobbyGuideModule(this, convo, gw.getSpawnLocation()).start();
+                new LobbyGuideModule(this, convo, gw.getSpawnLocation(), 8).start();   // ronda amplia
             }
 
             // Mundo CREATIVO: en vez de la aldea viva, un CATALOGO (galeria rotulada de todo lo

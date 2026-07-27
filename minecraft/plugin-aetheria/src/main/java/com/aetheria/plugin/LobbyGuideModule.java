@@ -25,24 +25,36 @@ public final class LobbyGuideModule {
     private static final double SPEED = 0.8;
     private static final long PERIOD = 40L;
 
-    // Ronda por las cuatro esquinas interiores (lejos del faro central y de los portales).
-    private static final int[][] PATROL = { { 3, 3 }, { -3, 3 }, { -3, -3 }, { 3, -3 } };
-
     private final AetheriaPlugin plugin;
     private final ConversationManager convo;
     private final World world;
     private final Location center;
+    // Puntos de ronda (relativos al centro). En el lobby es un cuadrado pequeno; junto al spawn de
+    // main es MAS AMPLIO para que Aeon pasee de verdad y no quede encerrado en el cuadro del portal.
+    private final int[][] patrol;
 
     private Villager npc;
     private int target = 0;
     private Location last;
     private int stuck;
 
+    /** Ronda en un cuadrado de radio 3 (para el lobby). */
     public LobbyGuideModule(AetheriaPlugin plugin, ConversationManager convo, Location center) {
+        this(plugin, convo, center, 3);
+    }
+
+    /** Ronda en un cuadrado del radio dado (usa mas radio junto al spawn de main). */
+    public LobbyGuideModule(AetheriaPlugin plugin, ConversationManager convo, Location center,
+            int radius) {
         this.plugin = plugin;
         this.convo = convo;
         this.world = center.getWorld();
         this.center = center;
+        final int r = radius;
+        // Un octogono aproximado: da un paseo mas natural que un simple cuadrado.
+        this.patrol = new int[][] {
+            {r, 0}, {r, r}, {0, r}, {-r, r}, {-r, 0}, {-r, -r}, {0, -r}, {r, -r},
+        };
     }
 
     public void start() {
@@ -59,7 +71,7 @@ public final class LobbyGuideModule {
     }
 
     private Villager spawn() {
-        final Villager v = (Villager) world.spawnEntity(at(PATROL[0]), EntityType.VILLAGER);
+        final Villager v = (Villager) world.spawnEntity(at(patrol[0]), EntityType.VILLAGER);
         v.customName(Component.text(NAME));
         v.setCustomNameVisible(true);         // nombre sobre la cabeza
         v.setPersistent(true);
@@ -84,10 +96,10 @@ public final class LobbyGuideModule {
         if (!npc.hasAI()) {
             npc.setAI(true);
         }
-        final Location dest = at(PATROL[target]);
+        final Location dest = at(patrol[target]);
         final Location here = npc.getLocation();
         if (here.distanceSquared(dest) <= ARRIVE_SQ) {
-            target = (target + 1) % PATROL.length;   // siguiente esquina
+            target = (target + 1) % patrol.length;   // siguiente punto de ronda
             stuck = 0;
             last = here;
             return;

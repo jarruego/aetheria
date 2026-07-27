@@ -117,6 +117,19 @@ public final class NpcRoutineModule {
         workers.add(w);
     }
 
+    /** Punto de reunion al ATARDECER: delante de la taberna de su aldea (townCenter + ~8 al este,
+     *  donde la construye VillageModule.buildPlaza), con una pequena dispersion estable por vecino
+     *  para que no se apilen todos en la misma casilla ni se crucen los nombres. */
+    private Location tavernSpot(Worker w) {
+        if (w.town == null) {
+            return w.plaza;   // sin aldea localizada: a la plaza, como antes
+        }
+        final int h = w.name.hashCode();
+        final double ox = 7 + (h & 3);            // 7..10 al este (frente a la taberna)
+        final double oz = ((h >> 2) & 3) - 1.5;   // -1.5..+1.5 a los lados
+        return w.town.clone().add(ox, 0, oz);
+    }
+
     /** Punto de reunion en un ANILLO alrededor de la plaza de su aldea (uno distinto por vecino)
      *  para que al atardecer no se apilen todos en la misma casilla y se crucen los nombres. */
     private Location plazaSpot(Location center) {
@@ -257,9 +270,9 @@ public final class NpcRoutineModule {
             if (time < 12000L) {
                 target = workOrWander(w);   // trabaja, y de vez en cuando pasea por el pueblo
             } else if (time < 13500L) {
-                target = w.plaza;
+                target = tavernSpot(w);     // ATARDECER: vida social en la taberna del pueblo
             } else {
-                target = w.home;
+                target = w.home;            // NOCHE: a casa, a la cama
             }
             final Location at = w.entity.getLocation();
             if (!at.getWorld().equals(target.getWorld()) || at.distanceSquared(target) <= ARRIVE_SQ) {

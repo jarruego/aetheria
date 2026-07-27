@@ -91,8 +91,18 @@ public final class ReturnPortalModule implements Listener {
                     floor = Math.floorMod(dx + dz, 2) == 0 ? Material.CALCITE : Material.SMOOTH_BASALT;
                 }
                 world.getBlockAt(cx + dx, baseY, cz + dz).setType(floor, false);
-                for (int dy = 1; dy <= 3; dy++) {
+                // Despeja por encima (tala arboles/vegetacion) y rellena por debajo si el suelo
+                // queda hueco: el portal se apoya A RAS, nunca flotando sobre un pedestal.
+                for (int dy = 1; dy <= 5; dy++) {
                     world.getBlockAt(cx + dx, baseY + dy, cz + dz).setType(Material.AIR, false);
+                }
+                for (int dy = 1; dy <= 8; dy++) {
+                    final Block u = world.getBlockAt(cx + dx, baseY - dy, cz + dz);
+                    if (u.getType().isAir() || u.isLiquid()) {
+                        u.setType(Material.DIRT, false);
+                    } else {
+                        break;
+                    }
                 }
             }
         }

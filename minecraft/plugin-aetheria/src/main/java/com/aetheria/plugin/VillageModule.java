@@ -49,29 +49,72 @@ public final class VillageModule {
         this.world = world;
     }
 
-    /** Si el spawn cae en un bioma "raro" (hielo/nieve, desierto, mucha agua), reubica el spawn del
-     *  mundo a uno templado cercano, para que el mundo main sea lo mas "normal" posible. Solo actua
-     *  una vez (si ya esta en bioma bueno, no hace nada). */
+    /** Prepara el spawn del mundo main: busca un punto de bioma normal Y terreno LLANO en la huella
+     *  del pueblo (spawn + franja hasta la plaza, al sur), y deja el spawn EXACTAMENTE A RAS DE
+     *  SUELO. Asi la plaza y el portal (que se apoyan en {@code spawn.y - 1}) quedan a ras del
+     *  terreno y no sobre un pedestal. Corre antes de construir portal y aldea. */
     public static void relocateSpawnToGoodBiome(AetheriaPlugin plugin, World world) {
         final org.bukkit.Location sp = world.getSpawnLocation();
-        if (goodBiome(world.getBiome(sp.getBlockX(), sp.getBlockY(), sp.getBlockZ()))) {
-            return;
-        }
-        final int y = sp.getBlockY();
-        for (int r = 1; r <= 12; r++) {                 // anillos de 100 en 100, hasta ~1200 bloques
-            for (int a = 0; a < 8; a++) {
+        final int sx0 = sp.getBlockX();
+        final int sz0 = sp.getBlockZ();
+        int[] best = null;          // {x, z, baseY, spread}
+        // Espiral: primero muy cerca (anillos de 8), luego lejos (de 100 en 100) si hace falta.
+        final int[] steps = {0, 8, 16, 24, 32, 40, 48, 64, 100, 200, 300, 500, 800, 1200};
+        for (final int r : steps) {
+            final int puntos = r == 0 ? 1 : 8;
+            for (int a = 0; a < puntos; a++) {
                 final double ang = a * Math.PI / 4;
-                final int x = sp.getBlockX() + (int) Math.round(Math.cos(ang) * r * 100);
-                final int z = sp.getBlockZ() + (int) Math.round(Math.sin(ang) * r * 100);
-                if (goodBiome(world.getBiome(x, y, z))) {
-                    world.setSpawnLocation(x, world.getHighestBlockYAt(x, z) + 1, z);
-                    plugin.getLogger().info("[Aetheria] Spawn reubicado a bioma normal en "
-                            + x + "," + z + ".");
+                final int x = sx0 + (int) Math.round(Math.cos(ang) * r);
+                final int z = sz0 + (int) Math.round(Math.sin(ang) * r);
+                final int[] eval = evalSpawnFootprint(world, x, z);   // {baseY, spread} o null
+                if (eval == null) {
+                    continue;
+                }
+                if (eval[1] <= 2) {                                   // llano y bioma normal: perfecto
+                    setSpawnFlush(plugin, world, x, z, eval[0]);
                     return;
+                }
+                if (best == null || eval[1] < best[3]) {
+                    best = new int[] {x, z, eval[0], eval[1]};
                 }
             }
         }
-        plugin.getLogger().info("[Aetheria] No encontre bioma normal cerca; el pueblo se queda donde esta.");
+        if (best != null) {
+            setSpawnFlush(plugin, world, best[0], best[1], best[2]);
+        } else {
+            plugin.getLogger().info("[Aetheria] No encontre terreno normal y llano; el pueblo se "
+                    + "queda donde esta.");
+        }
+    }
+
+    private static void setSpawnFlush(AetheriaPlugin plugin, World world, int x, int z, int baseY) {
+        world.setSpawnLocation(x, baseY + 1, z);   // a ras: baseY = suelo, jugador en baseY+1
+        plugin.getLogger().info("[Aetheria] Spawn preparado (bioma normal, llano, a ras de suelo) en "
+                + x + "," + (baseY + 1) + "," + z + ".");
+    }
+
+    /** Evalua la huella del pueblo (spawn + franja hasta la plaza, ~±6 x, de -2 a +26 en z) en un
+     *  muestreo disperso: {cota base (minimo del suelo firme), desnivel} si TODO es bioma normal y
+     *  terreno firme (sin agua/hielo); null si algo no cumple. */
+    private static int[] evalSpawnFootprint(World world, int cx, int cz) {
+        int min = Integer.MAX_VALUE;
+        int max = Integer.MIN_VALUE;
+        for (int dx = -6; dx <= 6; dx += 3) {
+            for (int dz = -2; dz <= 26; dz += 4) {
+                final int x = cx + dx;
+                final int z = cz + dz;
+                final int gy = TerrainPlanner.groundY(world, x, z);
+                if (!goodBiome(world.getBiome(x, gy, z))) {
+                    return null;
+                }
+                if (TerrainPlanner.isLiquidOrIce(world, x, z)) {
+                    return null;   // nada de agua/hielo en la huella del pueblo
+                }
+                min = Math.min(min, gy);
+                max = Math.max(max, gy);
+            }
+        }
+        return new int[] {min, max - min};
     }
 
     private static boolean goodBiome(org.bukkit.block.Biome biome) {
@@ -283,6 +326,10 @@ public final class VillageModule {
         set(cx, floorY + 1, cz - 3, Material.COBBLESTONE_WALL);
         set(cx, floorY + 2, cz - 3, Material.COBBLESTONE_WALL);
         set(cx, floorY + 3, cz - 3, Material.BELL);
+        // Taberna del pueblo, al este de la plaza (donde los vecinos se reunen al atardecer). A la
+        // misma cota que la plaza; se apoya a ras (su cimiento nivela). El punto de reunion del
+        // pueblo (townCenter) queda en cx+3, asi que la taberna cae en townCenter + (8, 0).
+        this.tavern = buildTavern(cx + 11, cz, floorY);
         return new Location(world, cx + 3 + 0.5, floorY + 1, cz + 0.5);   // punto de reunion al lado
     }
 

@@ -70,9 +70,15 @@ capacidad de Oracle). Ver docs/roadmap.md para el detalle.
   nadie conectado, con cronica (`/aetheria cronica`). El pueblo crece o mengua, y al llenarse
   una aldea (8 vecinos) se **funda otra con nombre propio** lejos (varias aldeas).
 - **F9 (estructuras sociales):** parcelas reclamables por chunk con propietario y proteccion
-  (`/claim`); cada aldea tiene alcalde y un granero donde los oficios producen.
-- **Extras:** esquematicos FAWE (`/aetheria schem ...`, si FAWE esta instalado), titulos de
-  bienvenida al entrar en una aldea, casas a prueba de creeper.
+  (`/claim`); cada aldea tiene alcalde (panel holografico en la plaza) y un granero donde los
+  oficios depositan su produccion fisica.
+- **Construccion fisica:** todo lo que se levanta (aldea autonoma, arquitecto, decorador,
+  esquematicos) pasa por un sistema de terreno compartido (`TerrainPlanner`: nivela columna a
+  columna y clava pilotes sobre agua/hielo) y un registro anti-solape (`BuildRegistry`), asi
+  que nadie pisa lo ya construido; el mundo main se reubica si el spawn cae en bioma raro.
+- **Extras:** esquematicos FAWE (`/aetheria schem ...`, imagen `itzg/minecraft-server:java25`
+  que FAWE 2.15.3 requiere), titulos de bienvenida al entrar en una aldea, casas y edificios
+  de oficio a prueba de creeper.
 - **Siguiente:** F4 Cloud (Oracle/Terraform) pendiente de capacidad.
 
 IA a coste cero por defecto (`LLM_PROVIDER=stub`); nivel 3 real gratis con Ollama local.

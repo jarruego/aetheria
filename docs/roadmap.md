@@ -52,8 +52,15 @@ Cada fase deja algo funcionando y verificable.
       marina) y el jugador aparece 3 casillas al norte para no reentrar sin querer
 - [x] NPC con rutina: se detienen y te miran al hablarles; movimiento fiable (reemision de
       camino 2x/seg + rescate anti-atasco) por casa(~7)/trabajo(~13)/plaza(~3) desde el spawn
-- [x] Aldea FISICA (VillageModule): casas con puerta/ventanas/cama/cartel, granja, puesto de
-      guardia y plaza con pozo, a cota fija
+- [x] Aldea FISICA (VillageModule): plaza con pozo y campana a cota fija; el resto del pueblo
+      lo hace crecer solo SettlementModule
+- [x] Construccion compartida: TerrainPlanner (nivelado columna a columna + pilotes sobre
+      agua/hielo) y BuildRegistry (registro persistente de cajas 3D, regions.txt) usados por
+      TODOS los caminos (aldea, arquitecto, decorador, blueprint, esquematicos): nadie pisa lo
+      ya construido; el arquitecto prueba huecos al lado antes de rechazar
+- [x] Edificios de oficio PERMANENTES (Blueprint.workplaceShowcase): herreria, granja, cantera,
+      corral, biblioteca, pescaderia, carniceria, taller de arquero; persistidos (buildings.txt)
+      y protegidos; no se derriban al morir el aldeano (los hereda otro)
 - [x] PUEBLO VIVO PROCEDURAL (SettlementModule): sin NPC fijos; toda la poblacion son colonos
       generados (genero m/f, ~100 nombres por sexo, edad que envejece/jubila/muere, oficio y
       familia). Un mundo nuevo arranca con DOS fundadores de distinto sexo. Casa pequena de

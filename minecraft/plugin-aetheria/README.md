@@ -43,16 +43,23 @@ coste). Ej.: *"construye una fuente"* -> `PLACE_BLUEPRINT`; *"dame pan y ven"* -
 - `/warp <destino>` · `/warps`: viaje rapido a plaza/mercado/taberna/spawn.
 
 ### Modulos (`AetheriaPlugin.onEnable`)
-- **Mundo de juego (`main`)**: `VillageModule` (aldea fisica), `SettlementModule` (pueblo vivo
-  procedural: colonos con genero/edad/oficio/familia, varias aldeas autofundadas, alcalde y
-  granero, proteccion anti-creeper), `NpcRoutineModule` (rutina + pathfinding), `JobsModule`,
-  `ShopModule`, `HudModule`, `ClaimModule`, `ArchitectModule`, `DecoratorModule`, `UndoModule`,
-  `WarpModule`, `ConversationManager`, `ReturnPortalModule`.
+- **Mundo de juego (`main`)**: `VillageModule` (plaza fisica + reubicacion de spawn a bioma
+  normal), `SettlementModule` (pueblo vivo procedural multi-aldea: colonos con
+  genero/edad/oficio/familia, aldeas autofundadas con nombre y bienvenida, alcalde con panel
+  holografico, granero, edificios de oficio permanentes, proteccion anti-creeper),
+  `NpcRoutineModule` (rutina + pathfinding), `JobsModule`, `ShopModule`, `HudModule`,
+  `ClaimModule`, `ArchitectModule`, `DecoratorModule`, `UndoModule`, `WarpModule`,
+  `ConversationManager` (memoria por individuo), `ReturnPortalModule`.
 - **Creativo (`creative`)**: en vez de la aldea viva, `CatalogModule` (galeria rotulada de todo
   lo que sabemos construir) + los comandos de esquematicos FAWE.
 - **Lobby (`lobby`)**: `LobbyModule` (hub void con portales) + `LobbyGuideModule` (Aeon, el
   conserje unico).
-- **Comun**: `SchematicModule` (solo si FAWE/WorldEdit esta presente), `PlayerSyncListener`.
+- **Construccion compartida** (todos los caminos: aldea, arquitecto, decorador, blueprint,
+  esquematicos): `TerrainPlanner` (nivelado columna a columna + pilotes sobre agua/hielo),
+  `BuildRegistry` (registro persistente de cajas 3D en `regions.txt`; nadie pisa lo ya
+  construido), `Blueprint` (catalogo de estructuras, `buildHouse`, `workplaceShowcase`).
+- **Comun**: `SchematicModule` + `SchematicWriter` (esquematicos FAWE, solo si FAWE/WorldEdit
+  esta presente), `PlayerSyncListener`.
 
 ## Rol del servidor (main vs lobby)
 
@@ -122,4 +129,6 @@ O con el wrapper incluido: `./gradlew build`.
 3. Entra al servidor, ve al mundo `main` (`/server main`) y prueba:
    `/aetheria ask hola` y `/aetheria plan construir una plaza`.
 
-Stack: Java 21, API de Paper 1.21.4, `java.net.http.HttpClient` + Gson (del servidor).
+Stack: el plugin **compila a Java 21** (API de Paper 1.21.4), `java.net.http.HttpClient` +
+Gson (del servidor). El **servidor** corre sobre la imagen `itzg/minecraft-server:java25`
+(FAWE 2.15.3 exige Java 25; con la de Java 21 no arranca).

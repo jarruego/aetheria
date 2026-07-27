@@ -122,6 +122,10 @@ El pueblo es grande: usa `/warps` para ver los destinos y viajar rápido a **pla
 
 - `/aetheria ask <mensaje>` — hablar con la IA.
 - `/aetheria plan <objetivo>` — pedir un plan a la IA (lo ejecuta si el validador lo aprueba).
+- `/aetheria cronica` — el **libro** con la historia del pueblo (nacimientos, bodas, muertes,
+  fundaciones de aldeas...).
+- `/aetheria schem <list|paste|save>` — catálogo de esquemáticos (si el servidor tiene FAWE):
+  lista, pega uno donde estás o guarda tu selección de WorldEdit.
 - `/deshacer` — revierte la última construcción del arquitecto/decorador (con reembolso).
 - `/guia` — te da otra vez el libro-guía.
 

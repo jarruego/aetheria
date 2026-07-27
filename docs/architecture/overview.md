@@ -46,7 +46,7 @@ base de datos. Nada crítico depende de archivos del servidor de Minecraft.
 |---|---|---|
 | **Velocity** | Enrutado de jugadores, punto de entrada, forwarding seguro | No lógica de juego |
 | **Lobby (Paper)** | Bienvenida, tutorial, noticias, portales, estado de servidores | No economía ni inventarios importantes |
-| **Main (Paper) + plugin** | Ejecutar planes validados; construir el pueblo físico y varias aldeas; mover NPC (pathfinding, horarios); economía/trabajos/mercado; parcelas; reconciliar la población de forma autónoma con la simulación | No decide nada por IA; no llama al LLM directo |
+| **Main (Paper) + plugin** | Ejecutar planes validados; **construir físicamente el mundo** (varias aldeas con nombre, casas por estado civil, edificios de oficio permanentes, gobierno con alcalde) sobre un **sistema de terreno compartido** (`TerrainPlanner`: nivela columna a columna y clava pilotes sobre agua/hielo) y un **registro anti-solape** (`BuildRegistry`) que impide pisar lo ya construido; mover NPC (pathfinding, horarios) con **memoria por individuo**; economía/trabajos/mercado; **parcelas reclamables y protegidas** (`/claim`); **reconciliar la población de forma autónoma** con la simulación del backend (crece, se casa, tiene hijos, envejece, funda aldeas nuevas) | No decide nada por IA; no llama al LLM directo |
 | **API Gateway** | Contrato REST, autenticación servicio-a-servicio, rate-limit | No lógica de IA |
 | **AI Orchestrator** | Planificación, validación, adaptador LLM, conversación 3 niveles | No toca el mundo; no escribe en Minecraft |
 | **World-State** | Mantener resúmenes estructurados del mundo (no bloques) | No almacena bloques crudos |

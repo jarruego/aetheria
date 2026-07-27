@@ -34,7 +34,11 @@ Un servidor de Minecraft persistente donde la IA es el "sistema operativo del mu
 | `services/api-gateway/` | API REST pública, auth, reenvío al backend y al world-state |
 | `services/world-state/` | Resúmenes estructurados del mundo (read-model sobre Postgres) |
 | `db/supabase/migrations/` | Esquema versionado + `db/migrate.sh` (runner idempotente) |
-| `minecraft/` | Velocity, Lobby, Main, plugin Java |
+| `minecraft/` | Velocity, Lobby, Main, plugin Java (imagen `itzg/minecraft-server:java25`; FAWE 2.15.3 exige Java 25) |
+| `minecraft/plugin-aetheria/.../TerrainPlanner.java` | Validador+preparador de **terreno compartido** por todos los caminos de construcción (nivelado columna a columna + pilotes sobre agua/hielo) |
+| `minecraft/plugin-aetheria/.../BuildRegistry.java` | Registro persistente de cajas 3D (`regions.txt`); ningún camino pisa lo ya construido |
+| `minecraft/plugin-aetheria/.../SettlementModule.java` | Pueblo vivo multi-aldea (colonos, oficios, gobierno, edificios permanentes) |
+| `minecraft/plugin-aetheria/.../SchematicModule.java` `CatalogModule.java` | Esquemáticos FAWE + galería del creativo |
 | `infra/` | Terraform (Oracle Cloud) + Docker (Fase 4) |
 | `docs/infra/` | **Estado del despliegue cloud y traspaso entre sesiones** |
 | `docs/ia-local.md` | **IA real a coste cero** (Ollama): instalación, modelos, problemas |
@@ -169,8 +173,16 @@ valida solape (409), fondos (400, sin cobrar) y propiedad. Roadmap F0–F9 al d�
 
 **Capa de "servidor vivo" (encima de F0–F9).** Para que al entrar se note vida:
 - **Aldea física** (`VillageModule`): el plugin construye a **cota fija** (no trepa entre
-  reinicios) casas con puerta/ventanas/cama/cartel, granja con compostador, puesto de
-  guardia y plaza con pozo, al **sur del spawn** (el portal queda al norte).
+  reinicios) la plaza con pozo y campana al **sur del spawn** (el portal queda al norte); el
+  resto (casas, edificios de oficio, mejoras cívicas) lo hace crecer solo `SettlementModule`.
+- **Terreno y anti-solape compartidos** (`TerrainPlanner` + `BuildRegistry`): *todos* los
+  caminos de construcción (aldea autónoma, arquitecto, decorador, blueprint por chat y
+  esquemáticos) pasan por el mismo validador/preparador de terreno (nivelado **columna a
+  columna** con material coherente + **pilotes** sobre agua/hielo, sin relleno sólido ni
+  rechazo) y por el mismo registro persistente de cajas 3D (`regions.txt`), así que **nadie
+  pisa lo ya construido**. El arquitecto prueba 2-3 huecos al lado antes de rechazar. No se
+  construye sobre agua/hielo en la aldea (reubica); el spawn del main se reubica si cae en
+  hielo/desierto/mucha agua. → ADR-0014
 - **Pueblo vivo con varias aldeas** (`SettlementModule`): NO hay NPC fijos (Nara/Pol/Sella
   ya no existen); **toda** la población son **colonos generados por procedimiento**. Un mundo
   nuevo arranca con **dos fundadores de distinto sexo**. Cada colono tiene **género** (m/f;
@@ -182,7 +194,10 @@ valida solape (409), fondos (400, sin cobrar) y propiedad. Roadmap F0–F9 al d�
   aldea (8 profesiones, cada una con un **puesto de trabajo temático**: huerto, embarcadero,
   aprisco, taller de cantero, biblioteca, herrería, carnicería, taller de arquero). Al morir
   alguien, un sucesor (preferentemente un hijo) **cambia de oficio** para cubrir la vacante
-  (evento *relevo*).
+  (evento *relevo*). Los edificios de oficio son **permanentes** (no se derriban al morir su
+  aldeano; los hereda otro o esperan) y están persistidos (`buildings.txt`). **Memoria por
+  individuo**: cada colono tiene su propio id de memoria (`colono:Nombre`), no comparten lo
+  que les cuentas (`ConversationManager`).
 - **Multi-aldea autofundada** (`foundNewTown`/`assignTown`, `PER_TOWN=8`): cuando una aldea
   llega a 8 vecinos, una pareja parte a **fundar una aldea nueva** con nombre propio a 220-400
   bloques (~24 nombres curados y luego "Aldea N"); se registra en la crónica (evento
@@ -199,10 +214,12 @@ valida solape (409), fondos (400, sin cobrar) y propiedad. Roadmap F0–F9 al d�
   `/worth`, `/shop`. Backend: `/internal/reward` → `/v1/reward` (paga desde la cuenta banco).
 - **HUD** (`HudModule`): marcador lateral (saldo + prosperidad + **Habitantes** (nº de
   aldeanos vivos) + **Jugadores**), bienvenida, **libro-guía** en la 1ª conexión y `/guia`.
-- **Esquemáticos FAWE** (`SchematicModule`): `/aetheria schem list|paste|save` (jugadores) y
-  desde consola `savecube|savecatalog|pastestreet`. Solo activo si FAWE/WorldEdit está
-  instalado (se detecta en `AetheriaPlugin.onEnable`); el catálogo es la carpeta de
-  esquemáticos de FAWE.
+- **Esquemáticos FAWE** (`SchematicModule` + `SchematicWriter`): `/aetheria schem
+  list|paste|save` (jugadores) y desde consola `savecube|savecatalog|pastestreet` (nutre y
+  pega el catálogo como "calle de muestra"). Solo activo si FAWE/WorldEdit está instalado (se
+  detecta en `AetheriaPlugin.onEnable`); el catálogo es la carpeta de esquemáticos de FAWE.
+  La imagen del server está fijada a **`itzg/minecraft-server:java25`** porque FAWE 2.15.3 lo
+  exige (en Java 21 no arranca). El pegado pasa por `TerrainPlanner` (nivela + pilotes).
 - **Conserje del lobby** (`LobbyGuideModule`): **un solo** NPC (Aeon) que ronda el lobby,
   con nombre sobre la cabeza; su persona en el orchestrator conoce **todo** el server y da
   los comandos exactos. Ya no hay un guía por portal.

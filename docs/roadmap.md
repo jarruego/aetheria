@@ -154,3 +154,21 @@ Cada fase deja algo funcionando y verificable.
       tar de mundos, conserva N). Falta programarlo (cron/Task Scheduler) y off-site.
 - [ ] Monitorizacion/logs y CI que compile el plugin Java (futuro)
 - [ ] Prueba de login Bedrock (Geyser) y salto entre mundos con cliente real
+## Ideas pendientes de estudio (sin implementar)
+
+### Inversion del JUGADOR en la aldea (bucle de capital, sin comandos)
+Idea del dueno (2026-07-27). El jugador puede **aportar** a la economia del pueblo y
+recuperarlo con creces mas adelante:
+- **Aportar** recursos (items en el granero) o AET, *sin comandos*: un **punto fisico de
+  donacion** (un cofre/barril rotulado en el granero o en la plaza) o **dar dinero al
+  alcalde** (clic derecho sobre el, como el mercader del mercado).
+- Efecto: la aportacion es **capital** de la aldea -> mas produccion, crece mas rapido
+  (mas habitantes, mas edificios). A corto plazo el jugador pierde; a largo, el excedente
+  fisico del granero es suyo para recoger.
+- **Contrapeso**: si el jugador **saca demasiado** del granero, descapitaliza la aldea y
+  esta **decrece** (menos produccion -> menos prosperidad -> emigracion). Sacar el
+  excedente es sostenible; vaciar el granero, no.
+- Requiere: distinguir excedente vs. reservas del pueblo, y que el saqueo tenga efecto
+  economico real (hoy el granero es solo un barril con items).
+- Cimientos ya puestos por #11: produccion FISICA real que alimenta la economia
+  (`/v1/production`) y upkeep por habitante (el pueblo vive de lo que trabaja).

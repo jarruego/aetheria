@@ -997,7 +997,7 @@ public final class SettlementModule implements Listener {
         demolish(a);                        // libera y limpia el solar de A para la casa mayor
         prepareTerrain(cx, cz, fy);
         Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
-                pal[0], pal[1], pal[2], pal[3], true, 3, a.name + " y " + b.name);   // 3 camas
+                pal[0], pal[1], pal[2], pal[3], true, 4, a.name + " y " + b.name);   // 2 hab x 2 camas
         deflood(cx, fy, cz, 1);                                          // por si se colo agua
         pathTo(cx, cz, center);
         final Location workA = ensureBuilding(a.vid, profFromKey(a.profKey));

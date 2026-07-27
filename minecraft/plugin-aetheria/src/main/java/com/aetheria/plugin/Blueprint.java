@@ -409,7 +409,11 @@ public final class Blueprint {
         // Estancias. Casa de ALDEANO (beds>=1): habitacion diafana con UNA CAMA POR MIEMBRO
         // contra la pared del fondo + una mesita; siempre transitable. Casa a medida del
         // jugador (beds<0): salon/cocina/dormitorio por planta como antes.
-        if (beds >= 1) {
+        if (beds >= 4) {
+            // Casa de MATRIMONIO: dos habitaciones (delante/detras de un tabique) con dos camas
+            // cada una.
+            furnishCouple(world, cx, cz, floorY, halfX, halfZ, door);
+        } else if (beds >= 1) {
             furnishVillager(world, cx, cz, floorY, halfX, halfZ, door, beds);
         } else if (beds == 0) {
             // Cascaron VACIO (para edificios de oficio: el interior lo pone quien lo llama).
@@ -484,6 +488,42 @@ public final class Blueprint {
         final int nz = cz + az * (depth - 1);
         set(w, nx + px * width, by + 1, nz + pz * width, Material.CHEST);
         set(w, nx - px * width, by + 1, nz - pz * width, Material.CRAFTING_TABLE);
+    }
+
+    /** Casa de MATRIMONIO: un tabique perpendicular a la puerta divide el interior en DOS
+     *  habitaciones (delante y detras), con DOS camas en cada una. El pasillo central (o=0) queda
+     *  libre para no atrapar a nadie (los aldeanos protegen su casa: debe ser transitable). */
+    private static void furnishCouple(World w, int cx, int cz, int floorY, int halfX, int halfZ,
+            BlockFace door) {
+        final int by = floorY;
+        final int ax = door.getModX();
+        final int az = door.getModZ();
+        final int px = ax != 0 ? 0 : 1;
+        final int pz = az != 0 ? 0 : 1;
+        final int depth = (ax != 0 ? halfX : halfZ) - 1;   // mitad interior a lo largo del eje puerta
+        final int width = (px != 0 ? halfX : halfZ) - 1;   // mitad interior perpendicular
+        // Tabique por el centro (d=0), perpendicular a la puerta, con PASO en o=0.
+        for (int o = -width; o <= width; o++) {
+            if (o == 0) {
+                continue;
+            }
+            set(w, cx + px * o, by + 1, cz + pz * o, Material.OAK_PLANKS);
+            set(w, cx + px * o, by + 2, cz + pz * o, Material.OAK_PLANKS);
+        }
+        // Habitacion de ATRAS: 2 camas contra el muro del fondo (cabecera hacia el centro).
+        final int footX = cx - ax * depth;
+        final int footZ = cz - az * depth;
+        placeBedAt(w, footX + px, by + 1, footZ + pz, door);
+        placeBedAt(w, footX - px, by + 1, footZ - pz, door);
+        set(w, cx - ax * depth, by + 4, cz - az * depth, Material.LANTERN);
+        // Habitacion de DELANTE: 2 camas contra los muros laterales (cabecera hacia el centro).
+        final int fx = cx + ax;
+        final int fz = cz + az;
+        placeBedAt(w, fx + px * width, by + 1, fz + pz * width, faceFrom(-px, -pz));
+        placeBedAt(w, fx - px * width, by + 1, fz - pz * width, faceFrom(px, pz));
+        set(w, cx + ax * depth, by + 4, cz + az * depth, Material.LANTERN);
+        // Un cofre en una esquina del fondo (fuera del paso y de las camas).
+        set(w, footX + px * width, by + 1, footZ + pz * width, Material.CHEST);
     }
 
     /** Posiciones (eje perpendicular) para repartir {@code beds} camas a lo largo del muro. */

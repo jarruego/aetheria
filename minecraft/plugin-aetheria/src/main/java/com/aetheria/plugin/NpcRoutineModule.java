@@ -117,6 +117,23 @@ public final class NpcRoutineModule {
         workers.add(w);
     }
 
+    /** Un aldeano jubilado ya no ejerce oficio (profesion NONE): el pueblo le da el relevo. */
+    private boolean isRetired(Worker w) {
+        return w.entity instanceof Villager v && v.getProfession() == Villager.Profession.NONE;
+    }
+
+    /** Los jubilados hacen vida en la plaza (con un poco de paseo), no en un puesto de trabajo. */
+    private Location plazaLoiter(Worker w) {
+        if (java.util.concurrent.ThreadLocalRandom.current().nextInt(1000) < 5) {
+            return workOrWander(w);   // de vez en cuando dan una vuelta por el pueblo
+        }
+        final int h = w.name.hashCode();
+        final double r = 2 + (h & 3);
+        final double ang = (h >> 2) * 0.7;
+        final Location c = w.town != null ? w.town : w.plaza;
+        return c.clone().add(Math.cos(ang) * r, 0, Math.sin(ang) * r);
+    }
+
     /** Punto de reunion al ATARDECER: delante de la taberna de su aldea (townCenter + ~8 al este,
      *  donde la construye VillageModule.buildPlaza), con una pequena dispersion estable por vecino
      *  para que no se apilen todos en la misma casilla ni se crucen los nombres. */
@@ -268,7 +285,8 @@ public final class NpcRoutineModule {
             maybeRemark(w);                   // comentario curioso si hay alguien cerca
             final Location target;
             if (time < 12000L) {
-                target = workOrWander(w);   // trabaja, y de vez en cuando pasea por el pueblo
+                // Los JUBILADOS (sin oficio) no trabajan: pasan el dia en la plaza y pasean.
+                target = isRetired(w) ? plazaLoiter(w) : workOrWander(w);
             } else if (time < 13500L) {
                 target = tavernSpot(w);     // ATARDECER: vida social en la taberna del pueblo
             } else {

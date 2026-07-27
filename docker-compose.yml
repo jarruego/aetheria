@@ -172,10 +172,10 @@ services:
       SIMULATION_DISTANCE: "5"
       ALLOW_NETHER: "true"
       # Chunky: pregeneracion de mundos. FAWE: pegar esquematicos del catalogo (WorldEdit API).
-      # ProtocolLib + LibsDisguises: dar ASPECTO HUMANO (skins) a los NPC (DisguiseModule, blando:
-      # si no cargan, los NPC siguen siendo aldeanos sin romper nada).
-      MODRINTH_PROJECTS: "chunky,fastasyncworldedit,protocollib,libsdisguises"
-      MODRINTH_DOWNLOAD_DEPENDENCIES: "required"
+      MODRINTH_PROJECTS: "chunky,fastasyncworldedit"
+      # NOTA: para SKINS HUMANAS de los NPC hace falta ProtocolLib + LibsDisguises, que NO estan en
+      # Modrinth/Spiget (descarga externa) -> hay que instalarlos a mano (bajar los .jar a
+      # /data/plugins). El DisguiseModule ya esta listo y se activa solo cuando el plugin este.
       # El plugin Aetheria usa este token para autenticarse contra el API Gateway.
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-changeme-generate-a-long-random-secret}"
     volumes:

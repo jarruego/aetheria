@@ -80,6 +80,7 @@ public final class SkinCache {
         putProfSkin("fletcher", "e3RleHR1cmVzOntTS0lOOnt1cmw6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvZDgzMTgzMGE3YmQzYjFhYjA1YmViOThkYzJmOWZjNWVhNTUwYjNjZjY0OWZkOTRkNDgzZGE3Y2QzOWY3YzA2MyJ9fX0=", "");
         putProfSkin("leatherworker", "e3RleHR1cmVzOntTS0lOOnt1cmw6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvYmMyYmFmZWExODZkM2VmN2M0NGEyOGEyMzY0ZDViNzE0NDM3ZTU5NTY0MDQ0NGIxNWNlYWE5YTk2NDlhMWFlNiJ9fX0=", "");   // tabernero
         putProfSkin("trader", "e3RleHR1cmVzOntTS0lOOnt1cmw6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvY2YxMGE2ODU1OWUxYTBlODNjNTg4MTI0OWY3YjkyNmQxOGQyMWUyZTc1NzczZDYyNDZmYWE0ZWY0N2FhZjA1OCJ9fX0=", "");   // mercader
+        putProfSkin("concierge", "e3RleHR1cmVzOntTS0lOOnt1cmw6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvMWFiNjNhNmYyMjkxYjc4MGZhZWJhODM5NDhmNWE5ZWRlN2FmMDliNTQzZWJiOGJiOWI2Njc1M2JhZTNmNmFiIn19fQ==", "");   // Aeon
     }
 
     /** Skin {value, signature}: primero por OFICIO; si no hay, por sexo. Null si aun no hay ninguna. */

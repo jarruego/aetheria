@@ -370,7 +370,7 @@ public final class VillageModule {
     }
 
     /** Plaza-mercado con puestos (toldos de colores) y barriles de genero. Nivela su solar. */
-    public Location buildMarket(int cx, int cz, int floorY) {
+    public Location buildMarket(int cx, int cz, int floorY, String town) {
         levelPad(cx, cz, 5, floorY);
         foundation(cx, cz, 3, floorY, Material.SMOOTH_STONE, 4);
         final Material[] toldo = {Material.RED_WOOL, Material.BLUE_WOOL, Material.YELLOW_WOOL,
@@ -394,13 +394,13 @@ public final class VillageModule {
                 set(cx + dx, floorY + 1, cz + dz, Material.SEA_LANTERN);
             }
         }
-        placeWallSign(cx + 1, floorY + 2, cz - 3, BlockFace.NORTH, "§6Mercado", "de Aetheria");
+        placeWallSign(cx + 1, floorY + 2, cz - 3, BlockFace.NORTH, "§6Mercado", "§7de " + town);
         return new Location(world, cx + 0.5, floorY + 1, cz + 0.5);
     }
 
     /** GRANERO del pueblo (7x7): granja de almacenaje con barriles y heno, tejado de heno (granero)
      *  y cartel. El barril CENTRAL es donde cada oficio deposita su produccion. Nivela su solar. */
-    public Location buildGranary(int cx, int cz, int floorY) {
+    public Location buildGranary(int cx, int cz, int floorY, String town) {
         final int half = 3;
         levelPad(cx, cz, half + 2, floorY);
         foundation(cx, cz, half, floorY, Material.SPRUCE_PLANKS, 6);
@@ -443,13 +443,13 @@ public final class VillageModule {
         // Barril CENTRAL de deposito (donde produce cada oficio).
         set(cx, floorY + 1, cz, Material.BARREL);
         // Cartel sobre el porton (sur).
-        placeWallSign(cx + 2, floorY + 2, cz + half, BlockFace.SOUTH, "§6Granero", "del pueblo");
+        placeWallSign(cx + 2, floorY + 2, cz + half, BlockFace.SOUTH, "§6Granero", "§7de " + town);
         return new Location(world, cx + 0.5, floorY + 1, cz + 0.5);
     }
 
     /** Taberna GRANDE (9x9): salon de madera con barra, mesas con sillas, barriles y cristaleras.
      *  La puerta mira al OESTE (hacia la plaza). Nivela su solar. Devuelve su centro. */
-    public Location buildTavern(int cx, int cz, int floorY) {
+    public Location buildTavern(int cx, int cz, int floorY, String town) {
         final int half = 4;
         levelPad(cx, cz, half + 2, floorY);   // solar a ras y despejado (no incrustada)
         foundation(cx, cz, half, floorY, Material.SPRUCE_PLANKS, 6);
@@ -515,7 +515,7 @@ public final class VillageModule {
         set(cx - half + 1, floorY + 2, cz + half - 1, Material.BARREL);
         set(cx - half + 1, floorY + 1, cz - half + 1, Material.BARREL);
         // Cartel "La Taberna" sobre la puerta (oeste).
-        placeWallSign(cx - half - 1, floorY + 3, cz, BlockFace.WEST, "§6La", "§6Taberna");
+        placeWallSign(cx - half - 1, floorY + 3, cz, BlockFace.WEST, "§6Taberna", "§7de " + town);
         return new Location(world, cx + 0.5, floorY + 1, cz + 0.5);
     }
 
@@ -568,6 +568,23 @@ public final class VillageModule {
         head.setFacing(facing);
         world.getBlockAt(x, y, z).setBlockData(foot, false);
         world.getBlockAt(x, y, z).getRelative(facing).setBlockData(head, false);
+    }
+
+    /**
+     * Vuelve a rotular un edificio civico YA construido, sin reconstruirlo. Hace falta porque los
+     * civicos se levantan una sola vez: sin esto, un cartel mal puesto (p.ej. "Mercado de
+     * Aetheria", con el nombre del mundo en vez del de la aldea) se quedaba ahi para siempre.
+     */
+    public void civicSign(String type, int cx, int cz, int floorY, String town) {
+        switch (type) {
+            case "granero" -> placeWallSign(cx + 2, floorY + 2, cz + 3, BlockFace.SOUTH,
+                    "§6Granero", "§7de " + town);
+            case "taberna" -> placeWallSign(cx - 5, floorY + 3, cz, BlockFace.WEST,
+                    "§6Taberna", "§7de " + town);
+            case "mercado" -> placeWallSign(cx + 1, floorY + 2, cz - 3, BlockFace.NORTH,
+                    "§6Mercado", "§7de " + town);
+            default -> { }
+        }
     }
 
     private void placeWallSign(int x, int y, int z, BlockFace facing, String l0, String l1) {

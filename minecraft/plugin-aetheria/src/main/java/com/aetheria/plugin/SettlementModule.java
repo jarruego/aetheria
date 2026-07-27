@@ -1850,12 +1850,15 @@ public final class SettlementModule implements Listener {
     private void ensureCivic(int vid, String type, int cx, int cz, int baseY, int half, String msg) {
         final String key = vid + ":" + type;
         if (civicBuilt.contains(key)) {
+            village.civicSign(type, cx, cz, baseY, t(vid));   // mantiene el rotulo al dia
             return;
         }
+        // Los carteles llevan el nombre de LA ALDEA (Aetheria es el mundo, no el pueblo).
+        final String town = t(vid);
         switch (type) {
-            case "granero" -> village.buildGranary(cx, cz, baseY);
-            case "taberna" -> village.buildTavern(cx, cz, baseY);
-            case "mercado" -> village.buildMarket(cx, cz, baseY);
+            case "granero" -> village.buildGranary(cx, cz, baseY, town);
+            case "taberna" -> village.buildTavern(cx, cz, baseY, town);
+            case "mercado" -> village.buildMarket(cx, cz, baseY, town);
             default -> { return; }
         }
         plugin.buildRegistry().add(new int[] {cx - half - 1, baseY - 2, cz - half - 1,

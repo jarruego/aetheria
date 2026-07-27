@@ -54,6 +54,14 @@ public final class VillageModule {
      *  SUELO. Asi la plaza y el portal (que se apoyan en {@code spawn.y - 1}) quedan a ras del
      *  terreno y no sobre un pedestal. Corre antes de construir portal y aldea. */
     public static void relocateSpawnToGoodBiome(AetheriaPlugin plugin, World world) {
+        // IDEMPOTENTE: el spawn se prepara UNA SOLA VEZ (primer arranque del mundo). En reinicios
+        // posteriores NO se toca; si no, cada reinicio podria moverlo a otro sitio y dejar plaza,
+        // taberna y portal DUPLICADOS (los viejos huerfanos, con el portal sin cablear). El marcador
+        // es village.txt (lo crea SettlementModule al fundar el pueblo); al reiniciar el mundo se
+        // borra junto al resto de estado y el spawn se vuelve a preparar.
+        if (new java.io.File(plugin.getDataFolder(), "village.txt").exists()) {
+            return;
+        }
         final org.bukkit.Location sp = world.getSpawnLocation();
         final int sx0 = sp.getBlockX();
         final int sz0 = sp.getBlockZ();

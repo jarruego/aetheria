@@ -87,6 +87,12 @@ public final class DecoratorModule implements CommandExecutor {
                     + "§f/claim§c y vuelve a intentarlo.");
             return;
         }
+        // Anti-solape: no decoro encima de algo ya construido.
+        final int[] region = Blueprint.buildRegion(player, deco.blueprint(), 0);
+        if (plugin.buildRegistry().overlaps(region)) {
+            player.sendMessage("§c[Decorador] Ahi ya hay algo. Elige otro hueco. No he cobrado nada.");
+            return;
+        }
         gateway.pay(player.getUniqueId().toString(), BANCO, deco.price())
                 .whenComplete((json, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
                     if (err != null || !json.get("ok").getAsBoolean()) {
@@ -95,9 +101,9 @@ public final class DecoratorModule implements CommandExecutor {
                         player.sendMessage("§c[Decorador] " + why + ". No he construido nada.");
                         return;
                     }
-                    undo.snapshot(player, Blueprint.buildRegion(player, deco.blueprint(), 0),
-                            deco.price(), deco.label().toLowerCase());
+                    undo.snapshot(player, region, deco.price(), deco.label().toLowerCase());
                     final int blocks = Blueprint.place(player, deco.blueprint());
+                    plugin.buildRegistry().add(region);
                     player.sendMessage(String.format("§a[Decorador] Listo: §f%s§a, frente a ti (%d "
                             + "bloques). Se cobraron §e%d AET§a. (Puedes §f/deshacer§a.)",
                             deco.label(), blocks, deco.price()));

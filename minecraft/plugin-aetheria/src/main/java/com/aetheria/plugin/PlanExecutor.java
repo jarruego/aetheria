@@ -104,12 +104,19 @@ public final class PlanExecutor {
 
     private void doPlaceBlueprint(Player player, JsonObject params) {
         final String name = params.has("blueprint") ? params.get("blueprint").getAsString() : "";
+        // Anti-solape: no se construye encima de algo ya puesto (por otro o por la partida).
+        final int[] region = Blueprint.buildRegion(player, name, 3);
+        if (plugin.buildRegistry().overlaps(region)) {
+            player.sendMessage("§e[Aetheria] ahi ya hay algo construido; no pongo nada encima.");
+            return;
+        }
         final int placed = Blueprint.place(player, name);
         if (placed < 0) {
             plugin.getLogger().warning("PLACE_BLUEPRINT desconocido, ignorado: " + name);
             player.sendMessage("§e[Aetheria] no conozco el plano '" + name + "'.");
             return;
         }
+        plugin.buildRegistry().add(region);   // registrado: nadie lo pisara despues
         final String what = switch (name) {
             case "house" -> "tu casa";
             case "fountain" -> "una fuente";

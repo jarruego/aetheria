@@ -1830,18 +1830,16 @@ public final class SettlementModule implements Listener {
      *  el GRANERO desde el principio, la TABERNA con 4 habitantes y el MERCADO con 6. Posiciones
      *  fijas alrededor de la plaza; se registran para que las casas no los pisen. */
     private void ensureCivics(int vid, Town t) {
-        ensureCivic(vid, "granero", t.cx - 12, t.cz, t.baseY, 4,
+        // La poblacion decide cuando se CONSTRUYE cada edificio, pero el mantenimiento (rotulo,
+        // ajustes) se hace SIEMPRE que ya exista: si no, un pueblo que mengua se quedaba sin
+        // refrescar su taberna. Se cuentan los mismos vecinos que muestra el marcador (ninos
+        // incluidos); antes esto miraba solo a los adultos y el mercado no aparecia con 6.
+        ensureCivic(vid, "granero", t.cx - 12, t.cz, t.baseY, 4, 0,
                 "El pueblo construye un granero en " + t.name + ".");
-        // OJO: se cuentan los mismos vecinos que muestra el marcador (ninos incluidos). Antes
-        // esto miraba solo a los adultos y el mercado no aparecia con 6 habitantes a la vista.
-        if (townPopulation(vid) >= 4) {
-            ensureCivic(vid, "taberna", t.cx + 9, t.cz, t.baseY, 5,
-                    "El pueblo abre una taberna en " + t.name + ".");
-        }
-        if (townPopulation(vid) >= 6) {
-            ensureCivic(vid, "mercado", t.cx - 3, t.cz + 12, t.baseY, 5,
-                    "El pueblo levanta un mercado en " + t.name + ".");
-        }
+        ensureCivic(vid, "taberna", t.cx + 9, t.cz, t.baseY, 5, 4,
+                "El pueblo abre una taberna en " + t.name + ".");
+        ensureCivic(vid, "mercado", t.cx - 3, t.cz + 12, t.baseY, 5, 6,
+                "El pueblo levanta un mercado en " + t.name + ".");
         // El mercader (entidad) puede desaparecer entre reinicios: se re-asegura si hay mercado.
         if (civicBuilt.contains(vid + ":mercado")) {
             market.ensureTrader(new Location(world, t.cx - 3 + 0.5, t.baseY + 1, t.cz + 12 + 0.5),
@@ -1849,11 +1847,15 @@ public final class SettlementModule implements Listener {
         }
     }
 
-    private void ensureCivic(int vid, String type, int cx, int cz, int baseY, int half, String msg) {
+    private void ensureCivic(int vid, String type, int cx, int cz, int baseY, int half, int minPop,
+            String msg) {
         final String key = vid + ":" + type;
         if (civicBuilt.contains(key)) {
-            village.civicSign(type, cx, cz, baseY, t(vid));   // mantiene el rotulo al dia
+            village.civicSign(type, cx, cz, baseY, t(vid));   // mantenimiento: rotulo y ajustes
             return;
+        }
+        if (townPopulation(vid) < minPop) {
+            return;   // el pueblo aun no da para este edificio
         }
         // Los carteles llevan el nombre de LA ALDEA (Aetheria es el mundo, no el pueblo).
         final String town = t(vid);

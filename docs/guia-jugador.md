@@ -52,20 +52,29 @@ Vende lo que produces al mercado del pueblo:
 
 Primero, **`/servicios`** te muestra todos los servicios y precios.
 
-### Arquitecto guiado — `/arquitecto`
-Un asistente te va **preguntando y guiando** para encargar una **casa a medida**: eliges
-**tamaño** (pequeña/mediana/grande), **material** (madera/piedra/ladrillo/lujo) y si la
-quieres **amueblada**. El arquitecto **calcula el precio** según lo que pides y solo
-construye cuando **confirmas** (haciendo clic en las opciones del chat) y **pagas**.
+### Arquitecto guiado — `/arquitecto` (o `/arq`)
+Se abre un **menú de inventario** con iconos (ya no hay que clicar texto en el chat). Lo
+primero que te pregunta es **qué clase de casa** quieres:
 
-- Precio ≈ base(tamaño) × material + mobiliario. Ej.: mediana de piedra amueblada ≈ 248 AET.
+- **Casa a medida**: la diseña el arquitecto. Eliges **tamaño** (pequeña/mediana/grande),
+  **material** (rústica/piedra/noble/lujo), **estilo** (casona, aldeana o torre) y si la
+  quieres **amueblada**. Cada casa sale distinta (ancho, altura, tejado y ventanas se tiran
+  a dados). Precio ≈ base(tamaño) × material + mobiliario.
+- **Casa tipo Minecraft**: una casa de aldea **REAL del juego**. Solo eliges el tamaño y se
+  sortea una plantilla de ese grupo (8 pequeñas, 2 medianas, 1 grande). Tarifa fija:
+  **60 / 140 / 260 AET**.
+
+Al final ves el **presupuesto** y confirmas. Después, **haz clic derecho en el suelo** donde
+quieras la puerta, o escribe **`/arq ok`** para ponerla delante de ti.
+
 - **Para construir necesitas ser dueño de la parcela**: ponte sobre tu terreno y usa
-  `/claim` primero. Así nadie construye donde no debe. La casa se levanta **frente a ti**.
+  `/claim` primero. Si no cabe justo ahí, prueba unos bloques al lado antes de rechazarlo.
+- Si no te gusta, **`/deshacer`** la retira y te devuelve el dinero.
 
-### Decorador guiado — `/decorador`
-Embellece **tu parcela** con pequeñas estructuras eligiendo en un menú: **jardín** con
-flores, **farola**, **estatua** o una **gran fuente**. Se cobra según la pieza (15–60 AET)
-y solo construye si eres dueño del terreno. Se levanta frente a ti.
+### Decorador guiado — `/decorador` (o `/dec`)
+Embellece **tu parcela** con pequeñas estructuras eligiendo en un **menú de inventario**:
+**jardín** con flores, **farola**, **estatua** o una **gran fuente**. Se cobra según la pieza
+(15–60 AET) y solo construye si eres dueño del terreno. Se levanta frente a ti.
 
 ### Otros encargos a la IA
 - `/aetheria servicio decorador <qué quieres>` y `/aetheria servicio urbanista <qué quieres>`:
@@ -111,12 +120,51 @@ El pueblo es grande: usa `/warps` para ver los destinos y viajar rápido a **pla
   **aguantan a los creepers y la TNT** (no hace falta reconstruir el pueblo). Eso sí, el
   **terreno natural** (tierra, piedra, arena, minerales) junto a las casas **sí lo puedes
   minar**. Cuando un vecino muere o emigra, su casa se derriba y el solar vuelve a ser hierba.
+- **Los vecinos trabajan de verdad**: el granjero siega una espiga madura y la **replanta**,
+  el arquero tala (y deja un brote) y con esa madera hace **flechas**, el cantero pica en su
+  **cantera**, el herrero **funde lo que el cantero saca**, el pastor esquila ovejas de verdad,
+  el pescador echa el sedal y el tabernero cocina. Todo lo que producen acaba en el **granero**
+  de su aldea, y de ese trabajo vive la economía: si el pueblo deja de trabajar, decae.
+- **El albañil repara**: si una casa se daña (un creeper, un incendio, un boquete), el cantero
+  del pueblo la **reconstruye** igual que estaba. Si no hay cantero vivo, se queda rota.
 - **La economía evoluciona sola**, haya o no gente conectada: los negocios producen,
   gastan, viven festivales y penurias. El pueblo puede estar **en apuros, estable,
   próspero o floreciente** (lo ves en el marcador, junto al nº de **Habitantes**).
 - `/aetheria cronica` — la **crónica del mundo**: un **libro** con lo que ha ido pasando
   (nacimientos, bodas, muertes, fundaciones de aldeas, festivales...), de lo más reciente a lo
   más antiguo.
+
+## Cómo crece una aldea (y cómo puedes ayudar)
+
+Cada aldea **ahorra** en un fondo común lo que producen sus vecinos, y de ahí sale también lo
+que cuesta mantenerlos. Cuando el fondo cubre el **coste del siguiente vecino**, llega uno:
+**nace** de una pareja de esa aldea o, si no hay ninguna fértil, **se instala un forastero**.
+Lo ves en el marcador como **`Próximo vecino: 62%`**, con la barra y el `160/240 AET` debajo.
+
+**Cada vecino cuesta el doble que el anterior** (30, 60, 120, 240, 480, 960 AET...), así que
+un pueblo llega solo hasta unos 6-7 vecinos y ahí se atasca. Y al revés: si el fondo se queda
+**en números rojos**, la aldea no da de comer a todos y **pierde un vecino** (emigra).
+
+Ahí entras tú. Puedes **aportar dinero al fondo de la aldea que quieras**, de tres formas:
+
+- **El ARCA de la plaza**: un cofre rotulado junto al pozo. Haz clic y elige **25, 100 o 500
+  AET**; la ventana te dice cuánto lleva ahorrado el pueblo y cuánto le falta.
+- **El ALCALDE**: **agáchate y haz clic derecho** sobre él (de pie, el clic es para hablar).
+  Él mismo se acerca de vez en cuando a decirte cuánto falta.
+- **`/donar <cantidad>`** (o `/don`), a la aldea en la que estés.
+
+No compra ventajas: es una **inversión**. El pueblo crece antes, más vecinos trabajan y su
+excedente acaba en el granero.
+
+## El granero
+
+Cada aldea tiene un **granero** (un barril) donde sus vecinos van dejando lo que producen:
+trigo, pescado, lana, piedra, lingotes, libros, flechas, pan... Guarda como mucho **2 arcas de
+cada cosa**, para que un oficio muy rápido no lo copie entero y deje sin materia prima a los
+demás (el herrero necesita la piedra del cantero; el arquero, la madera).
+
+Cuando algo **no cabe**, no se pierde: el pueblo **vende el excedente** con una pequeña prima
+y ese dinero va al fondo de la aldea. Un pueblo muy productivo crece más rápido justo por eso.
 
 ## Otros comandos útiles
 

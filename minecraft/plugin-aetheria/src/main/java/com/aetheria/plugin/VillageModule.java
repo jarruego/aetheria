@@ -506,10 +506,10 @@ public final class VillageModule {
         for (int dz = -2; dz <= 2; dz += 2) {
             set(cx + half - 4, floorY + 1, cz + dz, Material.SPRUCE_FENCE);    // taburete
         }
-        // MESAS con sillas repartidas por el salon (al otro lado de la barra).
+        // MESAS solo en los LATERALES: el centro del salon se deja libre a proposito, que es
+        // donde los aldeanos bailan y cantan al atardecer (y por donde se entra por la puerta).
         tavernTable(cx - 2, cz - 2, floorY);
         tavernTable(cx - 2, cz + 2, floorY);
-        tavernTable(cx - 2, cz, floorY);
         // Barriles apilados en una esquina (almacen).
         set(cx - half + 1, floorY + 1, cz + half - 1, Material.BARREL);
         set(cx - half + 1, floorY + 2, cz + half - 1, Material.BARREL);
@@ -576,6 +576,9 @@ public final class VillageModule {
      * Aetheria", con el nombre del mundo en vez del de la aldea) se quedaba ahi para siempre.
      */
     public void civicSign(String type, int cx, int cz, int floorY, String town) {
+        if ("taberna".equals(type)) {
+            clearDanceFloor(cx, cz, floorY);
+        }
         switch (type) {
             case "granero" -> placeWallSign(cx + 2, floorY + 2, cz + 3, BlockFace.SOUTH,
                     "§6Granero", "§7de " + town);
@@ -584,6 +587,21 @@ public final class VillageModule {
             case "mercado" -> placeWallSign(cx + 1, floorY + 2, cz - 3, BlockFace.NORTH,
                     "§6Mercado", "§7de " + town);
             default -> { }
+        }
+    }
+
+    /** Deja libre el CENTRO de la taberna (la pista donde bailan y cantan) y el paso desde la
+     *  puerta: retira mesas o taburetes que hayan quedado ahi de versiones anteriores. */
+    private void clearDanceFloor(int cx, int cz, int floorY) {
+        for (int dx = -3; dx <= 0; dx++) {
+            for (int y = floorY + 1; y <= floorY + 2; y++) {
+                final Block b = world.getBlockAt(cx + dx, y, cz);
+                final Material m = b.getType();
+                if (m == Material.SPRUCE_FENCE || m == Material.SPRUCE_PRESSURE_PLATE
+                        || m == Material.SPRUCE_STAIRS) {
+                    b.setType(Material.AIR, false);
+                }
+            }
         }
     }
 

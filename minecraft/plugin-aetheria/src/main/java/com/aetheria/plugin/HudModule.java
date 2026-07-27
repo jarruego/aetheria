@@ -165,24 +165,40 @@ public final class HudModule implements Listener, CommandExecutor {
         meta.title(Component.text("Guia de Aetheria"));
         meta.author(Component.text("El pueblo de Aetheria"));
         meta.pages(List.of(
-                Component.text("§6Bienvenido a Aetheria\n\n§0Un pueblo de Minecraft con vida propia: "
-                        + "vecinos con rutina, economia y una sociedad que prospera... o decae.\n\n"
-                        + "§0Pasa la pagina para saber que puedes hacer."),
+                Component.text("§6Bienvenido a Aetheria\n\n§0Un mundo de Minecraft con vida "
+                        + "propia: aldeas con vecinos que trabajan de verdad, economia y una "
+                        + "sociedad que prospera... o decae.\n\n§0Pasa la pagina."),
                 Component.text("§6Gana dinero (AET)\n\n§0- Trabaja: mina, tala, cosecha o caza. "
-                        + "Cobras solo por hacerlo.\n\n§0- Vende: §7/sell§0 lo que lleves en la mano, "
-                        + "§7/sell all§0 todo el tipo. §7/worth§0 mira su valor."),
-                Component.text("§6Tu dinero\n\n§0- §7/balance§0 tu saldo.\n- §7/pay <jugador> <n>§0 "
-                        + "pagar a otro.\n- §7/shop§0 precios del mercado.\n\nLo ves siempre en el "
-                        + "marcador de la derecha."),
-                Component.text("§6Servicios del pueblo\n\n§0Los maestros construyen para ti (sobre "
-                        + "tu parcela):\n§7/arquitecto§0 casa a medida (guiada).\n§7/decorador§0 "
-                        + "jardin, farola, estatua o fuente.\n\nPuedes deshacer con §7/deshacer§0."),
-                Component.text("§6Tu hogar y tierras\n\n§0- §7/sethome§0 y §7/home§0.\n- §7/claim§0 "
-                        + "reclama la parcela (chunk) donde estas: es tuya y nadie mas puede tocarla. "
-                        + "§7/unclaim§0 para soltarla."),
-                Component.text("§6El pueblo vive\n\n§0- Habla con los vecinos (clic derecho).\n"
-                        + "- §7/aetheria cronica§0: que ha pasado mientras no estabas.\n\n"
-                        + "§0La economia del pueblo evoluciona sola, dia y noche.")));
+                        + "Cobras solo por hacerlo.\n\n§0- Vende: §7/sell§0 lo que lleves en la "
+                        + "mano, §7/sell all§0 todo el tipo. §7/worth§0 mira su valor."),
+                Component.text("§6Tu dinero\n\n§0- §7/balance§0 tu saldo.\n- §7/pay <jugador> "
+                        + "<n>§0 pagar a otro.\n- §7/shop§0 precios.\n\n§0En el pueblo hay un "
+                        + "MERCADO: haz clic al mercader y compra o vende en la ventana."),
+                Component.text("§6Servicios\n\n§0§7/arquitecto§0 (o §7/arq§0) te hace una casa: "
+                        + "elige en la ventana si la quieres §0a medida o tipo Minecraft.\n\n"
+                        + "§7/decorador§0 (§7/dec§0): jardin, farola, estatua o fuente.\n\n"
+                        + "§0Se construye en TU parcela."),
+                Component.text("§6Tu hogar y tierras\n\n§0- §7/sethome§0 y §7/home§0.\n\n"
+                        + "- §7/claim§0 reclama el terreno (chunk) donde estas: es tuyo y nadie "
+                        + "mas puede tocarlo. §7/unclaim§0 para soltarlo.\n\n§0- §7/deshacer§0 "
+                        + "revierte lo ultimo que te construyeron, con reembolso."),
+                Component.text("§6Como crece una aldea\n\n§0Cada aldea AHORRA lo que producen "
+                        + "sus vecinos. Cuando junta lo que cuesta el siguiente, nace o llega "
+                        + "uno.\n\n§0Lo ves en el marcador: §7Proximo vecino: 62%§0.\n\n"
+                        + "§0Cada vecino cuesta EL DOBLE que el anterior, asi que hacia los 6 o "
+                        + "7 el pueblo se atasca solo."),
+                Component.text("§6Ayuda a un pueblo\n\n§0Ahi entras tu. Puedes aportar dinero "
+                        + "al fondo de la aldea que quieras:\n\n§0- El §7ARCA§0 de la plaza: "
+                        + "haz clic y elige cuanto.\n- El §7ALCALDE§0: agachate y haz clic "
+                        + "derecho.\n- §7/donar <cantidad>§0.\n\n§0Crecera antes gracias a ti."),
+                Component.text("§6El granero\n\n§0Cada aldea guarda en su granero lo que sus "
+                        + "vecinos cosechan, pescan, funden o fabrican.\n\n§0Si se llena, el "
+                        + "pueblo vende el excedente y ese dinero va a su fondo: cuanto mas "
+                        + "trabajan, mas rapido crecen."),
+                Component.text("§6El pueblo vive\n\n§0- Habla con los vecinos (clic derecho). "
+                        + "Cada uno tiene su edad, oficio y familia, y te recuerda.\n\n"
+                        + "§0- §7/aetheria cronica§0: que ha pasado mientras no estabas.\n\n"
+                        + "§0- §7/warps§0: viaje rapido por el pueblo.")));
         book.setItemMeta(meta);
         return book;
     }

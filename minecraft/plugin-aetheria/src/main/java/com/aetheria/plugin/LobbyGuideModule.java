@@ -21,49 +21,38 @@ public final class LobbyGuideModule {
     private static final String TAG = "aetheria_lobby_npc";
     private static final String NPC_ID = "conserje-lobby";
     private static final String NAME = "§bAeon §7el Conserje";
-    private static final double ARRIVE_SQ = 2.0;
-    private static final double SPEED = 0.8;
-    private static final long PERIOD = 40L;
+    private static final long PERIOD = 2L;        // se mueve 10 veces por segundo (paseo fluido)
+    private static final double STEP = 0.02;      // radianes por paso: una vuelta cada ~16 s
 
     private final AetheriaPlugin plugin;
     private final ConversationManager convo;
     private final World world;
     private final Location center;
-    private final int radius;   // radio de la ronda (tambien es la correa: no se aleja mas)
-    // Puntos de ronda (relativos al centro). En el lobby es un cuadrado pequeno; junto al spawn de
-    // main es MAS AMPLIO para que Aeon pasee de verdad y no quede encerrado en el cuadro del portal.
-    private final int[][] patrol;
+    private final int radius;
 
     private Villager npc;
-    private int target = 0;
-    private Location last;
-    private int stuck;
+    private double angle;
 
-    /** Ronda en un cuadrado de radio 3 (para el lobby). */
+    /** Ronda en circulos de radio 3 (para el lobby). */
     public LobbyGuideModule(AetheriaPlugin plugin, ConversationManager convo, Location center) {
         this(plugin, convo, center, 3);
     }
 
-    /** Ronda en un cuadrado del radio dado (usa mas radio junto al spawn de main). */
+    /** Ronda en circulos del radio dado alrededor del punto indicado. */
     public LobbyGuideModule(AetheriaPlugin plugin, ConversationManager convo, Location center,
             int radius) {
         this.plugin = plugin;
         this.convo = convo;
         this.world = center.getWorld();
         this.center = center;
-        this.radius = radius;
-        final int r = radius;
-        // Un octogono aproximado: da un paseo mas natural que un simple cuadrado.
-        this.patrol = new int[][] {
-            {r, 0}, {r, r}, {0, r}, {-r, r}, {-r, 0}, {-r, -r}, {0, -r}, {r, -r},
-        };
+        this.radius = Math.max(1, radius);
     }
 
     public void start() {
         clearOld();
         this.npc = spawn();
         plugin.getServer().getScheduler().runTaskTimer(plugin, this::tick, PERIOD, PERIOD);
-        plugin.getLogger().info("Lobby: conserje '" + NAME + "' rondando la sala.");
+        plugin.getLogger().info("Conserje '" + NAME + "' rondando en circulo (radio " + radius + ").");
     }
 
     private void clearOld() {
@@ -73,7 +62,7 @@ public final class LobbyGuideModule {
     }
 
     private Villager spawn() {
-        final Villager v = (Villager) world.spawnEntity(at(patrol[0]), EntityType.VILLAGER);
+        final Villager v = (Villager) world.spawnEntity(at(0), EntityType.VILLAGER);
         v.customName(Component.text(NAME));
         v.setCustomNameVisible(true);         // nombre sobre la cabeza
         v.setPersistent(true);
@@ -82,6 +71,10 @@ public final class LobbyGuideModule {
         v.setProfession(Villager.Profession.LIBRARIAN);   // informador del lobby
         v.setVillagerType(Villager.Type.PLAINS);
         v.setVillagerLevel(5);
+        // SIN IA: el cerebro vanilla del aldeano tira de el hacia sus POI y lo sacaba de la
+        // ronda (se quedaba yendo y viniendo en una esquina, peleado con el pathfinding).
+        // Aqui el paseo lo lleva el plugin: un circulo limpio alrededor del punto.
+        v.setAI(false);
         v.addScoreboardTag(TAG);
         convo.registerConversable(v, NPC_ID, "Aeon");
         return v;
@@ -93,41 +86,26 @@ public final class LobbyGuideModule {
             return;
         }
         if (convo.isBusy(npc.getUniqueId())) {
-            return;   // atendiendo a alguien: quieto
+            return;   // atendiendo a alguien: se para a hablar
         }
-        if (!npc.hasAI()) {
-            npc.setAI(true);
+        if (npc.hasAI()) {
+            npc.setAI(false);
         }
-        final Location dest = at(patrol[target]);
-        final Location here = npc.getLocation();
-        // CORREA: el cerebro vanilla del aldeano tira de el hacia sus POI y acababa saliendose
-        // del cuadro. Si se aleja mas de la ronda + 2, vuelve de golpe al punto de ronda.
-        final double leash = (radius + 2) * (radius + 2);
-        if (here.distanceSquared(center) > leash) {
-            npc.teleport(dest);
-            stuck = 0;
-            last = dest;
-            return;
+        angle += STEP;
+        if (angle > Math.PI * 2) {
+            angle -= Math.PI * 2;
         }
-        if (here.distanceSquared(dest) <= ARRIVE_SQ) {
-            target = (target + 1) % patrol.length;   // siguiente punto de ronda
-            stuck = 0;
-            last = here;
-            return;
-        }
-        npc.getPathfinder().moveTo(dest, SPEED);
-        if (last != null && here.distanceSquared(last) < 0.01) {
-            if (++stuck >= 4) {
-                npc.teleport(dest);
-                stuck = 0;
-            }
-        } else {
-            stuck = 0;
-        }
-        last = here;
+        npc.teleport(at(angle));
     }
 
-    private Location at(int[] off) {
-        return new Location(world, center.getX() + off[0], center.getBlockY(), center.getZ() + off[1]);
+    /** Punto del circulo para ese angulo, MIRANDO hacia donde camina (yaw tangente). */
+    private Location at(double a) {
+        final Location loc = new Location(world,
+                center.getX() + Math.cos(a) * radius,
+                center.getY(),
+                center.getZ() + Math.sin(a) * radius);
+        loc.setYaw((float) Math.toDegrees(a));
+        return loc;
     }
+
 }

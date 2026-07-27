@@ -77,24 +77,21 @@ public final class AetheriaPlugin extends JavaPlugin {
             Objects.requireNonNull(getCommand("pay")).setExecutor(ecoCmd);
 
             // Portal de vuelta al lobby (con su guia).
-            org.bukkit.Location aeonSpot = null;   // centro del cuadrado decorado del spawn
             if (getConfig().getBoolean("return-portal.enabled", true)) {
                 getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
                 final ReturnPortalModule ret = new ReturnPortalModule(this,
                         getConfig().getString("return-portal.target", "lobby"), convo);
                 getServer().getPluginManager().registerEvents(ret, this);
                 ret.build();
-                aeonSpot = ret.safeCenter();
             }
 
             // Conserje Aeon PASEANDO junto al spawn del mundo principal (en vez de un guia inmovil
             // de portal): recibe y orienta al que llega. Mismo personaje/persona que el del lobby.
             if (role.equals("main")) {
                 final org.bukkit.World gw = getServer().getWorlds().get(0);
-                // DENTRO del cuadrado 10x10 decorado del portal (centrado en spawn.z+3), no en el
-                // spawn a secas: con centro = spawn y radio 8 rondaba por FUERA de la zona dibujada.
-                final org.bukkit.Location c = aeonSpot != null ? aeonSpot : gw.getSpawnLocation();
-                new LobbyGuideModule(this, convo, c, 3).start();   // radio 3: cabe de sobra en el 10x10
+                // Da vueltas en CIRCULO de radio 3 alrededor del spawn (dentro de la zona
+                // decorada del portal). El movimiento lo lleva el plugin, no la IA del aldeano.
+                new LobbyGuideModule(this, convo, gw.getSpawnLocation(), 3).start();
             }
 
             // Mundo CREATIVO: en vez de la aldea viva, un CATALOGO (galeria rotulada de todo lo

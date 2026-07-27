@@ -1724,7 +1724,9 @@ public final class SettlementModule implements Listener {
             return null;
         }
         final Town t = towns.get(vid);
-        return new int[] {t.cx + 4, t.baseY + 1, t.cz + 4};
+        // EN LA PLAZA, sobre su eje central: el centro exacto lo ocupa el pozo y el borde norte
+        // la campana, asi que el arca va dos bloques al sur del pozo, de cara a quien entra.
+        return new int[] {t.cx, t.baseY + 1, t.cz + 2};
     }
 
     /**

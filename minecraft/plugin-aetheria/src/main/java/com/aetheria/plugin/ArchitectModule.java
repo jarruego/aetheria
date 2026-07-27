@@ -275,16 +275,49 @@ public final class ArchitectModule implements CommandExecutor, Listener {
         buildAt(player, o, cx, cz, player.getWorld().getHighestBlockYAt(cx, cz), f.getOppositeFace());
     }
 
-    private void buildAt(Player player, Order o, int cx, int cz, int hintY, BlockFace door) {
-        if (!claims.ownsChunk(player.getUniqueId(), cx >> 4, cz >> 4)) {
+    private void buildAt(Player player, Order o, int cx0, int cz0, int hintY, BlockFace door) {
+        if (!claims.ownsChunk(player.getUniqueId(), cx0 >> 4, cz0 >> 4)) {
             player.sendMessage("§c[Arquitecto] Ahi no es tu parcela. Reclamala con §f/claim§c o "
                     + "elige un punto sobre tu terreno.");
             return;
         }
         // Cota del suelo = MEDIA del suelo firme de la huella (equilibrada en cuestas), no un
         // punto suelto. buildHouse ya nivela columna a columna y clava pilotes sobre agua/hielo.
-        final int floorY = TerrainPlanner.meanFirmY(player.getWorld(),
+        int cx = cx0;
+        int cz = cz0;
+        int floorY = TerrainPlanner.meanFirmY(player.getWorld(),
                 cx - o.half, cz - o.half, cx + o.half, cz + o.half);
+        int[] region = Blueprint.houseRegion(cx, cz, floorY, o.half, o.floors);
+        // Anti-solape: si ahi ya hay algo construido, prueba 2-3 huecos al lado antes de rechazar.
+        if (plugin.buildRegistry().overlaps(region)) {
+            final int d = o.half * 2 + 3;
+            final int[][] offs = {{d, 0}, {-d, 0}, {0, d}, {0, -d}};
+            boolean moved = false;
+            for (final int[] off : offs) {
+                final int nx = cx0 + off[0];
+                final int nz = cz0 + off[1];
+                if (!claims.ownsChunk(player.getUniqueId(), nx >> 4, nz >> 4)) {
+                    continue;
+                }
+                final int nfy = TerrainPlanner.meanFirmY(player.getWorld(),
+                        nx - o.half, nz - o.half, nx + o.half, nz + o.half);
+                final int[] nr = Blueprint.houseRegion(nx, nz, nfy, o.half, o.floors);
+                if (!plugin.buildRegistry().overlaps(nr)) {
+                    cx = nx; cz = nz; floorY = nfy; region = nr; moved = true;
+                    break;
+                }
+            }
+            if (!moved) {
+                player.sendMessage("§c[Arquitecto] Ahi ya hay algo construido y no vi hueco al lado. "
+                        + "Elige otro sitio. No he cobrado nada.");
+                return;
+            }
+            player.sendMessage("§7[Arquitecto] No cabia justo ahi; la pongo unos bloques al lado.");
+        }
+        final int fCx = cx;
+        final int fCz = cz;
+        final int fFloorY = floorY;
+        final int[] fRegion = region;
         final int p = price(o);
         final Material[] pal = o.palette;
         gateway.pay(player.getUniqueId().toString(), BANCO, p)
@@ -295,9 +328,10 @@ public final class ArchitectModule implements CommandExecutor, Listener {
                         player.sendMessage("§c[Arquitecto] " + why + ". No he construido nada.");
                         return;
                     }
-                    undo.snapshot(player, Blueprint.houseRegion(cx, cz, floorY, o.half, o.floors), p, "tu casa");
-                    final int blocks = Blueprint.buildHouse(player.getWorld(), cx, cz, floorY, door,
+                    undo.snapshot(player, Blueprint.houseRegion(fCx, fCz, fFloorY, o.half, o.floors), p, "tu casa");
+                    final int blocks = Blueprint.buildHouse(player.getWorld(), fCx, fCz, fFloorY, door,
                             o.half, o.floors, pal[0], pal[1], pal[2], pal[3], o.furniture, player.getName());
+                    plugin.buildRegistry().add(fRegion);   // registra para que nadie lo pise despues
                     player.sendMessage(String.format("§a[Arquitecto] ¡Hecho! Casa %s de %d plantas (%d "
                             + "bloques). Se cobraron §e%d AET§a. Si no te gusta, §f/deshacer§a.",
                             TIERS.get(o.mat).label(), o.floors, blocks, p));

@@ -253,9 +253,9 @@ public final class SettlementModule implements Listener {
     }
 
     /**
-     * Busca un sitio LLANO ya existente para una casa: prueba posiciones aleatorias alrededor
-     * del pueblo (mas lejos conforme crece), plano, SIN AGUA y SIN construcciones (no se pisa
-     * lo que haya edificado un jugador). Devuelve {cx,cz,fy} o null.
+     * Busca el sitio VALIDO (llano, sin agua/hielo, sin pisar lo construido) MAS CERCANO a la
+     * plaza: escanea en ANILLOS hacia fuera desde el centro y se queda con el primero que valga,
+     * asi el pueblo crece compacto desde la plaza. Devuelve {cx,cz,fy} o null.
      */
     private int[] findBuildSpot(Location center, int index) {
         final var rng = ThreadLocalRandom.current();
@@ -263,84 +263,73 @@ public final class SettlementModule implements Listener {
         final int pz = center.getBlockZ();
         int[] best = null;
         int bestFlat = Integer.MAX_VALUE;
-        // Banda COMPACTA alrededor de la plaza (no crece con la poblacion): la aldea se agrupa
-        // en anillos en vez de ensancharse sin fin. Los caminos a la plaza las conectan. Si en
-        // la banda cercana no cabe (agua, construcciones...), se amplia la busqueda para no
-        // quedarse SIN fundar el pueblo en spawns dificiles.
-        for (int t = 0; t < 80; t++) {
-            final double ang = rng.nextDouble() * Math.PI * 2;
-            final int dist = 11 + rng.nextInt(t < 45 ? 15 : 80);   // pueblo COMPACTO (se amplia si no cabe)
-            final int cx = px + (int) Math.round(Math.cos(ang) * dist);
-            final int cz = pz + (int) Math.round(Math.sin(ang) * dist);
-            if (tooClose(center, cx, cz)) {
-                continue;
-            }
-            int min = Integer.MAX_VALUE;
-            int max = Integer.MIN_VALUE;
-            long sum = 0;
-            boolean water = false;
-            boolean built = false;   // hay bloques construidos por alguien: no se pisa
-            // Se comprueba la casa (±5) Y el puesto de trabajo (al este, +7..+11): ni la casa
-            // ni el puesto pueden quedar sobre el agua (la puerta siempre en tierra firme).
-            for (int dx = -5; dx <= 12 && !water && !built; dx++) {
-                for (int dz = -5; dz <= 5; dz++) {
-                    final int gy = groundY(cx + dx, cz + dz);
-                    final Block g = world.getBlockAt(cx + dx, gy, cz + dz);
-                    if (g.isLiquid()) {
-                        water = true;
-                        break;
-                    }
-                    final Material gm = g.getType();
-                    if (gm == Material.ICE || gm == Material.PACKED_ICE || gm == Material.BLUE_ICE
-                            || gm == Material.FROSTED_ICE) {
-                        water = true;   // no se construye sobre hielo (se derrite, resbala)
-                        break;
-                    }
-                    // Agua SOBRE el suelo (mar/estanque adyacente): groundY baja hasta el fondo,
-                    // asi que hay que mirar tambien encima para no plantar la casa junto al agua.
-                    for (int y = gy + 1; y <= gy + 4 && !water; y++) {
-                        if (world.getBlockAt(cx + dx, y, cz + dz).isLiquid()) {
-                            water = true;
-                        }
-                    }
-                    if (water) {
-                        break;
-                    }
-                    if (!natural(g.getType())) {
-                        built = true;   // el propio suelo es algo puesto por alguien
-                        break;
-                    }
-                    for (int y = gy + 1; y <= gy + 7; y++) {   // ¿construccion sobre el suelo?
-                        final Material above = world.getBlockAt(cx + dx, y, cz + dz).getType();
-                        if (!above.isAir() && !natural(above)) {
-                            built = true;
-                            break;
-                        }
-                    }
-                    if (built) {
-                        break;
-                    }
-                    if (dx >= -4 && dx <= 4 && dz >= -4 && dz <= 4) {
-                        min = Math.min(min, gy);
-                        max = Math.max(max, gy);
-                        sum += gy;
-                    }
+        for (int dist = 10; dist <= 110; dist += 3) {
+            final int angles = Math.max(10, dist / 2);   // mas angulos cuanto mayor el anillo
+            for (int a = 0; a < angles; a++) {
+                final double ang = a * (Math.PI * 2 / angles) + rng.nextDouble() * 0.25;
+                final int cx = px + (int) Math.round(Math.cos(ang) * dist);
+                final int cz = pz + (int) Math.round(Math.sin(ang) * dist);
+                if (tooClose(center, cx, cz)) {
+                    continue;
+                }
+                final int[] eval = evaluateSpot(cx, cz);   // {fy, flat} o null si invalido
+                if (eval == null) {
+                    continue;
+                }
+                if (eval[1] <= 2) {
+                    return new int[] {cx, cz, eval[0]};   // llano y CERCANO: perfecto
+                }
+                if (eval[1] < bestFlat) {                 // reserva el mas llano por si no hay perfecto
+                    bestFlat = eval[1];
+                    best = new int[] {cx, cz, eval[0]};
                 }
             }
-            if (water || built) {
-                continue;
-            }
-            final int flat = max - min;
-            final int fy = Math.round(sum / 81f);
-            if (flat <= 2) {
-                return new int[] {cx, cz, fy};   // sitio ya casi llano: perfecto
-            }
-            if (flat < bestFlat) {
-                bestFlat = flat;
-                best = new int[] {cx, cz, fy};
+        }
+        return best;
+    }
+
+    /** Evalua una posicion: {fy medio, irregularidad} si es tierra firme sin construir; null si
+     *  hay agua/hielo o algo ya construido en su huella (±5). */
+    private int[] evaluateSpot(int cx, int cz) {
+        int min = Integer.MAX_VALUE;
+        int max = Integer.MIN_VALUE;
+        long sum = 0;
+        int n = 0;
+        for (int dx = -5; dx <= 5; dx++) {
+            for (int dz = -5; dz <= 5; dz++) {
+                final int gy = groundY(cx + dx, cz + dz);
+                final Block g = world.getBlockAt(cx + dx, gy, cz + dz);
+                if (g.isLiquid()) {
+                    return null;
+                }
+                final Material gm = g.getType();
+                if (gm == Material.ICE || gm == Material.PACKED_ICE || gm == Material.BLUE_ICE
+                        || gm == Material.FROSTED_ICE) {
+                    return null;   // no sobre hielo
+                }
+                for (int y = gy + 1; y <= gy + 4; y++) {
+                    if (world.getBlockAt(cx + dx, y, cz + dz).isLiquid()) {
+                        return null;   // agua adyacente por encima del fondo
+                    }
+                }
+                if (!natural(gm)) {
+                    return null;   // suelo construido por alguien
+                }
+                for (int y = gy + 1; y <= gy + 7; y++) {
+                    final Material above = world.getBlockAt(cx + dx, y, cz + dz).getType();
+                    if (!above.isAir() && !natural(above)) {
+                        return null;   // construccion encima
+                    }
+                }
+                if (dx >= -4 && dx <= 4 && dz >= -4 && dz <= 4) {
+                    min = Math.min(min, gy);
+                    max = Math.max(max, gy);
+                    sum += gy;
+                    n++;
+                }
             }
         }
-        return best;   // el mas llano encontrado (o null si todo estaba pegado)
+        return new int[] {Math.round(sum / (float) n), max - min};
     }
 
     public SettlementModule(AetheriaPlugin plugin, GatewayClient gateway, VillageModule village,
@@ -798,6 +787,8 @@ public final class SettlementModule implements Listener {
         placed.add(new int[] {cx, cz});
         // Trabaja en el EDIFICIO de su oficio (mercado/biblioteca/herreria...), compartido y
         // permanente; se levanta si su aldea aun no tiene uno de ese oficio.
+        plugin.buildRegistry().add(new int[] {cx - halfX - 1, fy - 2, cz - halfZ - 1,
+                cx + halfX + 1, fy + 14, cz + halfZ + 1});   // anti-solape con lo que haga el jugador
         final Location workspot = ensureBuilding(vid, prof);
 
         final Colono c = new Colono();
@@ -1067,6 +1058,7 @@ public final class SettlementModule implements Listener {
         deflood(cx, fy, cz, 1);
         pathTo(cx, cz, townCenter(vid));
         placed.add(new int[] {cx, cz});
+        plugin.buildRegistry().add(new int[] {cx - 5, fy - 2, cz - 5, cx + 5, fy + 14, cz + 5});
         buildings.add(new Building(vid, key, cx, cz, fy));
         saveBuildings();
         gateway.postEvent("edificio", "El pueblo levanta " + buildingName(prof) + " en "
@@ -1744,6 +1736,7 @@ public final class SettlementModule implements Listener {
             }
         }
         placed.removeIf(p -> p[0] == c.x && p[1] == c.z);   // libera el hueco
+        plugin.buildRegistry().removeAt(c.x, c.z);          // y el solar en el registro compartido
     }
 
     /** Coloca un bloque SOLO si lo que hay es natural o aire (nunca pisa algo construido). */

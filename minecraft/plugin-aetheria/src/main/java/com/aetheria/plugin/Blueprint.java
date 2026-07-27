@@ -80,7 +80,7 @@ public final class Blueprint {
             final BlockFace f = player.getFacing();
             final int cx = player.getLocation().getBlockX() + f.getModX() * 5;
             final int cz = player.getLocation().getBlockZ() + f.getModZ() * 5;
-            final int fy = player.getWorld().getHighestBlockYAt(cx, cz);
+            final int fy = TerrainPlanner.meanFirmY(player.getWorld(), cx - 3, cz - 3, cx + 3, cz + 3);
             return buildHouse(player.getWorld(), cx, cz, fy, f.getOppositeFace(), 3, 2,
                     Material.OAK_PLANKS, Material.SPRUCE_LOG, Material.DARK_OAK_PLANKS,
                     Material.BRICKS, true, player.getName());
@@ -91,14 +91,13 @@ public final class Blueprint {
         }
         final World world = player.getWorld();
         final BlockFace facing = player.getFacing();
-        final Location origin = player.getLocation().getBlock().getLocation()
-                .add(facing.getModX() * 2.0, 0, facing.getModZ() * 2.0);
+        final int ox = player.getLocation().getBlockX() + facing.getModX() * 2;
+        final int oz = player.getLocation().getBlockZ() + facing.getModZ() * 2;
+        final int oy = TerrainPlanner.groundY(world, ox, oz);   // sobre el SUELO real, no la Y del jugador
+        TerrainPlanner.prepare(world, ox - 3, oz - 3, ox + 3, oz + 3, oy, Material.COBBLESTONE);
 
         for (Block b : blocks) {
-            world.getBlockAt(
-                    origin.getBlockX() + b.dx(),
-                    origin.getBlockY() + b.dy(),
-                    origin.getBlockZ() + b.dz()).setType(b.material());
+            world.getBlockAt(ox + b.dx(), oy + b.dy(), oz + b.dz()).setType(b.material());
         }
         return blocks.size();
     }

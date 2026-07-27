@@ -177,6 +177,10 @@ public final class SchematicModule {
             final int mnz = (int) bv3.getMethod("getZ").invoke(min);
             final int width = (int) bv3.getMethod("getX").invoke(dim);
             final int length = (int) bv3.getMethod("getZ").invoke(dim);
+            // Nivela el terreno bajo el esquematico (columna a columna) y clava pilotes si cae
+            // sobre agua/hielo — el .schem en si no trae cimentacion.
+            TerrainPlanner.prepare(bukkitWorld, leftX, frontZ, leftX + width - 1, frontZ + length - 1,
+                    groundY, org.bukkit.Material.COBBLESTONE);
             // paste .to(origen); para que la esquina min caiga en left/ground/front: to = left + (origen - min)
             pasteClip(bukkitWorld, clip, leftX + (ox - mnx), groundY + (oy - mny), frontZ + (oz - mnz));
             return new int[] {width, length};

@@ -14,6 +14,7 @@ public final class AetheriaPlugin extends JavaPlugin {
 
     private GatewayClient gateway;
     private NpcManager npcs;
+    private BuildRegistry registry;
 
     @Override
     public void onEnable() {
@@ -27,6 +28,7 @@ public final class AetheriaPlugin extends JavaPlugin {
 
         this.gateway = new GatewayClient(this, url, token);
         this.npcs = new NpcManager();
+        this.registry = new BuildRegistry(this);   // registro compartido de construcciones (anti-solape)
 
         final AetheriaCommand command = new AetheriaCommand(this, gateway, npcs, defaultNpc);
         Objects.requireNonNull(getCommand("aetheria"), "comando 'aetheria' no declarado en plugin.yml")
@@ -159,5 +161,9 @@ public final class AetheriaPlugin extends JavaPlugin {
 
     public GatewayClient gateway() {
         return gateway;
+    }
+
+    public BuildRegistry buildRegistry() {
+        return registry;
     }
 }

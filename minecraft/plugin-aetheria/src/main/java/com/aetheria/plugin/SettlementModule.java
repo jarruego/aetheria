@@ -406,9 +406,9 @@ public final class SettlementModule implements Listener {
                     c.retired = Boolean.parseBoolean(f[9]);
                     c.floors = f.length >= 11 ? Integer.parseInt(f[10]) : 1;
                     c.spouse = f.length >= 12 && !f[11].isEmpty() ? f[11] : null;
-                    c.gender = f.length >= 14 && !f[13].isEmpty() ? f[13] : randGender(rng);
-                    c.vid = f.length >= 15 && !f[14].isEmpty() ? Integer.parseInt(f[14]) : 0;
-                    c.surname = f.length >= 16 && !f[15].isEmpty() ? f[15] : "";
+                    c.gender = f.length >= 13 && !f[12].isEmpty() ? f[12] : randGender(rng);
+                    c.vid = f.length >= 14 && !f[13].isEmpty() ? Integer.parseInt(f[13]) : 0;
+                    c.surname = f.length >= 15 && !f[14].isEmpty() ? f[14] : "";
                 } else {   // formato antiguo: se le asigna una edad plausible
                     c.bornMillis = System.currentTimeMillis();
                     c.initialAge = 20 + rng.nextInt(40);

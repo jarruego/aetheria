@@ -42,6 +42,7 @@ public final class NpcRoutineModule {
         long lastRemark;    // ultima vez que solto un comentario curioso
         Location wander;    // destino de paseo actual (o null si esta trabajando)
         long wanderUntil;   // hasta cuando dura el paseo
+        String prof = "vecino";   // oficio (para que hable de LO SUYO, no todos lo mismo)
 
         Worker(String npcId, String name, Location home, Location work, Location plaza, Location town) {
             this.npcId = npcId;
@@ -109,6 +110,7 @@ public final class NpcRoutineModule {
             Villager.Profession prof, Location townCenter) {
         final Worker w = new Worker(npcId, name, home, work, plazaSpot(townCenter), townCenter);
         w.entity = spawnWorker(w);
+        w.prof = profWord(prof);
         if (w.entity instanceof Villager v) {
             v.setProfession(prof);
         }
@@ -310,22 +312,76 @@ public final class NpcRoutineModule {
         return w.work;
     }
 
-    private static final String[] REMARKS = {
-        "Buen dia para trabajar, ¿no crees?",
-        "Dicen en la taberna que el pueblo prospera.",
-        "Cuidado de noche, que salen cosas por los caminos.",
-        "¿Ya conoces a Sella, la del mercado?",
-        "He oido que alguien se ha construido una casa nueva.",
+    // Frases generales, no atadas a oficio ni hora. Ultimo recurso / relleno.
+    private static final String[] GENERIC = {
         "Si necesitas algo, pregunta por la plaza.",
-        "El herrero anda muy ocupado estos dias.",
-        "Los cultivos van creciendo poco a poco.",
-        "Bienvenido, viajero. Ponte comodo.",
         "Cada dia llega mas gente al pueblo.",
-        "Trabajar de dia, descansar de noche: asi es la vida aqui.",
+        "Dicen en la taberna que el pueblo prospera.",
         "¿Has probado a vender en el mercado? Da buenas monedas.",
+        "He oido que alguien se ha construido una casa nueva.",
     };
 
-    /** Si hay un jugador cerca, el vecino suelta un comentario curioso (con cooldown). */
+    // Frases segun el MOMENTO del dia (el mismo vecino habla distinto de manana o de noche).
+    private static final String[] AL_ALBA = {
+        "Madrugar cansa, pero el trabajo no se hace solo.",
+        "Buen dia para trabajar, ¿no crees?",
+        "Aun huele a rocio. Me gusta esta hora.",
+    };
+    private static final String[] DE_DIA = {
+        "Ando liado, pero siempre hay un momento para saludar.",
+        "El sol aprieta; se trabaja mejor con calma.",
+    };
+    private static final String[] AL_ATARDECER = {
+        "Voy cerrando; a esta hora se recoge uno hacia la plaza.",
+        "Menudo dia. Toca charlar un rato antes de casa.",
+        "Cuidado de noche, que salen cosas por los caminos.",
+    };
+    private static final String[] DE_NOCHE = {
+        "¿Aun por aqui? Yo me voy ya a dormir.",
+        "De noche mejor bajo techo, hazme caso.",
+    };
+
+    // Frases propias de CADA oficio (para que no todos digan lo mismo). Clave = profWord(...).
+    private static final java.util.Map<String, String[]> POR_OFICIO = java.util.Map.of(
+        "granjero", new String[] {
+            "Los cultivos van creciendo poco a poco.",
+            "Si riegas a tiempo, la cosecha responde.",
+            "Este ano la tierra viene generosa." },
+        "herrero", new String[] {
+            "El yunque no descansa; siempre falta una herramienta.",
+            "Con buen hierro, buena hoja. Asi de simple.",
+            "¿Se te ha roto algo? Puedo echarle un ojo." },
+        "pescador", new String[] {
+            "El agua esta buena hoy; los peces pican.",
+            "Paciencia y sedal, ese es el secreto." },
+        "bibliotecario", new String[] {
+            "Tengo un libro para casi todo, si sabes buscar.",
+            "El saber pesa menos que el oro y vale mas." },
+        "carnicero", new String[] {
+            "Carne fresca cada manana, no lo dudes.",
+            "El ganado da trabajo, pero llena la despensa." },
+        "clerigo", new String[] {
+            "Que la fortuna te acompane, viajero.",
+            "Hay dias oscuros, pero el pueblo aguanta unido." },
+        "cartografo", new String[] {
+            "Cada camino nuevo hay que ponerlo en el mapa.",
+            "¿Perdido? Dime a donde vas y te oriento." },
+        "guardia", new String[] {
+            "Tranquilo, aqui vigilo yo. No pasa nada raro.",
+            "De noche redoblo la ronda; nunca se sabe." });
+
+    private static String[] pool(String[]... groups) {
+        final java.util.List<String> all = new java.util.ArrayList<>();
+        for (final String[] g : groups) {
+            if (g != null) {
+                java.util.Collections.addAll(all, g);
+            }
+        }
+        return all.toArray(new String[0]);
+    }
+
+    /** Si hay un jugador cerca, el vecino suelta un comentario curioso (con cooldown). El
+     *  comentario mezcla lo propio de SU oficio con lo propio de la HORA del dia. */
     private void maybeRemark(Worker w) {
         final long now = System.currentTimeMillis();
         if (now - w.lastRemark < 30000L) {
@@ -337,10 +393,40 @@ public final class NpcRoutineModule {
         for (final Player p : w.entity.getWorld().getPlayers()) {
             if (p.getLocation().distanceSquared(w.entity.getLocation()) <= 25) {   // 5 bloques
                 w.lastRemark = now;
-                final String line = REMARKS[java.util.concurrent.ThreadLocalRandom.current().nextInt(REMARKS.length)];
+                final long time = world.getTime();
+                final String[] hora = time < 2000L ? AL_ALBA
+                        : time < 11000L ? DE_DIA
+                        : time < 13500L ? AL_ATARDECER
+                        : DE_NOCHE;
+                final String[] oficio = POR_OFICIO.get(w.prof);
+                final String[] mix = pool(oficio, hora, GENERIC);
+                final String line = mix[java.util.concurrent.ThreadLocalRandom.current().nextInt(mix.length)];
                 p.sendMessage("§e[" + w.name + "] §7" + line);
                 return;
             }
         }
+    }
+
+    /** Nombre corto del oficio en castellano (clave para las frases). */
+    private static String profWord(Villager.Profession prof) {
+        if (prof == Villager.Profession.FARMER) {
+            return "granjero";
+        } else if (prof == Villager.Profession.WEAPONSMITH || prof == Villager.Profession.TOOLSMITH
+                || prof == Villager.Profession.ARMORER) {
+            return "herrero";
+        } else if (prof == Villager.Profession.FISHERMAN) {
+            return "pescador";
+        } else if (prof == Villager.Profession.LIBRARIAN) {
+            return "bibliotecario";
+        } else if (prof == Villager.Profession.BUTCHER) {
+            return "carnicero";
+        } else if (prof == Villager.Profession.CLERIC) {
+            return "clerigo";
+        } else if (prof == Villager.Profession.CARTOGRAPHER) {
+            return "cartografo";
+        } else if (prof == Villager.Profession.NITWIT || prof == Villager.Profession.NONE) {
+            return "guardia";
+        }
+        return "vecino";
     }
 }

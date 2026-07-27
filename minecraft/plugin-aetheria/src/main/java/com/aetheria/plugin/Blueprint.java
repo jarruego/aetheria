@@ -654,8 +654,10 @@ public final class Blueprint {
             block.setBlockData(dir, false);
         }
         if (block.getState() instanceof Sign sign) {
+            // Solo el nombre de pila: el apellido no cabe en una linea de cartel.
+            final String given = ownerName.contains(" ") ? ownerName.substring(0, ownerName.indexOf(' ')) : ownerName;
             sign.getSide(Side.FRONT).line(1, Component.text("Casa de"));
-            sign.getSide(Side.FRONT).line(2, Component.text("§6" + ownerName));
+            sign.getSide(Side.FRONT).line(2, Component.text("§6" + given));
             sign.update(true);
         }
     }

@@ -194,6 +194,36 @@ public final class VillageModule {
         }
     }
 
+    /** Nivela y despeja un solar a la cota dada: talla el terreno natural (y arboles) que sobresale,
+     *  rellena los huecos por debajo y deja cesped. Para que un edificio quede A RAS y con el acceso
+     *  despejado, no incrustado en una loma ni con la puerta tapada por un talud. */
+    private void levelPad(int cx, int cz, int half, int floorY) {
+        for (int dx = -half; dx <= half; dx++) {
+            for (int dz = -half; dz <= half; dz++) {
+                final int x = cx + dx;
+                final int z = cz + dz;
+                for (int y = floorY + 1; y <= floorY + 12; y++) {   // talla la loma/arbol por encima
+                    final Block b = world.getBlockAt(x, y, z);
+                    if (!b.getType().isAir() && TerrainPlanner.natural(b.getType())) {
+                        b.setType(Material.AIR, false);
+                    }
+                }
+                for (int y = floorY - 1; y >= floorY - 8; y--) {    // rellena el hueco por debajo
+                    final Block b = world.getBlockAt(x, y, z);
+                    if (b.getType().isAir() || b.isLiquid()) {
+                        b.setType(Material.DIRT, false);
+                    } else {
+                        break;
+                    }
+                }
+                final Block top = world.getBlockAt(x, floorY, z);
+                if (top.getType().isAir() || TerrainPlanner.natural(top.getType())) {
+                    top.setType(Material.GRASS_BLOCK, false);
+                }
+            }
+        }
+    }
+
     private void clearArea(int x0, int x1, int z0, int z1, int y0, int y1) {
         for (int x = x0; x <= x1; x++) {
             for (int z = z0; z <= z1; z++) {
@@ -335,8 +365,10 @@ public final class VillageModule {
         set(cx, floorY + 2, cz - 3, Material.COBBLESTONE_WALL);
         set(cx, floorY + 3, cz - 3, Material.BELL);
         // Taberna del pueblo, al este de la plaza (donde los vecinos se reunen al atardecer). A la
-        // misma cota que la plaza; se apoya a ras (su cimiento nivela). El punto de reunion del
-        // pueblo (townCenter) queda en cx+3, asi que la taberna cae en townCenter + (8, 0).
+        // misma cota que la plaza. Antes se apoyaba solo en su propio cimiento (±2) y, si el suelo
+        // 11 bloques al este subia, quedaba INCRUSTADA y con la puerta tapada. Ahora se nivela y
+        // despeja un solar amplio (±5) a la cota de la plaza para que quede a ras y con acceso.
+        levelPad(cx + 11, cz, 5, floorY);
         this.tavern = buildTavern(cx + 11, cz, floorY);
         return new Location(world, cx + 3 + 0.5, floorY + 1, cz + 0.5);   // punto de reunion al lado
     }

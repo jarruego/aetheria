@@ -1566,7 +1566,16 @@ public final class SettlementModule implements Listener {
     }
 
     private boolean protect(Player player, Block b) {
-        if (terrain(b.getType())) {
+        final Material m = b.getType();
+        // ARBOLES: hojas, brotes y matojos son NATURALEZA, no casa ni mobiliario -> siempre se
+        // pueden romper, aunque el arbol crezca dentro del pueblo. (No aplica a troncos aun: esos
+        // pueden ser esquina de una casa; se comprueba mas abajo tras descartar casas/edificios.)
+        if (Tag.LEAVES.isTagged(m) || Tag.SAPLINGS.isTagged(m) || m == Material.VINE
+                || m == Material.SHORT_GRASS || m == Material.TALL_GRASS || m == Material.FERN
+                || m == Material.LARGE_FERN || Tag.FLOWERS.isTagged(m)) {
+            return false;
+        }
+        if (terrain(m)) {
             return false;   // recolectar tierra/piedra/arena cerca de una casa esta permitido
         }
         final Colono c = ownerAt(b);
@@ -1579,6 +1588,11 @@ public final class SettlementModule implements Listener {
             player.sendMessage("§cEsto es un edificio del pueblo (donde trabajan los aldeanos). "
                     + "No puedes destruirlo.");
             return true;
+        }
+        // TRONCOS que NO son de una casa ni de un edificio son un ARBOL -> recolectables (aunque
+        // esten en el radio del pueblo). Asi se puede talar sin el mensaje de "pertenece al pueblo".
+        if (Tag.LOGS.isTagged(m)) {
+            return false;
         }
         if (inVillageCore(b)) {
             player.sendMessage("§cEsto pertenece al pueblo de Aetheria. No puedes tocarlo.");

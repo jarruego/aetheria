@@ -275,12 +275,16 @@ public final class ArchitectModule implements CommandExecutor, Listener {
         buildAt(player, o, cx, cz, player.getWorld().getHighestBlockYAt(cx, cz), f.getOppositeFace());
     }
 
-    private void buildAt(Player player, Order o, int cx, int cz, int floorY, BlockFace door) {
+    private void buildAt(Player player, Order o, int cx, int cz, int hintY, BlockFace door) {
         if (!claims.ownsChunk(player.getUniqueId(), cx >> 4, cz >> 4)) {
             player.sendMessage("§c[Arquitecto] Ahi no es tu parcela. Reclamala con §f/claim§c o "
                     + "elige un punto sobre tu terreno.");
             return;
         }
+        // Cota del suelo = MEDIA del suelo firme de la huella (equilibrada en cuestas), no un
+        // punto suelto. buildHouse ya nivela columna a columna y clava pilotes sobre agua/hielo.
+        final int floorY = TerrainPlanner.meanFirmY(player.getWorld(),
+                cx - o.half, cz - o.half, cx + o.half, cz + o.half);
         final int p = price(o);
         final Material[] pal = o.palette;
         gateway.pay(player.getUniqueId().toString(), BANCO, p)

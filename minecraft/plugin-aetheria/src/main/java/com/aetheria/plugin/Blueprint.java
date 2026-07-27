@@ -297,21 +297,15 @@ public final class Blueprint {
         final int split = rng.nextInt(3) - 1;          // desplaza el tabique -> habitaciones desiguales
         int n = 0;
 
-        // Cimentacion: suelo firme, hueco despejado y relleno inferior para que no flote.
+        // Cimentacion: nivela el terreno COLUMNA A COLUMNA (relleno coherente en tierra firme,
+        // PILOTES en columnas de agua/hielo) y luego pone el suelo firme y despeja el hueco.
+        TerrainPlanner.prepare(world, cx - halfX, cz - halfZ, cx + halfX, cz + halfZ, floorY, corner);
         for (int dx = -halfX; dx <= halfX; dx++) {
             for (int dz = -halfZ; dz <= halfZ; dz++) {
                 set(world, cx + dx, floorY, cz + dz, Material.STONE_BRICKS);
                 n++;
                 for (int dy = 1; dy <= floors * fh + maxH + 2; dy++) {
                     set(world, cx + dx, floorY + dy, cz + dz, Material.AIR);
-                }
-                for (int dy = floorY - 1; dy >= floorY - 8; dy--) {
-                    final var b = world.getBlockAt(cx + dx, dy, cz + dz);
-                    if (b.getType().isAir() || b.isLiquid()) {
-                        b.setType(Material.DIRT, false);
-                    } else {
-                        break;
-                    }
                 }
             }
         }

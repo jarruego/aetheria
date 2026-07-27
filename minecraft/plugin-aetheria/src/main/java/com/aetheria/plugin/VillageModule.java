@@ -49,6 +49,39 @@ public final class VillageModule {
         this.world = world;
     }
 
+    /** Si el spawn cae en un bioma "raro" (hielo/nieve, desierto, mucha agua), reubica el spawn del
+     *  mundo a uno templado cercano, para que el mundo main sea lo mas "normal" posible. Solo actua
+     *  una vez (si ya esta en bioma bueno, no hace nada). */
+    public static void relocateSpawnToGoodBiome(AetheriaPlugin plugin, World world) {
+        final org.bukkit.Location sp = world.getSpawnLocation();
+        if (goodBiome(world.getBiome(sp.getBlockX(), sp.getBlockY(), sp.getBlockZ()))) {
+            return;
+        }
+        final int y = sp.getBlockY();
+        for (int r = 1; r <= 12; r++) {                 // anillos de 100 en 100, hasta ~1200 bloques
+            for (int a = 0; a < 8; a++) {
+                final double ang = a * Math.PI / 4;
+                final int x = sp.getBlockX() + (int) Math.round(Math.cos(ang) * r * 100);
+                final int z = sp.getBlockZ() + (int) Math.round(Math.sin(ang) * r * 100);
+                if (goodBiome(world.getBiome(x, y, z))) {
+                    world.setSpawnLocation(x, world.getHighestBlockYAt(x, z) + 1, z);
+                    plugin.getLogger().info("[Aetheria] Spawn reubicado a bioma normal en "
+                            + x + "," + z + ".");
+                    return;
+                }
+            }
+        }
+        plugin.getLogger().info("[Aetheria] No encontre bioma normal cerca; el pueblo se queda donde esta.");
+    }
+
+    private static boolean goodBiome(org.bukkit.block.Biome biome) {
+        final String n = biome.getKey().getKey();   // p.ej. "plains", "snowy_taiga", "desert"
+        return !(n.contains("ocean") || n.contains("river") || n.contains("beach")
+                || n.contains("frozen") || n.contains("snowy") || n.contains("ice")
+                || n.contains("cold") || n.contains("desert") || n.contains("badlands")
+                || n.contains("mushroom") || n.contains("deep") || n.contains("swamp"));
+    }
+
     public Location naraHome() { return naraHome.clone(); }
     public Location naraWork() { return naraWork.clone(); }
     public Location polHome() { return polHome.clone(); }

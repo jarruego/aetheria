@@ -214,11 +214,11 @@ public final class SettlementModule implements Listener {
 
     /** True si (x,z) esta demasiado cerca de otra casa o del centro de la aldea. */
     private boolean tooClose(Location center, int x, int z) {
-        if (Math.hypot(x - center.getX(), z - center.getZ()) < 16) {
+        if (Math.hypot(x - center.getX(), z - center.getZ()) < 9) {   // pegado a la plaza, pero sin pisarla
             return true;
         }
         for (final int[] p : placed) {
-            if (Math.hypot(x - p[0], z - p[1]) < 18) {   // deja sitio a casa + puesto de trabajo
+            if (Math.hypot(x - p[0], z - p[1]) < 12) {   // compacto: casas/edificios juntos, sin solaparse
                 return true;
             }
         }
@@ -269,7 +269,7 @@ public final class SettlementModule implements Listener {
         // quedarse SIN fundar el pueblo en spawns dificiles.
         for (int t = 0; t < 80; t++) {
             final double ang = rng.nextDouble() * Math.PI * 2;
-            final int dist = 16 + rng.nextInt(t < 40 ? 26 : 90);
+            final int dist = 11 + rng.nextInt(t < 45 ? 15 : 80);   // pueblo COMPACTO (se amplia si no cabe)
             final int cx = px + (int) Math.round(Math.cos(ang) * dist);
             final int cz = pz + (int) Math.round(Math.sin(ang) * dist);
             if (tooClose(center, cx, cz)) {
@@ -1436,13 +1436,17 @@ public final class SettlementModule implements Listener {
         return null;
     }
 
-    /** True si el bloque esta en el nucleo del pueblo (casas base, mercado, taberna, plaza). */
+    /** True si el bloque esta en el NUCLEO de alguna aldea (plaza: pozo, campana, civico). Se
+     *  calcula por proximidad a los centros de aldea, asi que se actualiza al fundar aldeas nuevas
+     *  o al crecer (no es un recuadro fijo del spawn). */
     private boolean inVillageCore(Block b) {
-        final int sx = village.spawnX();
-        final int sz = village.spawnZ();
-        final int by = village.baseY();
-        return b.getX() >= sx - 22 && b.getX() <= sx + 22 && b.getZ() >= sz + 8 && b.getZ() <= sz + 34
-                && b.getY() >= by - 1 && b.getY() <= by + 12;
+        for (final Town t : towns) {
+            if (Math.abs(b.getY() - t.baseY) <= 14
+                    && Math.hypot(b.getX() - (t.cx + 0.5), b.getZ() - (t.cz + 0.5)) <= 13) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Bloque de TERRENO natural del suelo (se puede recolectar aunque este junto a una casa):

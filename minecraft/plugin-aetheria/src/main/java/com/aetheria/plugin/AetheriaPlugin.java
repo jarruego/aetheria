@@ -59,6 +59,11 @@ public final class AetheriaPlugin extends JavaPlugin {
             // Un unico conserje que ronda el lobby y conoce todo el server.
             new LobbyGuideModule(this, convo, lobby.interiorCenter()).start();
         } else {
+            // El mundo main debe ser lo mas "normal" posible: si el spawn cae en bioma raro
+            // (hielo/desierto/mucha agua) se reubica ANTES de construir el portal y la aldea.
+            if (role.equals("main")) {
+                VillageModule.relocateSpawnToGoodBiome(this, getServer().getWorlds().get(0));
+            }
             // En los mundos de juego: comandos de casa (/home, /sethome) sobre la DB.
             final HomeCommand homeCmd = new HomeCommand(this, gateway, role);
             Objects.requireNonNull(getCommand("home")).setExecutor(homeCmd);

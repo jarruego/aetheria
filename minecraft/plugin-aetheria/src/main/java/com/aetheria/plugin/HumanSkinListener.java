@@ -68,10 +68,19 @@ public final class HumanSkinListener extends PacketListenerAbstract {
         }
     }
 
-    /** Nombre de perfil VALIDO (<=16, [a-zA-Z0-9_]); invisible (listed=false). El nametag flotante
-     *  lo da la metadata base (custom name), no este nombre. */
+    /** Nombre de perfil VALIDO (<=16, [a-zA-Z0-9_]) a partir del nombre real del NPC: es el que un
+     *  cliente muestra ENCIMA de un jugador. Los espacios no valen en nombres de jugador -> guion
+     *  bajo ("Francisco Ramos" -> "Francisco_Ramos"). */
     private static String npcName(UUID uuid) {
-        final String hex = Long.toHexString(uuid.getMostSignificantBits());
-        return ("A" + hex + "000000000000000").substring(0, 16);
+        final String real = DisguiseModule.nameOf(uuid);
+        if (real == null || real.isBlank()) {
+            return ("A" + Long.toHexString(uuid.getMostSignificantBits()) + "0000000000000000")
+                    .substring(0, 16);
+        }
+        String s = real.trim().replace(' ', '_').replaceAll("[^A-Za-z0-9_]", "");
+        if (s.isEmpty()) {
+            s = "NPC";
+        }
+        return s.length() > 16 ? s.substring(0, 16) : s;
     }
 }

@@ -1,58 +1,50 @@
 package com.aetheria.plugin;
 
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Entity;
 
 /**
- * Da ASPECTO HUMANO a los NPC (colonos, tabernero, mercader, Aeon): disfraza el aldeano de JUGADOR
- * con una skin, usando LibsDisguises POR REFLEXION (dependencia BLANDA). Si el plugin no esta
- * instalado, no hace nada y los NPC siguen siendo aldeanos normales — NUNCA rompe el servidor.
+ * Registro de los NPC que deben verse HUMANOS (skin). El disfraz real lo aplica
+ * {@link HumanSkinListener} (packetevents): intercepta el paquete de aparicion del aldeano y lo
+ * reescribe a JUGADOR con skin. Aqui solo se anota QUE entidades son NPC y con que sexo.
  *
- * <p>El aldeano sigue siendo un aldeano por dentro (pathfinding, conversacion, rutinas, proteccion):
- * solo cambia lo que VE el jugador. La skin viene de un SET DE ARRANQUE (libre) por sexo; se puede
- * ampliar/cambiar por skins de oficio editando {@link #MALE}/{@link #FEMALE}.
+ * <p>Dependencia BLANDA de packetevents: si el plugin no esta, {@link #available()} es false, no se
+ * registra el listener y los NPC se quedan de aldeanos (nunca rompe nada).
  */
 public final class DisguiseModule {
 
     private DisguiseModule() {
     }
 
-    private static Boolean available;
-
-    // Set de arranque (libre) por SEXO. MHF_Steve/MHF_Alex son las skins clasicas (garantizadas);
-    // el resto son cuentas publicas conocidas. LibsDisguises cae a Steve/Alex si alguna no resuelve.
-    // Sustituibles por skins de oficio cuando se quiera (p. ej. una por profesion).
-    private static final String[] MALE = {"MHF_Steve", "Notch", "jeb_", "Dinnerbone", "MHF_Villager"};
-    private static final String[] FEMALE = {"MHF_Alex", "MHF_Alex", "Alex", "MHF_Alex"};
+    // UUID del NPC -> sexo (para elegir skin). Y entityId -> UUID (para filtrar su metadata).
+    private static final java.util.Map<UUID, String> BY_UUID = new ConcurrentHashMap<>();
+    private static final java.util.Map<Integer, UUID> BY_ENTITY = new ConcurrentHashMap<>();
 
     public static boolean available() {
-        if (available == null) {
-            available = Bukkit.getPluginManager().getPlugin("LibsDisguises") != null;
-        }
-        return available;
+        return Bukkit.getPluginManager().getPlugin("packetevents") != null;
     }
 
-    /** Disfraza al NPC de humano con una skin acorde a su sexo. Silencioso si no hay LibsDisguises
-     *  o si algo falla (mejor un aldeano que un crash). */
-    public static void humanize(Entity npc, String gender, String displayName) {
-        if (npc == null || !available()) {
-            return;
-        }
-        try {
-            final String[] pool = "f".equalsIgnoreCase(gender) ? FEMALE : MALE;
-            final String skin = pool[Math.floorMod(displayNameKey(displayName), pool.length)];
-            final Class<?> pd = Class.forName("me.libraryaddict.disguise.disguisetypes.PlayerDisguise");
-            final Object disguise = pd.getConstructor(String.class).newInstance(displayName);
-            pd.getMethod("setSkin", String.class).invoke(disguise, skin);
-            final Class<?> api = Class.forName("me.libraryaddict.disguise.DisguiseAPI");
-            final Class<?> disg = Class.forName("me.libraryaddict.disguise.disguisetypes.Disguise");
-            api.getMethod("disguiseToAll", Entity.class, disg).invoke(null, npc, disguise);
-        } catch (Throwable t) {
-            // dependencia blanda: si LibsDisguises no esta o cambia su API, se queda de aldeano.
+    /** Marca a un NPC para que se vea humano (skin segun sexo). Lo llaman los sitios que spawnean
+     *  NPC; el nombre se ignora (el disfraz mantiene el nametag por la metadata base). */
+    public static void humanize(Entity npc, String gender, String name) {
+        if (npc != null) {
+            BY_UUID.put(npc.getUniqueId(), (gender == null || gender.isEmpty()) ? "m" : gender);
         }
     }
 
-    private static int displayNameKey(String name) {
-        return name == null ? 0 : (name.hashCode() & 0x7fffffff);
+    /** Sexo del NPC con ese UUID, o null si no es NPC nuestro. */
+    public static String genderOf(UUID uuid) {
+        return BY_UUID.get(uuid);
+    }
+
+    public static void trackEntity(int entityId, UUID uuid) {
+        BY_ENTITY.put(entityId, uuid);
+    }
+
+    public static boolean isDisguised(int entityId) {
+        return BY_ENTITY.containsKey(entityId);
     }
 }

@@ -12,6 +12,7 @@ java {
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
+    maven("https://repo.codemc.io/repository/maven-releases/")   // packetevents
 }
 
 dependencies {
@@ -19,6 +20,9 @@ dependencies {
     // Los esquematicos se manejan DESPACHANDO comandos de WorldEdit/FAWE (sin dependencia
     // de compilacion): asi no hace falta enlazar con la API de WorldEdit al construir.
     compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
+    // PacketEvents: SKINS HUMANAS de los NPC en Java 25 (LibsDisguises/ProtocolLib no van en J25).
+    // Solo compileOnly: el plugin PacketEvents lo aporta el servidor en runtime.
+    compileOnly("com.github.retrooper:packetevents-spigot:2.13.0")
 }
 
 tasks.withType<JavaCompile> {

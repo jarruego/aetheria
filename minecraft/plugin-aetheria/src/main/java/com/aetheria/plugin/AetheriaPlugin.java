@@ -30,6 +30,16 @@ public final class AetheriaPlugin extends JavaPlugin {
         this.npcs = new NpcManager();
         this.registry = new BuildRegistry(this);   // registro compartido de construcciones (anti-solape)
 
+        // SKINS HUMANAS de los NPC (packetevents): si el plugin esta, se registra el listener que
+        // disfraza los aldeanos de jugador con skin. Dependencia BLANDA: sin el, siguen de aldeanos.
+        if (getServer().getPluginManager().getPlugin("packetevents") != null) {
+            final SkinCache skins = new SkinCache();
+            skins.loadAsync(this);
+            com.github.retrooper.packetevents.PacketEvents.getAPI().getEventManager()
+                    .registerListener(new HumanSkinListener(skins));
+            getLogger().info("Aetheria: skins humanas de NPC activas (packetevents).");
+        }
+
         final AetheriaCommand command = new AetheriaCommand(this, gateway, npcs, defaultNpc);
         Objects.requireNonNull(getCommand("aetheria"), "comando 'aetheria' no declarado en plugin.yml")
                 .setExecutor(command);

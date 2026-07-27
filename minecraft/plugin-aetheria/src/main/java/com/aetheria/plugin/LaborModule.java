@@ -142,6 +142,7 @@ public final class LaborModule {
             case "fisherman" -> fish(at);
             case "butcher" -> smoke(lab, at);
             case "librarian" -> copyBook(at);
+            case "leatherworker" -> serve(lab, at);
             default -> null;
         };
     }
@@ -273,6 +274,25 @@ public final class LaborModule {
         return new Yield(cooked(raw), 1.8, "ahumado");
     }
 
+    /** TABERNERO: sirve en la barra. Convierte el genero del granero (trigo, carne, pescado) en
+     *  comida y bebida para el pueblo; es puro COMERCIO, el oficio que mueve el dinero. */
+    private Yield serve(Laborer lab, Location at) {
+        final Block bar = find(at, b -> b.getType() == Material.BARREL
+                || b.getType() == Material.BREWING_STAND);
+        if (bar == null) {
+            return null;   // fuera de la taberna no sirve a nadie
+        }
+        effect(bar.getLocation().add(0.5, 1, 0.5), Particle.HAPPY_VILLAGER, Sound.ENTITY_VILLAGER_YES);
+        final Material raw = settlement.takeFromGranary(lab.vid,
+                new Material[] {Material.WHEAT, Material.COD, Material.COOKED_BEEF, Material.CARROT});
+        if (raw == null) {
+            return new Yield(Material.POTION, 1.0, "ronda");   // solo bebida: la despensa esta seca
+        }
+        return raw == Material.WHEAT
+                ? new Yield(Material.BREAD, 2.0, "cocina")
+                : new Yield(Material.COOKED_COD, 1.8, "cocina");
+    }
+
     /** BIBLIOTECARIO: copia un libro en su atril. */
     private Yield copyBook(Location at) {
         final Block lectern = find(at, b -> b.getType() == Material.LECTERN
@@ -373,7 +393,7 @@ public final class LaborModule {
     private static double baseValue(String profKey) {
         return switch (profKey) {
             case "toolsmith" -> 2.0;
-            case "shepherd", "librarian", "butcher" -> 1.5;
+            case "shepherd", "librarian", "butcher", "leatherworker" -> 1.5;
             default -> 1.2;
         };
     }

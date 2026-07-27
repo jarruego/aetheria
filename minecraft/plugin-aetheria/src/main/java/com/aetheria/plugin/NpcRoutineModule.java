@@ -59,6 +59,7 @@ public final class NpcRoutineModule {
         Location bed;       // cama de su casa (para dormir de noche); se busca una vez
         boolean bedSearched;
         String prof = "vecino";   // oficio (para que hable de LO SUYO, no todos lo mismo)
+        boolean stayAtWork;       // el tabernero no se va de paseo: se queda sirviendo
 
         Worker(String npcId, String name, Location home, Location work, Location plaza, Location town) {
             this.npcId = npcId;
@@ -377,6 +378,16 @@ public final class NpcRoutineModule {
         }
     }
 
+    /** Marca a un vecino como "clavado a su puesto" (el tabernero se queda en la barra). */
+    public void setStayAtWork(String name, boolean stay) {
+        for (final Worker w : workers) {
+            if (w.name.equals(name)) {
+                w.stayAtWork = stay;
+                return;
+            }
+        }
+    }
+
     /** Cambia el oficio de un colono (p.ej. al heredar el puesto de un fallecido). */
     public void setProfession(String name, Villager.Profession prof) {
         for (final Worker w : workers) {
@@ -506,6 +517,9 @@ public final class NpcRoutineModule {
      * mas lejos) y luego vuelve. Da sensacion de vida en vez de estar clavado en el puesto.
      */
     private Location workOrWander(Worker w) {
+        if (w.stayAtWork) {
+            return w.work;   // el tabernero no abandona la barra durante la jornada
+        }
         final long now = System.currentTimeMillis();
         if (w.wander != null && now < w.wanderUntil) {
             // ¿ya llego al punto de paseo? entonces que descanse ahi hasta que acabe el paseo.
@@ -586,7 +600,11 @@ public final class NpcRoutineModule {
             "¿Perdido? Dime a donde vas y te oriento." },
         "guardia", new String[] {
             "Tranquilo, aqui vigilo yo. No pasa nada raro.",
-            "De noche redoblo la ronda; nunca se sabe." });
+            "De noche redoblo la ronda; nunca se sabe." },
+        "tabernero", new String[] {
+            "¿Te sirvo algo? La casa invita a la primera.",
+            "Aqui se entera uno de todo lo que pasa en el pueblo.",
+            "Por la noche esto se llena; ya lo veras." });
 
     private static String[] pool(String[]... groups) {
         final java.util.List<String> all = new java.util.ArrayList<>();
@@ -642,6 +660,8 @@ public final class NpcRoutineModule {
             return "clerigo";
         } else if (prof == Villager.Profession.CARTOGRAPHER) {
             return "cartografo";
+        } else if (prof == Villager.Profession.LEATHERWORKER) {
+            return "tabernero";
         } else if (prof == Villager.Profession.NITWIT || prof == Villager.Profession.NONE) {
             return "guardia";
         }

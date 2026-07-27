@@ -492,20 +492,24 @@ public final class VillageModule {
         }
         // BARRA de madera a lo largo del muro este: mostrador (tablon + losa) con barriles y
         // destileria detras, y taburetes delante.
+        // La barra se arrima al muro dejando un PASILLO libre detras: ahi se pone el TABERNERO
+        // a servir (su puesto de trabajo es la taberna, no un edificio aparte).
         for (int dz = -2; dz <= 2; dz++) {
-            set(cx + half - 2, floorY + 1, cz + dz, Material.SPRUCE_PLANKS);   // frente de la barra
-            set(cx + half - 2, floorY + 2, cz + dz, Material.SPRUCE_SLAB);     // encimera
+            set(cx + half - 3, floorY + 1, cz + dz, Material.SPRUCE_PLANKS);   // frente de la barra
+            set(cx + half - 3, floorY + 2, cz + dz, Material.SPRUCE_SLAB);     // encimera
+            set(cx + half - 2, floorY + 1, cz + dz, Material.AIR);             // pasillo del tabernero
+            set(cx + half - 2, floorY + 2, cz + dz, Material.AIR);
             set(cx + half - 1, floorY + 1, cz + dz, Material.BARREL);          // estante tras la barra
         }
         set(cx + half - 1, floorY + 2, cz - 1, Material.BREWING_STAND);
         set(cx + half - 1, floorY + 2, cz + 1, Material.DECORATED_POT);
         for (int dz = -2; dz <= 2; dz += 2) {
-            set(cx + half - 3, floorY + 1, cz + dz, Material.SPRUCE_FENCE);    // taburete
+            set(cx + half - 4, floorY + 1, cz + dz, Material.SPRUCE_FENCE);    // taburete
         }
-        // MESAS con sillas repartidas por el salon.
+        // MESAS con sillas repartidas por el salon (al otro lado de la barra).
         tavernTable(cx - 2, cz - 2, floorY);
         tavernTable(cx - 2, cz + 2, floorY);
-        tavernTable(cx + 1, cz - 2, floorY);
+        tavernTable(cx - 2, cz, floorY);
         // Barriles apilados en una esquina (almacen).
         set(cx - half + 1, floorY + 1, cz + half - 1, Material.BARREL);
         set(cx - half + 1, floorY + 2, cz + half - 1, Material.BARREL);

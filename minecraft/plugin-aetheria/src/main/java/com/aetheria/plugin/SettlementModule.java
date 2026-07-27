@@ -71,7 +71,10 @@ public final class SettlementModule implements Listener {
     private static final Villager.Profession[] PROFS = {Villager.Profession.FARMER,
         Villager.Profession.FISHERMAN, Villager.Profession.SHEPHERD, Villager.Profession.MASON,
         Villager.Profession.LIBRARIAN, Villager.Profession.TOOLSMITH, Villager.Profession.BUTCHER,
-        Villager.Profession.FLETCHER};
+        Villager.Profession.FLETCHER, Villager.Profession.LEATHERWORKER};
+    /** El TABERNERO es un oficio especial: su puesto de trabajo ES la taberna (se queda dentro
+     *  sirviendo), asi que no se le construye un edificio propio y solo existe si hay taberna. */
+    private static final Villager.Profession TAVERN_KEEPER = Villager.Profession.LEATHERWORKER;
     private static final String[] SURNAMES = {
         "Rivas", "Soto", "Vega", "Prado", "Campos", "Robles", "Herrero", "Bravo", "Nieto",
         "Ramos", "Castro", "Vidal", "Marin", "Mora", "Pardo", "Rojas", "Serrano", "Lozano",
@@ -480,6 +483,7 @@ public final class SettlementModule implements Listener {
                 routines.addColono("colono", c.name, new Location(world, c.x + 0.5, c.y, c.z + 0.5),
                         ensureBuilding(c.vid, profFromKey(c.profKey)), profFromKey(c.profKey),
                         townCenter(c.vid));
+                routines.setStayAtWork(c.name, isKeeper(c.profKey));
                 if (c.retired) {
                     routines.retire(c.name);
                 }
@@ -508,6 +512,11 @@ public final class SettlementModule implements Listener {
         return p.getKey().getKey();
     }
 
+    /** True si ese oficio es el de TABERNERO (se queda en la barra, no pasea). */
+    private static boolean isKeeper(String key) {
+        return profKey(TAVERN_KEEPER).equals(key);
+    }
+
     /** El oficio que MENOS tiene la aldea, para que se equilibre (no 6 del mismo y ninguno de otro). */
     private Villager.Profession neededProfession(int vid, java.util.Random rng) {
         final int[] counts = new int[PROFS.length];
@@ -526,11 +535,15 @@ public final class SettlementModule implements Listener {
         for (final int n : counts) {
             min = Math.min(min, n);
         }
+        final boolean hayTaberna = civicBuilt.contains(vid + ":taberna");
         final List<Villager.Profession> cand = new ArrayList<>();
         for (int i = 0; i < PROFS.length; i++) {
-            if (counts[i] == min) {
-                cand.add(PROFS[i]);
+            if (counts[i] == min && (hayTaberna || PROFS[i] != TAVERN_KEEPER)) {
+                cand.add(PROFS[i]);   // sin taberna no hay tabernero que valga
             }
+        }
+        if (cand.isEmpty()) {
+            return Villager.Profession.FARMER;
         }
         return cand.get(rng.nextInt(cand.size()));
     }
@@ -904,6 +917,7 @@ public final class SettlementModule implements Listener {
 
         final Location home = new Location(world, cx + 0.5, fy + 1, cz + 0.5);
         routines.addColono("colono", name, home, workspot, prof, center);
+        routines.setStayAtWork(name, prof == TAVERN_KEEPER);
         final String pueblo = towns.get(Math.max(0, Math.min(vid, towns.size() - 1))).name;
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                 "§a[Pueblo] §f" + name + " §7(" + oficio(prof) + ") se ha instalado en §f" + pueblo + "§7."));
@@ -1043,6 +1057,7 @@ public final class SettlementModule implements Listener {
                     final String antes = oficio(profFromKey(heir.profKey));
                     heir.profKey = c.profKey;   // cambia de oficio para cubrir la vacante
                     routines.setProfession(heir.name, profFromKey(c.profKey));
+                    routines.setStayAtWork(heir.name, isKeeper(c.profKey));
                     routines.setHomeWork(heir.name,     // pasa a trabajar en el edificio del oficio
                             new Location(world, heir.x + 0.5, heir.y, heir.z + 0.5),
                             ensureBuilding(heir.vid, profFromKey(c.profKey)));
@@ -1248,6 +1263,9 @@ public final class SettlementModule implements Listener {
     /** Punto de trabajo del EDIFICIO del oficio en esa aldea; lo levanta si aun no existe.
      *  Los edificios son PERMANENTES: no se derriban al morir su aldeano (los hereda otro). */
     private Location ensureBuilding(int vid, Villager.Profession prof) {
+        if (prof == TAVERN_KEEPER) {
+            return tavernBar(vid);   // su puesto es la taberna: detras de la barra, sirviendo
+        }
         final String key = profKey(prof);
         for (final Building b : buildings) {
             if (b.vid == vid && b.profKey.equals(key)) {
@@ -1336,6 +1354,7 @@ public final class SettlementModule implements Listener {
         if (p == Villager.Profession.TOOLSMITH) return "una Herreria";
         if (p == Villager.Profession.BUTCHER) return "una Carniceria";
         if (p == Villager.Profession.FLETCHER) return "un Taller de arquero";
+        if (p == TAVERN_KEEPER) return "una Taberna";
         return "un Taller";
     }
 
@@ -1977,6 +1996,17 @@ public final class SettlementModule implements Listener {
         }
     }
 
+    /** Detras de la BARRA de la taberna de esa aldea (el puesto del tabernero). La taberna la
+     *  construye ensureCivics en townCenter + 9 al este; el pasillo de servicio queda a +2 de su
+     *  centro. Si aun no hay taberna, se queda en la plaza. */
+    private Location tavernBar(int vid) {
+        if (vid < 0 || vid >= towns.size() || !civicBuilt.contains(vid + ":taberna")) {
+            return townCenter(vid);
+        }
+        final Town t = towns.get(vid);
+        return new Location(world, t.cx + 9 + 2 + 0.5, t.baseY + 1, t.cz + 0.5);
+    }
+
     private Location townCenter(int vid) {
         final Town t = towns.get(Math.max(0, Math.min(vid, towns.size() - 1)));
         return new Location(world, t.cx + 0.5, t.baseY + 1, t.cz + 0.5);
@@ -2423,6 +2453,7 @@ public final class SettlementModule implements Listener {
         if (p == Villager.Profession.TOOLSMITH) return "herrero";
         if (p == Villager.Profession.BUTCHER) return "carnicero";
         if (p == Villager.Profession.FLETCHER) return "arquero";
+        if (p == TAVERN_KEEPER) return "tabernero";
         return "vecino";
     }
 }

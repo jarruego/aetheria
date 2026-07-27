@@ -282,6 +282,19 @@ de progreso al siguiente escalon y alcalde) y cambia sola al entrar en otra; deb
 suma del peculio de sus vecinos, y cada vecino gasta en vivir, asi que una aldea que no trabaja
 se empobrece.
 
+**Servicios con MENU DE INVENTARIO.** El arquitecto y el decorador ya no se manejan clicando
+texto en el chat: abren una caja de inventario con iconos. El arquitecto pregunta PRIMERO que
+clase de casa quieres —**a medida** (tamano x material x estilo x muebles, con sus dados) o
+**tipo Minecraft** (una plantilla de aldea REAL, solo eliges tamano; tarifa fija 60/140/260)— y
+solo pide lo que hace falta para esa via. Alias cortos: `/arq`, `/dec`, `/don`; y `/arq ok`
+confirma el presupuesto o, si ya esta confirmado, planta la casa delante de ti.
+
+**Granero lleno = excedente VENDIDO.** El granero tiene tope de 2 arcas por producto (para que
+no lo copen los libros y el herrero se quede sin piedra). Lo que no cabe no se pierde ni se
+apila en barriles sueltos: el pueblo lo vende con una pequena prima (x1.15) y ese dinero va al
+peculio del colono y a la hucha de la aldea, asi que un pueblo muy productivo sigue creciendo
+gracias a su excedente. Cada cierto tiempo queda constancia en la cronica.
+
 **Catalogo del creativo (#16).** Galeria rotulada con **todas** las combinaciones del arquitecto
 (3 tamanos x 4 gamas x 3 estilos) y **todas** las plantillas vanilla importadas, ademas de casas
 del pueblo, puestos de oficio y decoraciones. Se levanta por lotes (una muestra por tick) con

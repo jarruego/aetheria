@@ -53,10 +53,12 @@ commands:
   arquitecto:
     description: Encarga una casa a medida (asistente guiado)
     usage: /arquitecto
+    aliases: [arq]
     permission: aetheria.use
   decorador:
     description: Decora tu parcela (jardin, farola, estatua, fuente)
     usage: /decorador
+    aliases: [dec]
     permission: aetheria.use
   deshacer:
     description: Deshace tu ultima construccion y te devuelve casi todo el dinero
@@ -77,6 +79,7 @@ commands:
   donar:
     description: Aporta AET al fondo de la aldea en la que estas (acelera su crecimiento)
     usage: /donar [cantidad]
+    aliases: [don]
     permission: aetheria.use
 permissions:
   aetheria.use:

@@ -81,6 +81,7 @@ public final class LaborModule {
     private SettlementModule settlement;
 
     private int cursor = 0;
+    private int soldSurplus = 0;   // cuantas veces se ha vendido excedente (para la cronica)
     // Produccion acumulada por sector desde el ultimo reporte (AET y descripcion legible).
     private final java.util.Map<String, double[]> pending = new java.util.HashMap<>();
     private final java.util.Map<String, java.util.Map<Material, Integer>> pendingGoods =
@@ -136,8 +137,20 @@ public final class LaborModule {
         npc.swingMainHand();
         final int left = y.good == null ? 0
                 : settlement.depositInGranary(lab.vid, y.good, y.amount);
-        // Lo que no cabe en el granero se vende fuera: excedente al sector comercio.
-        credit(lab, y.value, y.good, left > 0 ? 1 : 0);
+        // GRANERO LLENO: lo que no cabe NO se pierde ni se apila en barriles sueltos. El pueblo
+        // lo VENDE (el mercader se lo lleva) con una pequena prima, y ese dinero va a donde va
+        // todo lo demas: al peculio del colono y a la hucha de la aldea. Asi un pueblo muy
+        // productivo con el granero a tope sigue creciendo (y su excedente se nota en la
+        // economia), en vez de trabajar en balde.
+        final boolean sold = left > 0;
+        credit(lab, sold ? y.value * 1.15 : y.value, y.good, sold ? 1 : 0);
+        if (sold) {
+            soldSurplus++;
+            if (soldSurplus % 40 == 0) {   // de vez en cuando queda constancia, sin llenar la cronica
+                gateway.postEvent("comercio", "El granero de " + settlement.townName(lab.vid)
+                        + " esta a rebosar: el pueblo vende su excedente.");
+            }
+        }
     }
 
     /** Ejecuta la faena propia del oficio. Devuelve lo producido, o null si no habia donde. */

@@ -163,6 +163,7 @@ public final class AetheriaPlugin extends JavaPlugin {
             // Decorador guiado: pequenas estructuras (jardin, farola, estatua, fuente).
             final DecoratorModule decorator = new DecoratorModule(this, gateway, claims, undo);
             Objects.requireNonNull(getCommand("decorador")).setExecutor(decorator);
+            getServer().getPluginManager().registerEvents(decorator, this);   // menu de inventario
 
             // Vida del server: trabajos (ganar AET por tareas), mercado y HUD/guia.
             final JobsModule jobs = new JobsModule(this, gateway);

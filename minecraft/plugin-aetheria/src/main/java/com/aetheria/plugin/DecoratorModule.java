@@ -4,21 +4,22 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
 import org.jetbrains.annotations.NotNull;
 
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.event.ClickEvent;
 
 /**
  * Decorador: servicio guiado para embellecer TU parcela con pequenas estructuras
  * (jardin, farola, estatua, gran fuente). Eliges en un menu, se cobra segun la pieza y solo
  * se construye si eres dueno del terreno. Complementa al arquitecto (que hace casas).
  */
-public final class DecoratorModule implements CommandExecutor {
+public final class DecoratorModule implements CommandExecutor, org.bukkit.event.Listener {
 
     private static final String BANCO = "00000000-0000-0000-0000-000000000000";
 
@@ -67,16 +68,62 @@ public final class DecoratorModule implements CommandExecutor {
         return true;
     }
 
-    private void menu(Player player) {
-        player.sendMessage("§6[Decorador] §fEmbellezco tu parcela. Elige (se cobra al instante):");
-        Component line = Component.text("  ");
-        for (final var e : CATALOG.entrySet()) {
-            line = line.append(Component.text("§a[" + e.getValue().label() + " · " + e.getValue().price() + "]")
-                    .clickEvent(ClickEvent.runCommand("/decorador " + e.getKey())))
-                    .append(Component.text("  "));
+    /** Iconos de cada decoracion en la ventana. */
+    private static final java.util.Map<String, Material> ICONS = java.util.Map.of(
+        "jardin", Material.POPPY, "farola", Material.LANTERN,
+        "estatua", Material.STONE_BRICK_WALL, "fuente", Material.WATER_BUCKET);
+
+    /** Ventana con marca (para reconocer los clics del decorador). */
+    private static final class DecoHolder implements org.bukkit.inventory.InventoryHolder {
+        final String[] keys = new String[9];
+
+        @Override
+        public org.bukkit.inventory.Inventory getInventory() {
+            return null;
         }
-        player.sendMessage(line);
-        player.sendMessage("§7Se construye frente a ti, sobre tu parcela (usa §f/claim§7 primero).");
+    }
+
+    /** El decorador tambien se maneja con una CAJA DE INVENTARIO, no clicando texto en el chat. */
+    private void menu(Player player) {
+        final DecoHolder holder = new DecoHolder();
+        final org.bukkit.inventory.Inventory inv = Bukkit.createInventory(holder, 9,
+                Component.text("§6Decorador de Aetheria"));
+        int slot = 1;
+        for (final var e : CATALOG.entrySet()) {
+            final Material icon = ICONS.getOrDefault(e.getKey(), Material.PAPER);
+            final org.bukkit.inventory.ItemStack it = new org.bukkit.inventory.ItemStack(icon);
+            final org.bukkit.inventory.meta.ItemMeta m = it.getItemMeta();
+            m.displayName(Component.text("§a" + e.getValue().label()));
+            m.lore(java.util.List.of(
+                    Component.text("§7Precio: §e" + e.getValue().price() + " AET"),
+                    Component.text("§7Se construye frente a ti,"),
+                    Component.text("§7sobre tu parcela (§f/claim§7).")));
+            it.setItemMeta(m);
+            inv.setItem(slot, it);
+            holder.keys[slot] = e.getKey();
+            slot += 2;
+        }
+        player.openInventory(inv);
+    }
+
+    @EventHandler
+    public void onMenuClick(org.bukkit.event.inventory.InventoryClickEvent e) {
+        if (!(e.getInventory().getHolder() instanceof DecoHolder holder)) {
+            return;
+        }
+        e.setCancelled(true);
+        if (!(e.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+        final int slot = e.getRawSlot();
+        if (slot < 0 || slot >= holder.keys.length || holder.keys[slot] == null) {
+            return;
+        }
+        final Deco deco = CATALOG.get(holder.keys[slot]);
+        player.closeInventory();
+        if (deco != null) {
+            Bukkit.getScheduler().runTask(plugin, () -> build(player, deco));
+        }
     }
 
     private void build(Player player, Deco deco) {

@@ -81,12 +81,14 @@ public final class ArchitectModule implements CommandExecutor, Listener {
 
     /** Encargo en curso. size 1/2/3; half y floors se tiran al presupuestar. */
     private static final class Order {
+        String kind;               // "gen" (casa generada a medida) | "mc" (casa vanilla real)
         int size;
         int half;
         int floors;
         String mat;
         String style = "casona";   // casona (equilibrada) | aldeana (estilo pueblo) | torre (alta)
         Material[] palette;
+        boolean styleSet;          // ya ha elegido estilo (casona/aldeana/torre)
         boolean furniture;
         boolean furnitureSet;
     }
@@ -108,6 +110,10 @@ public final class ArchitectModule implements CommandExecutor, Listener {
     }
 
     private static int price(Order o) {
+        if ("vanilla".equals(o.style)) {
+            // Casa de aldea REAL de Minecraft: tarifa por tamano (no hay dados que valorar).
+            return o.size == 1 ? 60 : o.size == 2 ? 140 : 260;
+        }
         final int unit = o.half * o.half * o.floors;
         final int factor = TIERS.getOrDefault(o.mat, TIERS.get("madera")).factor();
         return unit * factor + (o.furniture ? 30 * o.floors : 0);
@@ -129,12 +135,21 @@ public final class ArchitectModule implements CommandExecutor, Listener {
             return true;
         }
         switch (args[0].toLowerCase()) {
+            case "tipo" -> setKind(player, args.length > 1 ? args[1] : "");
             case "size" -> setSize(player, args.length > 1 ? args[1] : "");
             case "mat" -> setMat(player, args.length > 1 ? args[1] : "");
             case "estilo" -> setStyle(player, args.length > 1 ? args[1] : "");
             case "muebles" -> setFurniture(player, args.length > 1 ? args[1] : "");
             case "confirmar" -> confirm(player);
-            case "aqui" -> buildInFront(player);
+            // "ok" hace lo siguiente que toque: confirmar el presupuesto o, si ya esta
+            // confirmado, plantar la casa delante de ti. Asi vale un unico gesto: /arq ok
+            case "ok", "vale", "si", "aqui" -> {
+                if (pending.containsKey(player.getUniqueId())) {
+                    buildInFront(player);
+                } else {
+                    confirm(player);
+                }
+            }
             case "cancelar" -> {
                 orders.remove(player.getUniqueId());
                 pending.remove(player.getUniqueId());
@@ -145,16 +160,33 @@ public final class ArchitectModule implements CommandExecutor, Listener {
         return true;
     }
 
+    /** Abre el asistente: lo primero es QUE CLASE de casa quiere. */
     private void start(Player player) {
         orders.put(player.getUniqueId(), new Order());
-        player.sendMessage("§6[Arquitecto] §fBuenas. Te hago una casa unica. Primero, "
-                + "§e¿de que tamano?");
-        player.sendMessage(Component.text("  ")
-                .append(opt("§a[Pequena]", "/arquitecto size small"))
-                .append(Component.text("  "))
-                .append(opt("§a[Mediana]", "/arquitecto size medium"))
-                .append(Component.text("  "))
-                .append(opt("§a[Grande]", "/arquitecto size large")));
+        player.sendMessage("§6[Arquitecto] §fBuenas. ¿Que clase de casa te levanto?");
+        openMenu(player);
+    }
+
+    /** Casa GENERADA a medida (con sus dados) o casa VANILLA real de Minecraft. */
+    private void setKind(Player player, String k) {
+        Order o = orders.get(player.getUniqueId());
+        if (o == null) {
+            o = new Order();
+            orders.put(player.getUniqueId(), o);
+        }
+        if (k.toLowerCase().startsWith("m") || k.equalsIgnoreCase("vanilla")) {
+            o.kind = "mc";
+            o.style = "vanilla";      // la plantilla manda: no hay material ni muebles que elegir
+            o.styleSet = true;
+            o.furnitureSet = true;
+            o.mat = "madera";         // solo para que el resto del flujo tenga algo coherente
+            o.half = 4;
+            o.floors = 1;
+        } else {
+            o.kind = "gen";
+            o.style = "casona";
+        }
+        openMenu(player);
     }
 
     private void setSize(Player player, String s) {
@@ -167,15 +199,7 @@ public final class ArchitectModule implements CommandExecutor, Listener {
             default -> 0;
         };
         if (o.size == 0) { start(player); return; }
-        player.sendMessage("§6[Arquitecto] §fBien. §e¿Que gama de materiales?");
-        player.sendMessage(Component.text("  ")
-                .append(opt("§a[Rustica]", "/arquitecto mat madera"))
-                .append(Component.text("  "))
-                .append(opt("§a[Piedra]", "/arquitecto mat piedra"))
-                .append(Component.text("  "))
-                .append(opt("§a[Noble]", "/arquitecto mat ladrillo"))
-                .append(Component.text("  "))
-                .append(opt("§b[Lujo]", "/arquitecto mat lujo")));
+        openMenu(player);
     }
 
     private void setMat(Player player, String m) {
@@ -183,21 +207,11 @@ public final class ArchitectModule implements CommandExecutor, Listener {
         if (o == null || o.size == 0) { start(player); return; }
         m = m.toLowerCase();
         if (!TIERS.containsKey(m)) {
-            setSize(player, sizeName(o.size));
+            openMenu(player);
             return;
         }
         o.mat = m;
-        player.sendMessage("§6[Arquitecto] §f¿En que §eestilo§f?");
-        player.sendMessage(Component.text("  ")
-                .append(opt("§a[Casona]", "/arquitecto estilo casona"))
-                .append(Component.text("  "))
-                .append(opt("§a[Aldeana]", "/arquitecto estilo aldeana"))
-                .append(Component.text("  "))
-                .append(opt("§a[Torre]", "/arquitecto estilo torre"))
-                .append(Component.text("  "))
-                .append(opt("§b[Vanilla]", "/arquitecto estilo vanilla")));
-        player.sendMessage("§7Casona: equilibrada. Aldeana: compacta estilo pueblo. Torre: alta. "
-                + "Vanilla: una casa de aldea REAL de Minecraft (del tamano que has elegido).");
+        openMenu(player);
     }
 
     private void setStyle(Player player, String s) {
@@ -209,11 +223,8 @@ public final class ArchitectModule implements CommandExecutor, Listener {
             case "vanilla", "real" -> "vanilla";
             default -> "casona";
         };
-        player.sendMessage("§6[Arquitecto] §f¿La quieres §eamueblada§f? (habitaciones con muebles)");
-        player.sendMessage(Component.text("  ")
-                .append(opt("§a[Si, amueblada]", "/arquitecto muebles si"))
-                .append(Component.text("  "))
-                .append(opt("§7[No, vacia]", "/arquitecto muebles no")));
+        o.styleSet = true;
+        openMenu(player);
     }
 
     private void setFurniture(Player player, String f) {
@@ -244,10 +255,152 @@ public final class ArchitectModule implements CommandExecutor, Listener {
                     + "plantas%s. Presupuesto: §a%d AET§f.", TIERS.get(o.mat).label(), o.style,
                     o.half * 2 + 1, o.half * 2 + 1, o.floors, o.furniture ? ", amueblada" : "", p));
         }
-        player.sendMessage(Component.text("  ")
-                .append(opt("§a[Confirmar por " + p + " AET]", "/arquitecto confirmar"))
-                .append(Component.text("  "))
-                .append(opt("§c[Cancelar]", "/arquitecto cancelar")));
+        openMenu(player);   // ventana final: confirmar o cancelar
+    }
+
+    // ---------------- Menu de INVENTARIO (en vez de clicar texto en el chat) ----------------
+
+    /** Ventana del asistente: guarda que accion hay detras de cada casilla. */
+    private static final class WizHolder implements org.bukkit.inventory.InventoryHolder {
+        final String[] actions = new String[27];
+
+        @Override
+        public org.bukkit.inventory.Inventory getInventory() {
+            return null;
+        }
+    }
+
+    /**
+     * Abre la ventana que toque segun lo que falte por decidir. Es el mismo asistente de
+     * siempre, pero con iconos en una caja de inventario en vez de texto clicable en el chat:
+     * se ve de un vistazo y no ensucia la conversacion.
+     */
+    private void openMenu(Player player) {
+        final Order o = orders.get(player.getUniqueId());
+        if (o == null) {
+            start(player);
+            return;
+        }
+        if (o.kind == null) {
+            menu(player, "Que clase de casa", new String[][] {
+                {"CRAFTING_TABLE", "§aCasa a medida", "tipo:gen",
+                 "§7La disena el arquitecto: eliges tamano,", "§7materiales, estilo y muebles."},
+                {"OAK_PLANKS", "§bCasa tipo Minecraft", "tipo:mc",
+                 "§7Una casa de aldea REAL del juego.", "§7Solo eliges el tamano."},
+            });
+            return;
+        }
+        if (o.size == 0) {
+            menu(player, "Tamano de la casa", new String[][] {
+                {"OAK_SAPLING", "§aPequena", "size:small", "§7Modesta y barata."},
+                {"OAK_LOG", "§aMediana", "size:medium", "§7Equilibrada."},
+                {"OAK_WOOD", "§aGrande", "size:large", "§7Amplia (y mas cara)."},
+            });
+            return;
+        }
+        if ("mc".equals(o.kind)) {
+            budgetMenu(player, o);   // la vanilla no tiene material, estilo ni muebles
+            return;
+        }
+        if (o.mat == null) {
+            menu(player, "Gama de materiales", new String[][] {
+                {"OAK_PLANKS", "§aRustica", "mat:madera", "§7Madera de toda la vida."},
+                {"STONE_BRICKS", "§aDe piedra", "mat:piedra", "§7Solida y sobria."},
+                {"BRICKS", "§aNoble", "mat:ladrillo", "§7Ladrillo y blackstone."},
+                {"QUARTZ_BLOCK", "§bDe lujo", "mat:lujo", "§7Cuarzo y prismarina."},
+            });
+            return;
+        }
+        if (!o.styleSet) {
+            menu(player, "Estilo de la casa", new String[][] {
+                {"BRICKS", "§aCasona", "estilo:casona", "§7Equilibrada, la de siempre."},
+                {"HAY_BLOCK", "§aAldeana", "estilo:aldeana", "§7Compacta, estilo pueblo."},
+                {"STONE_BRICK_WALL", "§aTorre", "estilo:torre", "§7Alta y estrecha."},
+            });
+            return;
+        }
+        if (!o.furnitureSet) {
+            menu(player, "¿Amueblada?", new String[][] {
+                {"RED_BED", "§aSi, amueblada", "muebles:si", "§7Con muebles en cada planta.",
+                 "§7(+30 AET por planta)"},
+                {"BARRIER", "§7No, vacia", "muebles:no", "§7Solo la obra."},
+            });
+            return;
+        }
+        budgetMenu(player, o);
+    }
+
+    /** Ultima ventana: el presupuesto, con confirmar o cancelar. */
+    private void budgetMenu(Player player, Order o) {
+        final int p = price(o);
+        final String desc = "vanilla".equals(o.style)
+                ? "Casa de aldea REAL de Minecraft"
+                : "Casa " + TIERS.get(o.mat).label() + " estilo " + o.style;
+        menu(player, "Presupuesto: " + p + " AET", new String[][] {
+            {"EMERALD", "§aConfirmar por " + p + " AET", "confirmar", "§7" + desc,
+             "§7Luego haz clic donde quieras la puerta", "§7(o escribe §f/arq ok§7)."},
+            {"BARRIER", "§cCancelar", "cancelar", "§7No se cobra nada."},
+        });
+    }
+
+    /** Pinta una ventana con las opciones dadas: {material, nombre, accion, ...descripcion}. */
+    private void menu(Player player, String title, String[][] options) {
+        final WizHolder holder = new WizHolder();
+        final org.bukkit.inventory.Inventory inv = Bukkit.createInventory(holder, 9,
+                Component.text("§6" + title));
+        int slot = options.length <= 3 ? 2 : 1;
+        for (final String[] op : options) {
+            final Material icon = Material.matchMaterial(op[0]);
+            final org.bukkit.inventory.ItemStack it =
+                    new org.bukkit.inventory.ItemStack(icon == null ? Material.PAPER : icon);
+            final org.bukkit.inventory.meta.ItemMeta m = it.getItemMeta();
+            m.displayName(Component.text(op[1]));
+            final java.util.List<Component> lore = new java.util.ArrayList<>();
+            for (int i = 3; i < op.length; i++) {
+                lore.add(Component.text(op[i]));
+            }
+            m.lore(lore);
+            it.setItemMeta(m);
+            inv.setItem(slot, it);
+            holder.actions[slot] = op[2];
+            slot += options.length <= 3 ? 2 : 2;
+        }
+        player.openInventory(inv);
+    }
+
+    @EventHandler
+    public void onMenuClick(org.bukkit.event.inventory.InventoryClickEvent e) {
+        if (!(e.getInventory().getHolder() instanceof WizHolder holder)) {
+            return;
+        }
+        e.setCancelled(true);
+        if (!(e.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+        final int slot = e.getRawSlot();
+        if (slot < 0 || slot >= holder.actions.length || holder.actions[slot] == null) {
+            return;
+        }
+        final String[] act = holder.actions[slot].split(":", 2);
+        final String arg = act.length > 1 ? act[1] : "";
+        player.closeInventory();
+        // Se ejecuta en el siguiente tick: abrir otra ventana dentro del propio clic no es fiable.
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            switch (act[0]) {
+                case "tipo" -> setKind(player, arg);
+                case "size" -> setSize(player, arg);
+                case "mat" -> setMat(player, arg);
+                case "estilo" -> setStyle(player, arg);
+                case "muebles" -> setFurniture(player, arg);
+                case "confirmar" -> confirm(player);
+                case "cancelar" -> {
+                    orders.remove(player.getUniqueId());
+                    pending.remove(player.getUniqueId());
+                    player.sendMessage("§7Encargo cancelado. No se ha cobrado nada.");
+                }
+                default -> { }
+            }
+        });
     }
 
     private void confirm(Player player) {

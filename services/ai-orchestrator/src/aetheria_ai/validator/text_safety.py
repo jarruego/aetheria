@@ -22,8 +22,11 @@ from __future__ import annotations
 
 import re
 
-# Limite del chat de Minecraft (256). Se deja margen para el prefijo del NPC.
-MAX_CHAT_LENGTH = 200
+# Tope de longitud de una respuesta de NPC. Los mensajes que ENVIA el servidor (no los que
+# teclea el jugador) no tienen el limite de 256 del cliente: se ajustan en varias lineas. 200 era
+# demasiado corto y cortaba respuestas normales con "...". 500 deja hablar al NPC (2-4 frases) sin
+# permitir que inunde el chat.
+MAX_CHAT_LENGTH = 500
 
 # Codigos de formato de Minecraft: seccion (§) o ampersand (&) + digito/letra valida.
 _FORMAT_CODES = re.compile(r"[§&][0-9a-fk-orA-FK-OR]")

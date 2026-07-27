@@ -368,8 +368,8 @@ public final class VillageModule {
         // misma cota que la plaza. Antes se apoyaba solo en su propio cimiento (±2) y, si el suelo
         // 11 bloques al este subia, quedaba INCRUSTADA y con la puerta tapada. Ahora se nivela y
         // despeja un solar amplio (±5) a la cota de la plaza para que quede a ras y con acceso.
-        levelPad(cx + 11, cz, 5, floorY);
-        this.tavern = buildTavern(cx + 11, cz, floorY);
+        levelPad(cx + 12, cz, 6, floorY);
+        this.tavern = buildTavern(cx + 12, cz, floorY);
         return new Location(world, cx + 3 + 0.5, floorY + 1, cz + 0.5);   // punto de reunion al lado
     }
 
@@ -401,11 +401,13 @@ public final class VillageModule {
         return new Location(world, cx + 0.5, floorY + 1, cz + 0.5);
     }
 
-    /** Taberna: casa de madera con barra, barriles y mesas. Devuelve su centro. */
+    /** Taberna GRANDE (9x9): salon de madera con barra, mesas con sillas, barriles y cristaleras.
+     *  La puerta mira al OESTE (hacia la plaza). Devuelve su centro. */
     private Location buildTavern(int cx, int cz, int floorY) {
-        final int half = 2;
-        foundation(cx, cz, half, floorY, Material.SPRUCE_PLANKS, 5);
-        for (int y = floorY + 1; y <= floorY + 3; y++) {
+        final int half = 4;
+        foundation(cx, cz, half, floorY, Material.SPRUCE_PLANKS, 6);
+        // Muros de 4 de alto: esquinas de tronco, paredes de tablon.
+        for (int y = floorY + 1; y <= floorY + 4; y++) {
             for (int dx = -half; dx <= half; dx++) {
                 for (int dz = -half; dz <= half; dz++) {
                     if (Math.abs(dx) != half && Math.abs(dz) != half) {
@@ -416,24 +418,72 @@ public final class VillageModule {
                 }
             }
         }
-        set(cx, floorY + 1, cz + half, Material.AIR);
-        set(cx, floorY + 2, cz + half, Material.AIR);
-        set(cx - half, floorY + 2, cz, Material.GLASS_PANE);
-        set(cx + half, floorY + 2, cz, Material.GLASS_PANE);
+        // Cristaleras a media altura en los cuatro muros.
+        for (int d = -2; d <= 2; d += 2) {
+            set(cx + d, floorY + 2, cz - half, Material.GLASS_PANE);
+            set(cx + d, floorY + 2, cz + half, Material.GLASS_PANE);
+            set(cx - half, floorY + 2, cz + d, Material.GLASS_PANE);
+            set(cx + half, floorY + 2, cz + d, Material.GLASS_PANE);
+        }
+        // Puerta al OESTE (hacia la plaza), hueco de 2.
+        set(cx - half, floorY + 1, cz, Material.AIR);
+        set(cx - half, floorY + 2, cz, Material.AIR);
+        // Tejado: capa con voladizo + buhardilla ligera de losas.
         for (int dx = -half - 1; dx <= half + 1; dx++) {
             for (int dz = -half - 1; dz <= half + 1; dz++) {
-                set(cx + dx, floorY + 4, cz + dz, Material.DARK_OAK_PLANKS);
+                set(cx + dx, floorY + 5, cz + dz, Material.DARK_OAK_PLANKS);
             }
         }
-        // Barra y barriles al fondo; una mesa y un farol.
-        set(cx - 1, floorY + 1, cz - 1, Material.BARREL);
-        set(cx + 1, floorY + 1, cz - 1, Material.BARREL);
-        set(cx, floorY + 1, cz - 1, Material.BREWING_STAND);
-        set(cx - 1, floorY + 1, cz + 1, Material.OAK_FENCE);       // mesa
-        set(cx - 1, floorY + 2, cz + 1, Material.OAK_PRESSURE_PLATE);
-        set(cx + 1, floorY + 1, cz + 1, Material.LANTERN);
-        placeWallSign(cx + 1, floorY + 2, cz + half + 1, BlockFace.SOUTH, "§6La", "§6Taberna");
+        for (int dx = -half + 1; dx <= half - 1; dx++) {
+            for (int dz = -half + 1; dz <= half - 1; dz++) {
+                set(cx + dx, floorY + 6, cz + dz, Material.DARK_OAK_SLAB);
+            }
+        }
+        // Linternas colgando del techo (iluminacion calida).
+        for (final int[] p : new int[][] {{-2, -2}, {2, -2}, {-2, 2}, {2, 2}, {0, 0}}) {
+            set(cx + p[0], floorY + 4, cz + p[1], Material.LANTERN);
+        }
+        // BARRA de madera a lo largo del muro este: mostrador (tablon + losa) con barriles y
+        // destileria detras, y taburetes delante.
+        for (int dz = -2; dz <= 2; dz++) {
+            set(cx + half - 2, floorY + 1, cz + dz, Material.SPRUCE_PLANKS);   // frente de la barra
+            set(cx + half - 2, floorY + 2, cz + dz, Material.SPRUCE_SLAB);     // encimera
+            set(cx + half - 1, floorY + 1, cz + dz, Material.BARREL);          // estante tras la barra
+        }
+        set(cx + half - 1, floorY + 2, cz - 1, Material.BREWING_STAND);
+        set(cx + half - 1, floorY + 2, cz + 1, Material.DECORATED_POT);
+        for (int dz = -2; dz <= 2; dz += 2) {
+            set(cx + half - 3, floorY + 1, cz + dz, Material.SPRUCE_FENCE);    // taburete
+        }
+        // MESAS con sillas repartidas por el salon.
+        tavernTable(cx - 2, cz - 2, floorY);
+        tavernTable(cx - 2, cz + 2, floorY);
+        tavernTable(cx + 1, cz - 2, floorY);
+        // Barriles apilados en una esquina (almacen).
+        set(cx - half + 1, floorY + 1, cz + half - 1, Material.BARREL);
+        set(cx - half + 1, floorY + 2, cz + half - 1, Material.BARREL);
+        set(cx - half + 1, floorY + 1, cz - half + 1, Material.BARREL);
+        // Cartel "La Taberna" sobre la puerta (oeste).
+        placeWallSign(cx - half - 1, floorY + 3, cz, BlockFace.WEST, "§6La", "§6Taberna");
         return new Location(world, cx + 0.5, floorY + 1, cz + 0.5);
+    }
+
+    /** Una mesa de taberna: tablero (valla + placa) con dos sillas (escaleras) enfrentadas. */
+    private void tavernTable(int tx, int tz, int floorY) {
+        set(tx, floorY + 1, tz, Material.SPRUCE_FENCE);
+        set(tx, floorY + 2, tz, Material.SPRUCE_PRESSURE_PLATE);
+        setStair(tx - 1, floorY + 1, tz, BlockFace.EAST);
+        setStair(tx + 1, floorY + 1, tz, BlockFace.WEST);
+    }
+
+    /** Coloca una escalera de abeto mirando a `facing` (silla). */
+    private void setStair(int x, int y, int z, BlockFace facing) {
+        final Block b = world.getBlockAt(x, y, z);
+        b.setType(Material.SPRUCE_STAIRS, false);
+        if (b.getBlockData() instanceof org.bukkit.block.data.type.Stairs st) {
+            st.setFacing(facing);
+            b.setBlockData(st, false);
+        }
     }
 
     // ---------------- Utilidades ----------------

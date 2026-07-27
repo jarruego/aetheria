@@ -126,9 +126,9 @@ public final class HudModule implements Listener, CommandExecutor {
                 Component.text("§6Tu dinero\n\n§0- §7/balance§0 tu saldo.\n- §7/pay <jugador> <n>§0 "
                         + "pagar a otro.\n- §7/shop§0 precios del mercado.\n\nLo ves siempre en el "
                         + "marcador de la derecha."),
-                Component.text("§6Servicios de la IA\n\n§0Contrata a los maestros del pueblo:\n"
-                        + "§7/aetheria servicio arquitecto <que quieres>§0\ntambien decorador y "
-                        + "urbanista. La IA construye por ti y te cobra solo si lo logra."),
+                Component.text("§6Servicios del pueblo\n\n§0Los maestros construyen para ti (sobre "
+                        + "tu parcela):\n§7/arquitecto§0 casa a medida (guiada).\n§7/decorador§0 "
+                        + "jardin, farola, estatua o fuente.\n\nPuedes deshacer con §7/deshacer§0."),
                 Component.text("§6Tu hogar y tierras\n\n§0- §7/sethome§0 y §7/home§0.\n- §7/claim§0 "
                         + "reclama la parcela (chunk) donde estas: es tuya y nadie mas puede tocarla. "
                         + "§7/unclaim§0 para soltarla."),

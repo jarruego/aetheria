@@ -137,9 +137,8 @@ public final class ReturnPortalModule implements Listener {
         sweepMonsters();
         plugin.getServer().getScheduler().runTaskTimer(plugin, this::sweepMonsters, 40L, 40L);
 
-        // Guia conversable junto al portal de vuelta.
-        convo.spawnGuide(new Location(world, cx + 2 + 0.5, baseY + 1, cz + 0.5, 90f, 0f),
-                "guia-vuelta", "§bGuia del Lobby");
+        // Ya NO se pone un guia inmovil junto al portal: de orientar al que llega se encarga el
+        // conserje Aeon, que PASEA por la zona del spawn (se arranca en AetheriaPlugin).
 
         plugin.getLogger().info("Portal de vuelta al lobby construido cerca del spawn (zona 10x10).");
     }

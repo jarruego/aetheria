@@ -3,11 +3,14 @@ package com.aetheria.plugin;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.entity.Display;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.TextDisplay;
 import org.bukkit.entity.Villager;
 
 import net.kyori.adventure.text.Component;
@@ -24,6 +27,15 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 public final class NpcRoutineModule {
 
     private static final String WORKER_TAG = "aetheria_worker";
+    private static final String SONG_TAG = "aetheria_song";
+    private static final String[] SONGS = {
+        "§e♪ Ronda la jarra, la la la ♪",
+        "§e♪ Bebe y canta, la noche es larga ♪",
+        "§e♪ Ay, tabernero, sirve otra mas ♪",
+        "§e♪ El pueblo prospera, brindemos hoy ♪",
+        "§e♪ Tralala, que suene el laud ♪",
+        "§e♪ A la salud del alcalde... y de todos ♪",
+    };
     private static final double ARRIVE_SQ = 4.0;   // 2 bloques: se considera "ha llegado"
     private static final double SPEED = 1.1;       // multiplicador de velocidad del aldeano
     private static final long PERIOD_TICKS = 10L;  // reevalua/reemite el camino 2 veces/seg
@@ -40,6 +52,7 @@ public final class NpcRoutineModule {
         Location last;      // ultima posicion vista (para detectar atascos)
         int stuck;          // ticks de rutina seguidos sin avanzar
         long lastRemark;    // ultima vez que solto un comentario curioso
+        long lastSong;      // ultima vez que canto en la taberna
         Location wander;    // destino de paseo actual (o null si esta trabajando)
         long wanderUntil;   // hasta cuando dura el paseo
         String prof = "vecino";   // oficio (para que hable de LO SUYO, no todos lo mismo)
@@ -115,6 +128,42 @@ public final class NpcRoutineModule {
             v.setProfession(prof);
         }
         workers.add(w);
+    }
+
+    /** Si el vecino esta DENTRO de la taberna (al atardecer), de vez en cuando "canta": aparece un
+     *  texto flotante sobre su cabeza unos segundos. Da vida a la taberna llena. */
+    private void maybeSing(Worker w) {
+        if (w.town == null || w.entity == null) {
+            return;
+        }
+        final long now = System.currentTimeMillis();
+        if (now - w.lastSong < 10000L) {
+            return;
+        }
+        // Solo si esta en/junto a la taberna (townCenter + ~9 al este).
+        final Location at = w.entity.getLocation();
+        final double dx = at.getX() - (w.town.getX() + 9);
+        final double dz = at.getZ() - w.town.getZ();
+        if (dx * dx + dz * dz > 49) {
+            return;
+        }
+        if (java.util.concurrent.ThreadLocalRandom.current().nextInt(100) >= 15) {
+            return;
+        }
+        w.lastSong = now;
+        final String line = SONGS[java.util.concurrent.ThreadLocalRandom.current().nextInt(SONGS.length)];
+        final Location above = at.clone().add(0, 2.3, 0);
+        final TextDisplay td = world.spawn(above, TextDisplay.class, t -> {
+            t.text(Component.text(line));
+            t.setBillboard(Display.Billboard.CENTER);
+            t.setSeeThrough(true);
+            t.addScoreboardTag(SONG_TAG);
+        });
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (td.isValid()) {
+                td.remove();
+            }
+        }, 90L);   // ~4,5 s y desaparece
     }
 
     /** Un aldeano jubilado ya no ejerce oficio (profesion NONE): el pueblo le da el relevo. */
@@ -289,6 +338,7 @@ public final class NpcRoutineModule {
                 target = isRetired(w) ? plazaLoiter(w) : workOrWander(w);
             } else if (time < 13500L) {
                 target = tavernSpot(w);     // ATARDECER: vida social en la taberna del pueblo
+                maybeSing(w);               // y, si esta dentro, a veces canta (texto flotante)
             } else {
                 target = w.home;            // NOCHE: a casa, a la cama
             }

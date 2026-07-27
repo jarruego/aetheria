@@ -85,6 +85,13 @@ public final class AetheriaPlugin extends JavaPlugin {
                 ret.build();
             }
 
+            // Conserje Aeon PASEANDO junto al spawn del mundo principal (en vez de un guia inmovil
+            // de portal): recibe y orienta al que llega. Mismo personaje/persona que el del lobby.
+            if (role.equals("main")) {
+                final org.bukkit.World gw = getServer().getWorlds().get(0);
+                new LobbyGuideModule(this, convo, gw.getSpawnLocation()).start();
+            }
+
             // Mundo CREATIVO: en vez de la aldea viva, un CATALOGO (galeria rotulada de todo lo
             // que sabemos construir). El resto del creativo se queda igual.
             if (role.equals("creative")) {

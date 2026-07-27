@@ -198,20 +198,6 @@ public final class GatewayClient {
         return sendCapturing("/v1/pay", gson.toJson(body));
     }
 
-    /**
-     * Contrata un servicio inteligente de PAGO (Arquitecto IA, etc.). La IA valida el plan
-     * y SOLO cobra si es aprobado. Devuelve el plan validado en {ok, data:{status,...}}.
-     */
-    public CompletableFuture<JsonObject> service(String playerUuid, String service, String description,
-            String world) {
-        final JsonObject body = new JsonObject();
-        body.addProperty("player_uuid", playerUuid);
-        body.addProperty("service", service);
-        body.addProperty("description", description);
-        body.addProperty("world", world);
-        return sendCapturing("/v1/service", gson.toJson(body));
-    }
-
     /** Estado de prosperidad del pueblo: {level, wealth, businesses}. */
     public CompletableFuture<JsonObject> getProsperity() {
         return getJson("/v1/prosperity");

@@ -676,6 +676,26 @@ public final class Blueprint {
         return sp > 0 ? t.substring(0, sp) : t;
     }
 
+    /** Reescribe el cartel de una casa ya construida (para marcarla EN VENTA o con nuevo dueno).
+     *  Busca el unico cartel en la huella de la casa y le pone las dos lineas. Devuelve true si lo
+     *  encontro. Se usa cuando una casa cambia de estado sin reconstruirla. */
+    public static boolean setHouseSign(World world, int cx, int cz, int floorY, int floors,
+            String l1, String l2) {
+        for (int dx = -5; dx <= 5; dx++) {
+            for (int dz = -5; dz <= 5; dz++) {
+                for (int y = floorY; y <= floorY + floors * 6 + 3; y++) {
+                    if (world.getBlockAt(cx + dx, y, cz + dz).getState() instanceof Sign sign) {
+                        sign.getSide(Side.FRONT).line(1, Component.text(l1));
+                        sign.getSide(Side.FRONT).line(2, Component.text(l2));
+                        sign.update(true);
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     private static List<Block> platform() {
         final List<Block> blocks = new ArrayList<>();
         for (int dx = -2; dx <= 2; dx++) {

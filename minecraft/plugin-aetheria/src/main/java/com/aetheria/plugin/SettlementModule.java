@@ -161,6 +161,10 @@ public final class SettlementModule implements Listener {
     private final File civicFile;
     private final File nameFile;   // village.txt: una linea por aldea "nombre;cx;cz;baseY"
     private final File buildingsFile;   // buildings.txt: "vid;profKey;cx;cz;baseY" por edificio
+    private final File vacantsFile;   // vacants.txt: "x;y;z;floors" casas en venta (sin dueno)
+    // Casas EN VENTA (sin propietario): al casarse, las dos casitas de los novios no se demuelen,
+    // quedan vacantes y se reasignan a los proximos colonos (asi no aparecen/desaparecen por magia).
+    private final List<int[]> vacants = new ArrayList<>();   // {x, y, z, floors}
     private final java.util.Map<java.util.UUID, Integer> inTown = new java.util.HashMap<>();
 
     private static final int PER_TOWN = 8;   // al llenarse, una pareja funda otra aldea lejos
@@ -366,6 +370,7 @@ public final class SettlementModule implements Listener {
         this.civicFile = new File(plugin.getDataFolder(), "civic.txt");
         this.nameFile = new File(plugin.getDataFolder(), "village.txt");
         this.buildingsFile = new File(plugin.getDataFolder(), "buildings.txt");
+        this.vacantsFile = new File(plugin.getDataFolder(), "vacants.txt");
     }
 
     public void start() {
@@ -376,6 +381,7 @@ public final class SettlementModule implements Listener {
         final boolean fresh = !dataFile.exists();
         loadTowns();       // las aldeas (nombre + centro) ANTES que los colonos y edificios
         loadBuildings();   // los edificios de oficio (permanentes)
+        loadVacants();     // casas en venta que quedaron de bodas anteriores
         load();            // reaparecen los colonos ya existentes en sus casas (sin reconstruir)
         loadCivic();
         if (fresh && colonos.isEmpty()) {
@@ -793,33 +799,44 @@ public final class SettlementModule implements Listener {
             double initialAge, String parent) {
         final Location center = townCenter(vid);
         final String name = surname.isEmpty() ? given : given + " " + surname;   // "Nombre Apellido"
-        final int[] spot = findBuildSpot(center, index);
-        if (spot == null) {
-            return;   // no encontro sitio libre; lo reintenta el proximo ciclo
-        }
-        final int cx = spot[0];
-        final int cz = spot[1];
-        final int fy = spot[2];
         final var rng = ThreadLocalRandom.current();
         final Villager.Profession prof = neededProfession(vid, rng);   // el oficio que falta en la aldea
-        final Material[] pal = COMBOS[rng.nextInt(COMBOS.length)];
-        // Un aldeano SOLTERO vive en una casa MUY PEQUENA (una sola cama). Nada de mansiones:
-        // una casa de aldeano no es una casa de jugador con arquitecto. Al casarse se le
-        // construye una mediana (ver maybeMarry).
-        final int halfX = 2;
-        final int halfZ = rng.nextInt(100) < 35 ? 3 : 2;   // 5x5 o 5x7, modesta
-        final BlockFace door = towardPlaza(center, cx, cz); // la puerta mira a la plaza de su aldea
-
-        prepareTerrain(cx, cz, fy);                        // tala arboles + nivela SUAVE al suelo real
-        Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
-                pal[0], pal[1], pal[2], pal[3], true, 1, name);   // 1 cama (soltero)
-        deflood(cx, fy, cz, 1);                            // por si algo de agua se colo
-        pathTo(cx, cz, center);                            // sendero que sigue el relieve a la plaza
-        placed.add(new int[] {cx, cz});
+        final int cx;
+        final int cz;
+        final int fy;
+        // Primero: ¿hay una casa EN VENTA cerca? El colono se muda a ella (no se construye nada,
+        // solo cambia el cartel a su nombre). Asi se reaprovechan las casas de los que se casaron.
+        final int[] vac = claimVacant(center);
+        if (vac != null) {
+            cx = vac[0];
+            fy = vac[1] - 1;
+            cz = vac[2];
+            Blueprint.setHouseSign(world, cx, cz, fy, vac[3], "Casa de", "§6" + given);
+        } else {
+            final int[] spot = findBuildSpot(center, index);
+            if (spot == null) {
+                return;   // no encontro sitio libre ni casa en venta; lo reintenta el proximo ciclo
+            }
+            cx = spot[0];
+            cz = spot[1];
+            fy = spot[2];
+            final Material[] pal = COMBOS[rng.nextInt(COMBOS.length)];
+            // Un aldeano SOLTERO vive en una casa MUY PEQUENA (una sola cama). Al casarse se le
+            // construye una mediana (ver maybeMarry).
+            final int halfX = 2;
+            final int halfZ = rng.nextInt(100) < 35 ? 3 : 2;   // 5x5 o 5x7, modesta
+            final BlockFace door = towardPlaza(center, cx, cz); // la puerta mira a la plaza
+            prepareTerrain(cx, cz, fy);                        // tala arboles + nivela al suelo real
+            Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
+                    pal[0], pal[1], pal[2], pal[3], true, 1, name);   // 1 cama (soltero)
+            deflood(cx, fy, cz, 1);                            // por si algo de agua se colo
+            pathTo(cx, cz, center);                            // sendero hacia la plaza
+            placed.add(new int[] {cx, cz});
+            plugin.buildRegistry().add(new int[] {cx - halfX - 1, fy - 2, cz - halfZ - 1,
+                    cx + halfX + 1, fy + 14, cz + halfZ + 1});   // anti-solape con el jugador
+        }
         // Trabaja en el EDIFICIO de su oficio (mercado/biblioteca/herreria...), compartido y
         // permanente; se levanta si su aldea aun no tiene uno de ese oficio.
-        plugin.buildRegistry().add(new int[] {cx - halfX - 1, fy - 2, cz - halfZ - 1,
-                cx + halfX + 1, fy + 14, cz + halfZ + 1});   // anti-solape con lo que haga el jugador
         final Location workspot = ensureBuilding(vid, prof);
 
         final Colono c = new Colono();
@@ -920,8 +937,10 @@ public final class SettlementModule implements Listener {
         final Location workA = ensureBuilding(a.vid, profFromKey(a.profKey));
         final Location workB = ensureBuilding(b.vid, profFromKey(b.profKey));
 
-        demolish(a);   // solo sus dos casas pequenas se derriban (los edificios son permanentes)
-        demolish(b);
+        // Sus dos casitas NO se demuelen: quedan EN VENTA (sin dueno) y se reasignaran a los
+        // proximos colonos. Asi el pueblo no hace aparecer/desaparecer casas por arte de magia.
+        vacate(a);
+        vacate(b);
 
         a.x = cx;  a.y = fy + 1;  a.z = cz;  a.floors = 1;  a.spouse = b.name;
         b.x = cx;  b.y = fy + 1;  b.z = cz;  b.floors = 1;  b.spouse = a.name;
@@ -1063,6 +1082,64 @@ public final class SettlementModule implements Listener {
         } catch (Exception e) {
             plugin.getLogger().warning("[Aetheria] no pude guardar edificios: " + e.getMessage());
         }
+    }
+
+    private void loadVacants() {
+        vacants.clear();
+        if (!vacantsFile.exists()) {
+            return;
+        }
+        try (BufferedReader r = new BufferedReader(new FileReader(vacantsFile))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                final String[] f = line.split(";", -1);
+                if (f.length >= 4) {
+                    vacants.add(new int[] {Integer.parseInt(f[0]), Integer.parseInt(f[1]),
+                            Integer.parseInt(f[2]), Integer.parseInt(f[3])});
+                }
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Aetheria] no pude cargar casas en venta: " + e.getMessage());
+        }
+    }
+
+    private void saveVacants() {
+        try (FileWriter w = new FileWriter(vacantsFile, false)) {
+            for (final int[] v : vacants) {
+                w.write(v[0] + ";" + v[1] + ";" + v[2] + ";" + v[3] + "\n");
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Aetheria] no pude guardar casas en venta: " + e.getMessage());
+        }
+    }
+
+    /** Al casarse: la casita del colono NO se demuele; queda EN VENTA (sin dueno) y su cartel lo
+     *  anuncia. Se reasignara a un futuro colono (asi no desaparece por arte de magia). */
+    private void vacate(Colono c) {
+        Blueprint.setHouseSign(world, c.x, c.z, c.y - 1, c.floors, "§eEn venta", "§7(libre)");
+        vacants.add(new int[] {c.x, c.y, c.z, c.floors});
+        saveVacants();
+    }
+
+    /** Toma la casa EN VENTA mas cercana al centro de la aldea (si hay alguna a mano) para un
+     *  colono nuevo, en vez de construir una de cero. Devuelve {x,y,z,floors} o null. */
+    private int[] claimVacant(Location center) {
+        int bestIdx = -1;
+        double bestDist = Double.MAX_VALUE;
+        for (int i = 0; i < vacants.size(); i++) {
+            final int[] v = vacants.get(i);
+            final double d = Math.hypot(v[0] - center.getX(), v[2] - center.getZ());
+            if (d < bestDist) {
+                bestDist = d;
+                bestIdx = i;
+            }
+        }
+        if (bestIdx < 0 || bestDist > 140) {   // solo si hay una vacante razonablemente cerca
+            return null;
+        }
+        final int[] v = vacants.remove(bestIdx);
+        saveVacants();
+        return v;
     }
 
     /** Punto de trabajo del EDIFICIO del oficio en esa aldea; lo levanta si aun no existe.

@@ -393,6 +393,36 @@ public final class ArchitectModule implements CommandExecutor, Listener {
                 : Blueprint.houseRegion(cx, cz, floorY, o.half, o.floors);
     }
 
+    /** Gamas de material disponibles (las usa tambien el catalogo del creativo). */
+    static final String[] TIER_KEYS = {"madera", "piedra", "ladrillo", "lujo"};
+    /** Estilos de silueta disponibles (el catalogo los muestra todos). */
+    static final String[] STYLE_KEYS = {"casona", "aldeana", "torre"};
+
+    /** Etiqueta legible de una gama ("rustica", "de piedra"...). */
+    static String tierLabel(String tier) {
+        return TIERS.getOrDefault(tier, TIERS.get("madera")).label();
+    }
+
+    /**
+     * Medidas de una casa segun tamano (1-3) y estilo, con los mismos dados que usa el
+     * arquitecto. Devuelve {half, floors}. Lo comparte el catalogo del creativo para que la
+     * galeria muestre EXACTAMENTE lo que el arquitecto construye.
+     */
+    static int[] dims(int size, String style, Random rng) {
+        int half = 2 + size + rng.nextInt(2);
+        int floors = size + rng.nextInt(2);
+        switch (style) {
+            case "torre" -> { floors += 2; half = Math.max(2, half - 1); }
+            case "aldeana" -> { floors = Math.min(floors, 2); half = 2 + size; }
+            default -> { }
+        }
+        return new int[] {half, floors};
+    }
+
+    static Material[] paletteFor(String tier, String style, Random rng) {
+        return "aldeana".equals(style) ? villagePalette(rng) : palette(tier, rng);
+    }
+
     private static Material[] palette(String tier, Random rng) {
         final Tier t = TIERS.getOrDefault(tier, TIERS.get("madera"));
         return new Material[] {

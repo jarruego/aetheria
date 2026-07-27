@@ -42,6 +42,23 @@ public final class VanillaStructures {
     private static final int PAD = 8;
     private static final int UP = 14;
 
+    /** Las plantillas de casa de aldea que sabemos colocar (las usa el catalogo del creativo). */
+    public static String[] plainsHouses() {
+        return PLAINS_HOUSES.clone();
+    }
+
+    /** Coloca UNA plantilla concreta (para el catalogo, que las muestra todas). */
+    public static boolean placeHouse(World world, String key, int cx, int cz, int floorY) {
+        TerrainPlanner.prepare(world, cx - PAD, cz - PAD, cx + PAD, cz + PAD, floorY,
+                Material.COBBLESTONE);
+        final boolean ok = Bukkit.dispatchCommand(Bukkit.getConsoleSender(),
+                "place template minecraft:" + key + " " + (cx - 4) + " " + floorY + " " + (cz - 4));
+        if (ok) {
+            cleanup(world, cx, cz, floorY);
+        }
+        return ok;
+    }
+
     /** ¿Esta disponible el sistema de estructuras? (siempre en Paper; se deja por claridad). */
     public static boolean available() {
         return Bukkit.getStructureManager() != null;

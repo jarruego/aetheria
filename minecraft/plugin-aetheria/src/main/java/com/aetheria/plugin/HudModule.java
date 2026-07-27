@@ -77,18 +77,14 @@ public final class HudModule implements Listener, CommandExecutor {
                 final double balance = (e1 == null && bal != null) ? bal.get("balance").getAsDouble() : 0.0;
                 final boolean okPros = e2 == null && pros != null;
                 final String level = okPros ? pros.get("level").getAsString() : "estable";
-                // Progreso hacia el SIGUIENTE escalon de prosperidad = lo que falta para que el
-                // pueblo crezca (mas prosperidad -> mas probabilidad de un vecino nuevo).
-                final double progress = okPros && pros.has("progress")
-                        ? pros.get("progress").getAsDouble() : 0.0;
+                // A donde va la economia del MUNDO (el detalle de progreso se ve por aldea).
                 final String next = okPros && pros.has("next_level")
                         ? pros.get("next_level").getAsString() : level;
-                render(player, balance, level, progress, next);
+                render(player, balance, level, next);
             })));
     }
 
-    private void render(Player player, double balance, String prosperity, double progress,
-            String nextLevel) {
+    private void render(Player player, double balance, String prosperity, String nextLevel) {
         Scoreboard board = player.getScoreboard();
         if (board == null || board == Bukkit.getScoreboardManager().getMainScoreboard()) {
             board = Bukkit.getScoreboardManager().getNewScoreboard();
@@ -101,8 +97,9 @@ public final class HudModule implements Listener, CommandExecutor {
         final Objective obj = board.registerNewObjective("aetheria", "dummy",
                 Component.text("§6✦ §eAetheria §6✦"));
         obj.setDisplaySlot(DisplaySlot.SIDEBAR);
-        // #15 - Datos de la ALDEA en cuyo radio esta el jugador (cambian al cambiar de aldea) y,
-        // debajo, el total de la COMARCA. Si esta a campo abierto, solo se ve la comarca.
+        // #15 - Datos de la ALDEA en cuyo radio esta el jugador (cambian al cambiar de aldea),
+        // con SU progreso de prosperidad; debajo, el total del MUNDO de Aetheria (todas las
+        // aldeas juntas). A campo abierto solo se ven los totales del mundo.
         final String[] town = settlement != null ? settlement.townInfo(player) : null;
         // Lineas de mayor (arriba) a menor (abajo).
         int i = 13;
@@ -111,9 +108,12 @@ public final class HudModule implements Listener, CommandExecutor {
         line(obj, "§eHora: §f" + worldTime(player.getWorld().getTime()), i--);
         line(obj, "§0", i--);
         if (town != null) {
+            final double tp = Double.parseDouble(town[5]);
             line(obj, "§6▸ " + town[0], i--);
             line(obj, "§7 Vecinos: §f" + town[1] + " §7· §f" + town[2] + " AET", i--);
             line(obj, "§7 Va §f" + town[3], i--);
+            // El progreso de crecimiento es de la ALDEA que pisas, no del mundo entero.
+            line(obj, "§7 " + bar(tp) + " §f" + (int) tp + "% §7→ " + town[6], i--);
             if (!town[4].isEmpty()) {
                 line(obj, "§7 Alcalde: §f" + town[4], i--);
             }
@@ -122,11 +122,10 @@ public final class HudModule implements Listener, CommandExecutor {
             line(obj, "§7 (entra en una aldea)", i--);
         }
         line(obj, "§1", i--);
-        line(obj, "§6▸ Comarca de Aetheria", i--);
+        line(obj, "§6▸ Aetheria §8(el mundo)", i--);
         line(obj, "§7 " + (settlement != null ? settlement.townCount() : 0) + " aldeas · §f"
                 + (settlement != null ? settlement.totalPopulation() : 0) + " §7habitantes", i--);
-        line(obj, "§7 Economia: §f" + prosperity, i--);
-        line(obj, "§7 " + bar(progress) + " §f" + (int) progress + "% §7→ " + nextLevel, i--);
+        line(obj, "§7 Economia: §f" + prosperity + " §8→ " + nextLevel, i--);
         line(obj, "§2", i--);
         line(obj, "§7Jugadores: §f" + Bukkit.getOnlinePlayers().size(), i--);
     }

@@ -45,11 +45,13 @@ public final class LaborModule {
         final String name;
         final String profKey;
         final int vid;
+        final Location work;   // su puesto de trabajo (o null si aun no tiene edificio)
 
-        public Laborer(String name, String profKey, int vid) {
+        public Laborer(String name, String profKey, int vid, Location work) {
             this.name = name;
             this.profKey = profKey;
             this.vid = vid;
+            this.work = work;
         }
     }
 
@@ -126,7 +128,7 @@ public final class LaborModule {
             return;
         }
         npc.swingMainHand();
-        final int left = settlement.depositInGranary(lab.vid, y.good, 1);
+        final int left = y.good == null ? 0 : settlement.depositInGranary(lab.vid, y.good, 1);
         // Lo que no cabe en el granero se vende fuera: excedente al sector comercio.
         credit(lab, y.value, y.good, left > 0 ? 1 : 0);
     }
@@ -136,7 +138,7 @@ public final class LaborModule {
         return switch (lab.profKey) {
             case "farmer" -> harvest(at);
             case "fletcher" -> chopTree(at);
-            case "mason" -> quarry(at);
+            case "mason" -> quarry(lab, at);
             case "toolsmith" -> smelt(lab, at);
             case "shepherd" -> shear(at);
             case "fisherman" -> fish(at);
@@ -199,19 +201,36 @@ public final class LaborModule {
 
     /** CANTERO: pica piedra en la cantera junto a su taller. Solo terreno natural y como mucho
      *  4 bloques por debajo del suelo: queda un hoyo de cantera, no un socavon sin fin. */
-    private Yield quarry(Location at) {
-        final int floor = at.getBlockY();
-        final Block stone = find(at, b -> b.getY() < floor && b.getY() >= floor - 4
-                && isRock(b.getType()) && !settlement.isVillageBuilt(b)
-                && b.getRelative(0, 1, 0).getType().isAir());
-        if (stone == null) {
+    private Yield quarry(Laborer lab, Location at) {
+        // La cantera esta ANCLADA al taller del cantero (a un lado), no alla donde ande: si no,
+        // el hoyo lo seguiria por todo el pueblo. Solo pica si esta trabajando cerca del taller.
+        if (lab.work == null || lab.work.distanceSquared(at) > 256) {
             return null;
         }
-        final Material rock = stone.getType();
-        stone.setType(Material.AIR, false);
-        effect(stone.getLocation(), Particle.CLOUD, Sound.BLOCK_STONE_BREAK);
-        return new Yield(rock.name().endsWith("_ORE") ? Material.RAW_IRON : Material.COBBLESTONE,
-                rock.name().endsWith("_ORE") ? 2.2 : 1.0, "cantera");
+        final Location pit = lab.work.clone().add(7, 0, 0);
+        final int floor = pit.getBlockY();
+        // 1) Roca a la vista: se extrae piedra (o mineral) para el granero.
+        final Block stone = findAround(pit, 4, b -> b.getY() < floor && b.getY() >= floor - 5
+                && isRock(b.getType()) && !settlement.isVillageBuilt(b)
+                && b.getRelative(0, 1, 0).getType().isAir());
+        if (stone != null) {
+            final Material rock = stone.getType();
+            stone.setType(Material.AIR, false);
+            effect(stone.getLocation(), Particle.CLOUD, Sound.BLOCK_STONE_BREAK);
+            return new Yield(rock.name().endsWith("_ORE") ? Material.RAW_IRON : Material.COBBLESTONE,
+                    rock.name().endsWith("_ORE") ? 2.2 : 1.0, "cantera");
+        }
+        // 2) Aun no hay roca a la vista: retira la tierra de encima (asi se ABRE la cantera).
+        //    Es trabajo, pero no da genero para el granero.
+        final Block soil = findAround(pit, 4, b -> b.getY() <= floor && b.getY() >= floor - 3
+                && Tag.DIRT.isTagged(b.getType()) && !settlement.isVillageBuilt(b)
+                && b.getRelative(0, 1, 0).getType().isAir());
+        if (soil == null) {
+            return null;
+        }
+        soil.setType(Material.AIR, false);
+        effect(soil.getLocation(), Particle.CLOUD, Sound.BLOCK_GRAVEL_BREAK);
+        return new Yield(null, 0.7, "desmonte");
     }
 
     /** HERRERO: funde en su fragua lo que el cantero saco. CONSUME material del granero: sin
@@ -309,13 +328,18 @@ public final class LaborModule {
     /** Busca el bloque MAS CERCANO al aldeano que cumpla la condicion, en un entorno pequeño
      *  (radio 6 y +-3 en altura): unos cientos de bloques, no miles. */
     private Block find(Location at, java.util.function.Predicate<Block> ok) {
+        return findAround(at, SCAN_R, ok);
+    }
+
+    /** Igual, pero alrededor de un punto CONCRETO y con el radio dado (la cantera va anclada). */
+    private Block findAround(Location at, int radius, java.util.function.Predicate<Block> ok) {
         final int cx = at.getBlockX();
         final int cy = at.getBlockY();
         final int cz = at.getBlockZ();
         Block best = null;
         int bestD = Integer.MAX_VALUE;
-        for (int dx = -SCAN_R; dx <= SCAN_R; dx++) {
-            for (int dz = -SCAN_R; dz <= SCAN_R; dz++) {
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
                 for (int dy = -SCAN_Y; dy <= SCAN_Y; dy++) {
                     final int d = dx * dx + dz * dz + dy * dy;
                     if (d >= bestD) {

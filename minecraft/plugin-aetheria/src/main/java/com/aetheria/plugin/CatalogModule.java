@@ -50,8 +50,11 @@ public final class CatalogModule {
 
     public void build() {
         final Location sp = world.getSpawnLocation();
-        this.baseX = sp.getBlockX() - 24;
-        this.baseZ = sp.getBlockZ() - 60;    // galeria al NORTE del spawn, en area despejada
+        // TODO el catalogo de construcciones va al NORTE del spawn (z decreciente), centrado en
+        // el eje X del spawn. Las filas crecen HACIA EL NORTE: la galeria nunca invade el spawn
+        // ni el sur (donde esta el catalogo de esquematicos).
+        this.baseX = sp.getBlockX() - (PER_ROW / 2) * SPACING;
+        this.baseZ = sp.getBlockZ() - 40;
         this.floorY = sp.getBlockY() - 1;    // cota FIJA (no trepa entre reinicios)
 
         final List<Runnable> jobs = new ArrayList<>();
@@ -127,7 +130,7 @@ public final class CatalogModule {
     private int[] cell(int i) {
         final int col = i % PER_ROW;
         final int row = i / PER_ROW;
-        return new int[] {baseX + col * SPACING, baseZ + row * SPACING};
+        return new int[] {baseX + col * SPACING, baseZ - row * SPACING};   // filas hacia el NORTE
     }
 
     /** Limpia un cubo alrededor de la muestra y deja una base de cesped (rebuild limpio). */

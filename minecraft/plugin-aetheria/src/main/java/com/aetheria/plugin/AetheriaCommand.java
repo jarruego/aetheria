@@ -212,8 +212,9 @@ public final class AetheriaCommand implements CommandExecutor {
             sender.sendMessage("§7Catalogo vacio.");
             return;
         }
-        final int baseX = sp.getBlockX() + 40;   // calle al este del spawn (lejos del showroom)
-        final int z = sp.getBlockZ() + 40;
+        // TODO el catalogo de esquematicos va al SUR del spawn (el de construcciones esta al
+        // norte): una calle centrada en el eje X del spawn, a 30 bloques al sur.
+        final int z = sp.getBlockZ() + 30;
         final int y = sp.getBlockY();
         final int gap = 6;
 
@@ -234,6 +235,7 @@ public final class AetheriaCommand implements CommandExecutor {
             total += it.width() + gap;
             maxLen = Math.max(maxLen, it.length());
         }
+        final int baseX = sp.getBlockX() - total / 2;   // calle centrada bajo el spawn
         // Limpia holgado: cubre tanto el nuevo total como cualquier disposicion anterior (mas larga).
         final int clearMaxX = baseX + Math.max(total, items.size() * 100) + 120;
         schematics.fillAir(w, baseX - 20, y, z - 40, clearMaxX, y + 100, z + Math.max(maxLen, 120) + 40);
@@ -254,7 +256,7 @@ public final class AetheriaCommand implements CommandExecutor {
             }
             cursorX += width + gap;
         }
-        sender.sendMessage("§a[Esquematico] calle pegada al este del spawn (" + done + "/"
+        sender.sendMessage("§a[Esquematico] calle pegada al SUR del spawn (" + done + "/"
                 + items.size() + ", de menor a mayor, separados por su anchura).");
     }
 

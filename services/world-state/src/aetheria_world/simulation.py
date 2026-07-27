@@ -263,9 +263,9 @@ async def evolve_population(conn) -> dict:
     level = prov["level"]
     # Crecimiento EXPONENCIAL (#14): cuanta mas gente hay, mas nace y mas rapido crece el pueblo
     # (la natalidad es proporcional a la poblacion, como en la realidad). Un caserio de dos
-    # tarda en arrancar; una comarca de cuarenta se llena sola.
+    # tarda en arrancar; un mundo de cuarenta vecinos se llena solo.
     factor = 1.0 + pop / 8.0            # x1.25 con 2 vecinos, x5 con 32
-    step = max(1, pop // 12)            # y no llegan de uno en uno cuando ya es una comarca
+    step = max(1, pop // 12)            # y no llegan de uno en uno cuando el mundo ya es grande
     r = random.random()
     if level == "floreciente" and pop < settings.sim_max_population and r < 0.12 * factor:
         pop = min(settings.sim_max_population, pop + step)

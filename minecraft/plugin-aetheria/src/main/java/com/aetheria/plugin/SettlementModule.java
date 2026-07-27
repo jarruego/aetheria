@@ -187,7 +187,7 @@ public final class SettlementModule implements Listener {
 
     private static final double TOWN_RADIUS = 48;   // desde donde se considera que estas "en" la aldea
     private static final int PER_TOWN = 8;   // al llenarse, una pareja funda otra aldea lejos
-    private static final int MAX_TOWNS = 8;  // techo de la comarca: 8 aldeas x 8 vecinos
+    private static final int MAX_TOWNS = 8;  // techo del mundo: 8 aldeas x 8 vecinos
     private static final String[] TOWN_NAMES = {"Rocavieja", "Valverde", "Fuenteclara", "Montenar",
         "Rivablanca", "Espinar", "Robledo", "Vallehondo", "Penaflor", "Aldealba", "Sotobravo",
         "Villalce", "Olmedal", "Riofrio", "Costaluna", "Miralbosque", "Pradoverde", "Encinar",
@@ -413,6 +413,11 @@ public final class SettlementModule implements Listener {
         loadBuildings();   // los edificios de oficio (permanentes)
         loadVacants();     // casas en venta que quedaron de bodas anteriores
         loadCivicBuildings();   // que edificios civicos (granero/taberna/mercado) ya existen
+        for (int vid = 0; vid < towns.size(); vid++) {   // aldeas que YA tienen taberna
+            if (civicBuilt.contains(vid + ":taberna")) {
+                routines.setTavern(townCenter(vid));
+            }
+        }
         load();            // reaparecen los colonos ya existentes en sus casas (sin reconstruir)
         loadCivic();
         reserveCivicSpots();   // reserva/levanta los solares civicos ANTES de fundar casas (anti-choque)
@@ -1574,6 +1579,9 @@ public final class SettlementModule implements Listener {
         placed.add(new int[] {cx, cz});
         civicBuilt.add(key);
         saveCivicBuildings();
+        if ("taberna".equals(type)) {
+            routines.setTavern(townCenter(vid));   // desde ya, la vida social se muda a la taberna
+        }
         gateway.postEvent("edificio", msg);
         routines.pushGossip(msg);
     }
@@ -1701,13 +1709,42 @@ public final class SettlementModule implements Listener {
         }
         final int hab = countInTown(near);
         final double wealth = townWealth(near);
+        final double per = hab <= 0 ? 0 : wealth / hab;
         return new String[] {
             towns.get(near).name,
             String.valueOf(hab),
             String.format("%.0f", wealth),
             townLevel(wealth, hab),
             alcaldes.getOrDefault(near, ""),
+            String.format("%.0f", townProgress(per)),
+            townNextLevel(per),
         };
+    }
+
+    // Escalones de prosperidad de UNA aldea, en AET ahorrados POR VECINO.
+    private static final double[] TOWN_STEPS = {8, 30, 80};
+
+    /** Cuanto le falta a la aldea para su siguiente escalon de prosperidad (0-100). */
+    private static double townProgress(double per) {
+        double low = 0;
+        for (final double step : TOWN_STEPS) {
+            if (per < step) {
+                return Math.max(0, Math.min(100, (per - low) * 100 / (step - low)));
+            }
+            low = step;
+        }
+        return 100;
+    }
+
+    /** El siguiente escalon al que aspira la aldea. */
+    private static String townNextLevel(double per) {
+        if (per < TOWN_STEPS[0]) {
+            return "estable";
+        }
+        if (per < TOWN_STEPS[1]) {
+            return "prospera";
+        }
+        return per < TOWN_STEPS[2] ? "floreciente" : "floreciente";
     }
 
     /** Riqueza de una aldea = lo que han ahorrado SUS vecinos con su trabajo (no un numero
@@ -1725,21 +1762,21 @@ public final class SettlementModule implements Listener {
     /** Prosperidad de UNA aldea, por riqueza POR VECINO (una aldea pequena y rica prospera). */
     private static String townLevel(double wealth, int hab) {
         final double per = hab <= 0 ? 0 : wealth / hab;
-        if (per < 8) {
+        if (per < TOWN_STEPS[0]) {
             return "en apuros";
         }
-        if (per < 30) {
+        if (per < TOWN_STEPS[1]) {
             return "estable";
         }
-        return per < 80 ? "prospera" : "floreciente";
+        return per < TOWN_STEPS[2] ? "prospera" : "floreciente";
     }
 
-    /** Numero de aldeas de la comarca. */
+    /** Numero de aldeas del mundo. */
     public int townCount() {
         return towns.size();
     }
 
-    /** Poblacion total de la comarca (adultos + ninos). */
+    /** Poblacion total del mundo (adultos + ninos). */
     public int totalPopulation() {
         return colonos.size() + children.size();
     }
@@ -1752,12 +1789,26 @@ public final class SettlementModule implements Listener {
         }
     }
 
+    /** Donde tiene su PUESTO de trabajo un colono (el edificio de su oficio, ya construido), o
+     *  null si su oficio aun no tiene edificio en su aldea. NO lo construye: solo lo consulta. */
+    private Location workplaceOf(Colono c) {
+        if (isKeeper(c.profKey)) {
+            return tavernBar(c.vid);
+        }
+        for (final Building b : buildings) {
+            if (b.vid == c.vid && b.profKey.equals(c.profKey)) {
+                return new Location(world, b.cx + 0.5, b.baseY + 1, b.cz + 0.5);
+            }
+        }
+        return null;
+    }
+
     /** Instantanea de los colonos EN ACTIVO (ni jubilados ni muertos) para el trabajo fisico. */
     public List<LaborModule.Laborer> activeLaborers() {
         final List<LaborModule.Laborer> out = new ArrayList<>();
         for (final Colono c : colonos) {
             if (!c.retired) {
-                out.add(new LaborModule.Laborer(c.name, c.profKey, c.vid));
+                out.add(new LaborModule.Laborer(c.name, c.profKey, c.vid, workplaceOf(c)));
             }
         }
         return out;
@@ -1869,7 +1920,10 @@ public final class SettlementModule implements Listener {
         // Altura de la superficie pisable medida en MEDIOS bloques: asi una losa es +1 y un
         // bloque entero es +2. La regla del camino es simple: entre dos casillas seguidas la
         // superficie no cambia mas de MEDIO bloque (|delta| <= 1).
-        int prevH = 2 * (groundY(cx, cz) + 1);
+        // La rasante NO se siembra en el centro de la casa (ahi el "suelo" es el tejado recien
+        // construido: salia una escalera absurda bajando del tejado). Se siembra en la PRIMERA
+        // casilla de terreno natural que pisa el camino, ya fuera de la construccion.
+        int prevH = -1;
         for (int guard = 0; (x != tx || z != tz) && guard < 220; guard++) {
             if (Math.abs(tx - x) >= Math.abs(tz - z)) {
                 x += Integer.signum(tx - x);
@@ -1880,14 +1934,20 @@ public final class SettlementModule implements Listener {
             if (world.getBlockAt(x, gy, z).isLiquid()) {
                 continue;   // charco/rio: el sendero no lo cruza (los solares ya evitan el agua)
             }
+            final Material ground = world.getBlockAt(x, gy, z).getType();
+            if (!natural(ground)) {
+                continue;   // casa, plaza o edificio: ni se pisa ni cuenta para la rasante
+            }
             final int wantH = 2 * (gy + 1);                                  // lo que pide el terreno
+            if (prevH < 0) {
+                prevH = wantH;   // primera casilla de tierra firme: el camino arranca A RAS
+            }
             final int h = Math.max(prevH - 1, Math.min(prevH + 1, wantH));   // medio bloque como mucho
             final int ny = Math.floorDiv(h, 2) - 1;          // bloque de suelo del camino
             final boolean slab = Math.floorMod(h, 2) == 1;   // media altura: escalon de losa
             final Material at = world.getBlockAt(x, ny, z).getType();
             if (!at.isAir() && !natural(at)) {
-                prevH = h;   // hay algo construido (plaza, edificio): no se toca, se sigue de largo
-                continue;
+                continue;   // hay algo construido justo ahi: no se toca (y la rasante no cambia)
             }
             for (int y = ny + 1; y <= ny + 4; y++) {          // talla el terreno que sobresale
                 final Material m = world.getBlockAt(x, y, z).getType();
@@ -1936,7 +1996,7 @@ public final class SettlementModule implements Listener {
                 tiles.add(new int[] {x, z, 1, 0});   // avanza en Z -> el ancho va en X
             }
         }
-        final int[] state = {0, 2 * (groundY(x0, z0) + 1)};   // {indice, altura en medios bloques}
+        final int[] state = {0, -1};   // {indice, altura en medios bloques (-1 = aun sin sembrar)}
         final int[] task = new int[1];
         task[0] = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             for (int n = 0; n < 6 && state[0] < tiles.size(); n++, state[0]++) {
@@ -1954,7 +2014,13 @@ public final class SettlementModule implements Listener {
     private int paveTile(int x, int z, int prevH, int perpX, int perpZ, int index) {
         final int gy = groundY(x, z);
         final boolean water = world.getBlockAt(x, gy, z).isLiquid();
+        if (!water && !natural(world.getBlockAt(x, gy, z).getType())) {
+            return prevH;   // plaza o edificio: la carretera pasa de largo sin tocar ni elevarse
+        }
         final int wantH = 2 * (gy + 1);
+        if (prevH < 0) {
+            prevH = wantH;   // arranca A RAS de la primera casilla de tierra firme
+        }
         final int h = water ? prevH : Math.max(prevH - 1, Math.min(prevH + 1, wantH));
         final int ny = Math.floorDiv(h, 2) - 1;
         final boolean slab = Math.floorMod(h, 2) == 1;
@@ -2204,7 +2270,7 @@ public final class SettlementModule implements Listener {
             }
         }
         if (towns.size() >= MAX_TOWNS) {
-            // La comarca ya esta completa (8 aldeas): en vez de fundar mas, las aldeas se
+            // El mundo ya tiene sus 8 aldeas: en vez de fundar mas, las aldeas se
             // DENSIFICAN. El nuevo vecino va a la menos poblada.
             int best = 0;
             for (int i = 1; i < towns.size(); i++) {
@@ -2221,7 +2287,7 @@ public final class SettlementModule implements Listener {
     private int foundNewTown() {
         final var rng = ThreadLocalRandom.current();
         // Se parte de una aldea CUALQUIERA ya existente (no siempre de la primera): asi la
-        // comarca se extiende en racimo en vez de en una estrella alrededor del pueblo madre.
+        // el poblamiento se extiende en racimo, no en estrella alrededor del pueblo madre.
         final Town origin = towns.get(rng.nextInt(towns.size()));
         int bcx = 0;
         int bcz = 0;
@@ -2269,7 +2335,7 @@ public final class SettlementModule implements Listener {
         final Location plaza = village.buildPlazaAt(bcx, bcz);
         towns.add(new Town(name, plaza.getBlockX(), plaza.getBlockZ(), plaza.getBlockY() - 1));
         saveTowns();
-        // CARRETERA desde la aldea MAS CERCANA hasta la nueva: la comarca queda conectada.
+        // CARRETERA desde la aldea MAS CERCANA hasta la nueva: las aldeas quedan conectadas.
         final Town from = nearestTown(plaza.getBlockX(), plaza.getBlockZ(), towns.size() - 1);
         if (from != null) {
             buildRoad(from.cx, from.cz, plaza.getBlockX(), plaza.getBlockZ());

@@ -228,6 +228,43 @@ valida solape (409), fondos (400, sin cobrar) y propiedad. Roadmap F0–F9 al d�
   en el HUD y en `/aetheria cronica`.
 - Guía para el dueño del avance: `docs/guia-jugador.md`.
 
+**#11 — Los aldeanos TRABAJAN de verdad y de eso vive la economia (`LaborModule`).** La
+produccion ya no es un numero: el granjero siega una espiga madura y la **replanta**, el
+lenador tala y deja un **brote**, el cantero pica en una **cantera anclada a su taller**, el
+herrero **funde lo que el cantero saco** (consume del granero), el pastor esquila ovejas
+reales, el tabernero cocina... Cada faena deposita genero en el **granero** de su aldea, suma
+al **peculio del colono** (que se **hereda** al morir) y se manda por lotes a
+**`POST /v1/production`**, que lo abona al sector (con tope por peticion). El ingreso aleatorio
+del tick queda como residual (35%) y hay **upkeep por habitante**: un pueblo que no trabaja se
+arruina y emigra gente. Coste acotado: una tanda cada 3 s, ~1 faena por vecino cada 15-24 s,
+solo de dia, y sin tocar bloques si el trozo de mundo esta descargado.
+
+**Mas vida de pueblo.** Noveno oficio, **TABERNERO/A**, cuyo puesto es la propia taberna (no se
+mueve de la barra) y que solo existe si la aldea ya tiene taberna; hasta entonces los vecinos se
+reunen en la **plaza** y se quejan de que hace falta una (sin taberna no hay cantos). El
+**ALBANIL** reconstruye casas danadas (detecta boquetes en el muro) y renivela el solar, solo si
+la aldea tiene cantero vivo. **Cotilleo**: las noticias corren de boca en boca entre vecinos que
+coinciden, solo si hay un jugador cerca para oirlo.
+
+**Crecimiento y caminos (#14).** Natalidad **proporcional a la poblacion** (crecimiento
+exponencial), techo de **8 aldeas x 8 vecinos = 64**; al llenarse el mundo las aldeas se
+densifican en vez de fundar mas. Al fundar una aldea se traza una **carretera** desde la mas
+cercana (3 de ancho, puentes de madera sobre el agua, faroles), construida por lotes. Todos los
+caminos llevan **rasante regulada**: medio bloque de desnivel por casilla con escalones de losa,
+para poder subirlos andando, y nunca arrancan sobre lo ya construido.
+
+**Marcador (#15).** Muestra la **aldea que pisas** (nombre, vecinos, riqueza, prosperidad, barra
+de progreso al siguiente escalon y alcalde) y cambia sola al entrar en otra; debajo, el total del
+**mundo de Aetheria** (aldeas, habitantes y economia global). La riqueza por aldea es real: la
+suma del peculio de sus vecinos, y cada vecino gasta en vivir, asi que una aldea que no trabaja
+se empobrece.
+
+**Catalogo del creativo (#16).** Galeria rotulada con **todas** las combinaciones del arquitecto
+(3 tamanos x 4 gamas x 3 estilos) y **todas** las plantillas vanilla importadas, ademas de casas
+del pueblo, puestos de oficio y decoraciones. Se levanta por lotes (una muestra por tick) con
+semilla fija. **Catalogo de construcciones al NORTE del spawn; catalogo de esquematicos al SUR**
+(`/aetheria schem pastestreet`).
+
 **Todas las fases del plan (F0–F9) están en su núcleo COMPLETAS.** Lo que queda son
 mejoras transversales (skins humanas para NPC, backups/monitorización, F4 cloud pendiente
 de capacidad Oracle) y profundizar cada sistema (ciudades/gobiernos, agendas de NPC más

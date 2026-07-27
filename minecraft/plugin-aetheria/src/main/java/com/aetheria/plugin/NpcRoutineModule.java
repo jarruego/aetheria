@@ -136,6 +136,55 @@ public final class NpcRoutineModule {
         workers.add(w);
     }
 
+    // --- Aldeas que YA tienen taberna (hasta entonces, la vida social es en la plaza) ---
+
+    private final java.util.Set<String> taverns = new java.util.HashSet<>();
+    private static final String[] SIN_TABERNA = {
+        "§7Que aburrido... ojala hubiera una taberna.",
+        "§7Se echa de menos un sitio donde tomar algo al caer el sol.",
+        "§7Aqui no hay ni donde sentarse con una jarra.",
+        "§7Si el pueblo creciera, tendriamos taberna.",
+        "§7Otra tarde de charla en la plaza, como siempre...",
+    };
+
+    /** Marca que esa aldea YA tiene taberna: a partir de ahora sus vecinos se reunen alli. */
+    public void setTavern(Location townCenter) {
+        if (townCenter != null) {
+            taverns.add(townCenter.getBlockX() + "," + townCenter.getBlockZ());
+        }
+    }
+
+    private boolean hasTavern(Worker w) {
+        return w.town != null
+                && taverns.contains(w.town.getBlockX() + "," + w.town.getBlockZ());
+    }
+
+    /** Sin taberna, al atardecer los vecinos se juntan en la plaza y se quejan de que no hay. */
+    private void maybeBored(Worker w) {
+        if (w.entity == null) {
+            return;
+        }
+        final long now = System.currentTimeMillis();
+        if (now - w.lastSong < 20000L
+                || java.util.concurrent.ThreadLocalRandom.current().nextInt(100) >= 8) {
+            return;
+        }
+        boolean audience = false;
+        for (final Player p : world.getPlayers()) {
+            if (p.getLocation().distanceSquared(w.entity.getLocation()) <= 576) {
+                audience = true;
+                break;
+            }
+        }
+        if (!audience) {
+            return;   // si no hay quien lo oiga, no se gasta nada
+        }
+        w.lastSong = now;
+        bubble(w.entity.getLocation().clone().add(0, 2.3, 0),
+                SIN_TABERNA[java.util.concurrent.ThreadLocalRandom.current().nextInt(
+                        SIN_TABERNA.length)], 80L);
+    }
+
     /** La entidad de un colono por su nombre (la usa el modulo de trabajo fisico para saber
      *  DONDE esta trabajando ahora mismo). Null si no existe o esta descargado. */
     public org.bukkit.entity.Mob entityOf(String name) {
@@ -485,8 +534,15 @@ public final class NpcRoutineModule {
                 // Los JUBILADOS (sin oficio) no trabajan: pasan el dia en la plaza y pasean.
                 target = isRetired(w) ? plazaLoiter(w) : workOrWander(w);
             } else if (time < 13500L) {
-                target = tavernSpot(w);     // ATARDECER: vida social en la taberna del pueblo
-                maybeSing(w);               // y, si esta dentro, a veces canta (texto flotante)
+                // ATARDECER: a la taberna SOLO si la aldea ya la tiene construida; si no, la vida
+                // social es en la plaza (y se quejan de que hace falta una taberna).
+                if (hasTavern(w)) {
+                    target = tavernSpot(w);
+                    maybeSing(w);           // y, si esta dentro, a veces canta (texto flotante)
+                } else {
+                    target = w.plaza;
+                    maybeBored(w);
+                }
             } else {
                 target = bedOf(w);          // NOCHE: a la CAMA de su casa (a dormir)
             }

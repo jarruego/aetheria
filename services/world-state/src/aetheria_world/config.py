@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Pueblo vivo: la poblacion crece/mengua con la prosperidad (limites).
     # Arranca en 2 (dos aldeanos fundadores) y crece solo si el pueblo prospera.
     sim_min_population: int = 2
-    # Techo = 8 aldeas x 8 vecinos (ver PER_TOWN/MAX_TOWNS en el plugin): una comarca entera.
+    # Techo = 8 aldeas x 8 vecinos (ver PER_TOWN/MAX_TOWNS en el plugin): el mundo lleno.
     sim_max_population: int = 64
 
     # Fase 9: reclamar una parcela (un chunk).

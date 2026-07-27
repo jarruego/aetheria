@@ -166,6 +166,9 @@ public final class SettlementModule implements Listener {
     private final File civicFile2;    // civic-buildings.txt: "vid:clave" edificios civicos ya construidos
     // Edificios civicos ya levantados por aldea (granero, taberna, mercado). Clave "vid:tipo".
     private final java.util.Set<String> civicBuilt = new java.util.HashSet<>();
+    // Solares RESERVADOS para edificios civicos aun no construidos (taberna/mercado): las casas
+    // los evitan desde el principio, para no tener que pisarlos luego. En memoria (se recalcula).
+    private final List<int[]> civicReserved = new ArrayList<>();
     // Casas EN VENTA (sin propietario): al casarse, las dos casitas de los novios no se demuelen,
     // quedan vacantes y se reasignan a los proximos colonos (asi no aparecen/desaparecen por magia).
     private final List<int[]> vacants = new ArrayList<>();   // {x, y, z, floors}
@@ -356,6 +359,13 @@ public final class SettlementModule implements Listener {
         if (max - min > 4) {
             return null;
         }
+        // Respeta el REGISTRO anti-solape: nada de casas encima (ni pegadas) de un edificio ya
+        // reservado/construido — incluidos los edificios civicos permanentes (granero/taberna/
+        // mercado), que se reservan al fundar el pueblo. Esto evito que una casa pisara el granero.
+        final int[] here = {cx - 5, min - 2, cz - 5, cx + 5, min + 14, cz + 5};
+        if (plugin.buildRegistry().overlaps(here) || overlapsReserved(here)) {
+            return null;
+        }
         // El suelo se pone en la cota MAS BAJA de la huella: asi se TALLA el poco terreno que
         // sobresale (casa encajada en el relieve) en vez de RELLENAR con tierra por debajo (que
         // dejaba las casas elevadas sobre un "pegote"). Sin agua/hielo en la huella (ya rechazado).
@@ -392,6 +402,8 @@ public final class SettlementModule implements Listener {
         loadCivicBuildings();   // que edificios civicos (granero/taberna/mercado) ya existen
         load();            // reaparecen los colonos ya existentes en sus casas (sin reconstruir)
         loadCivic();
+        reserveCivicSpots();   // reserva/levanta los solares civicos ANTES de fundar casas (anti-choque)
+        refreshTradeSigns();   // corrige el rotulo/orientacion de los carteles de oficio ya puestos
         if (fresh && colonos.isEmpty()) {
             // Mundo NUEVO: dos fundadores, un hombre y una mujer (asi pueden formar una familia),
             // cada uno con su casa pequena y su puesto.
@@ -1182,20 +1194,46 @@ public final class SettlementModule implements Listener {
         return new Location(world, cx + 0.5, fy + 1, cz + 0.5);
     }
 
+    /** Vuelve a poner el cartel de cada edificio de oficio ya existente (arregla orientacion/texto
+     *  sin tener que reconstruir ni reiniciar el mundo). */
+    private void refreshTradeSigns() {
+        for (final Building b : buildings) {
+            final BlockFace door = towardPlaza(townCenter(b.vid), b.cx, b.cz);
+            tradeSign(b.cx, b.baseY, b.cz, profFromKey(b.profKey), door);
+        }
+    }
+
     /** Cartel del oficio delante del puesto de trabajo (se pone una sola vez, no trepa). */
     private void tradeSign(int cx, int fy, int cz, Villager.Profession prof, BlockFace door) {
         final int sx = cx + door.getModX() * 3;
         final int sz = cz + door.getModZ() * 3;
-        final int gy = groundY(sx, sz);
-        world.getBlockAt(sx, gy + 1, sz).setType(Material.OAK_FENCE, false);
-        final Block b = world.getBlockAt(sx, gy + 2, sz);
+        // Cota FIJA del edificio (no groundY: si no, la valla del cartel se ve como "suelo" y al
+        // refrescar se pone OTRO cartel encima -> carteles superpuestos). Limpia antes la columna.
+        for (int y = fy + 1; y <= fy + 6; y++) {
+            final Material m = world.getBlockAt(sx, y, sz).getType();
+            if (m == Material.OAK_SIGN || m == Material.OAK_WALL_SIGN || m == Material.OAK_FENCE) {
+                world.getBlockAt(sx, y, sz).setType(Material.AIR, false);
+            }
+        }
+        world.getBlockAt(sx, fy + 1, sz).setType(Material.OAK_FENCE, false);
+        final Block b = world.getBlockAt(sx, fy + 2, sz);
         b.setType(Material.OAK_SIGN, false);
         if (b.getBlockData() instanceof org.bukkit.block.data.Rotatable rot) {
-            rot.setRotation(door.getOppositeFace());
+            rot.setRotation(door);   // mira HACIA LA PLAZA (de donde viene la gente), no al edificio
             b.setBlockData(rot, false);
         }
         if (b.getState() instanceof org.bukkit.block.Sign s) {
-            s.getSide(org.bukkit.block.sign.Side.FRONT).line(1, Component.text("§6" + tradeLabel(prof)));
+            // Reparte el rotulo en dos lineas si es largo ("Taller de arquero" no cabe en una y
+            // salia recortado a "Taller de"). Un solo termino va centrado en la linea 2.
+            final String label = tradeLabel(prof);
+            final int sp = label.length() > 12 ? label.lastIndexOf(' ') : -1;
+            final var front = s.getSide(org.bukkit.block.sign.Side.FRONT);
+            if (sp > 0) {
+                front.line(1, Component.text("§6" + label.substring(0, sp)));
+                front.line(2, Component.text("§6" + label.substring(sp + 1)));
+            } else {
+                front.line(1, Component.text("§6" + label));
+            }
             s.update(true);
         }
     }
@@ -1363,6 +1401,32 @@ public final class SettlementModule implements Listener {
                 + "§7Alcalde: §e" + (alcalde.isEmpty() ? "sin nombrar" : alcalde) + "\n"
                 + "§7Habitantes: §a" + hab));
         panel.teleport(loc);
+    }
+
+    /** Reserva los solares de los edificios civicos (taberna/mercado) de cada aldea y construye ya
+     *  el granero. Se llama ANTES de fundar casas para que ninguna caiga sobre ellos. */
+    private void reserveCivicSpots() {
+        civicReserved.clear();
+        for (int vid = 0; vid < towns.size(); vid++) {
+            final Town t = towns.get(vid);
+            civicReserved.add(civicRegion(t.cx + 9, t.cz, t.baseY, 4));        // taberna (futura)
+            civicReserved.add(civicRegion(t.cx - 3, t.cz + 12, t.baseY, 3));   // mercado (futuro)
+            ensureCivics(vid, t);   // el granero se levanta ya (permanente); taberna/mercado si toca
+        }
+    }
+
+    private static int[] civicRegion(int cx, int cz, int baseY, int half) {
+        return new int[] {cx - half - 1, baseY - 2, cz - half - 1, cx + half + 1, baseY + 16, cz + half + 1};
+    }
+
+    private boolean overlapsReserved(int[] region) {
+        for (final int[] r : civicReserved) {
+            if (region[0] <= r[3] && region[3] >= r[0] && region[1] <= r[4] && region[4] >= r[1]
+                    && region[2] <= r[5] && region[5] >= r[2]) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Construye los edificios civicos que la POBLACION de la aldea justifica (una vez cada uno):

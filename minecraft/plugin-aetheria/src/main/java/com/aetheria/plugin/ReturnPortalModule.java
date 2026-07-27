@@ -143,6 +143,13 @@ public final class ReturnPortalModule implements Listener {
         plugin.getLogger().info("Portal de vuelta al lobby construido cerca del spawn (zona 10x10).");
     }
 
+    /** Centro de la zona decorada 10x10 del portal, a ras de suelo (y = suelo + 1). Es el
+     *  "cuadrado dibujado" del spawn: el conserje Aeon debe rondar DENTRO de el, no por fuera
+     *  (el spawn del mundo esta 3 bloques al norte del centro de la zona). */
+    public Location safeCenter() {
+        return safeCenter == null ? null : safeCenter.clone().add(0.5, 1, 0.5);
+    }
+
     private void placeSign(Block block, BlockFace facing, String l0, String l1, String l2, String l3) {
         block.setType(Material.OAK_SIGN);
         if (block.getBlockData() instanceof Rotatable rot) {

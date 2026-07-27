@@ -249,16 +249,26 @@ coinciden, solo si hay un jugador cerca para oirlo.
 **Crecimiento por HUCHA, aldea a aldea (#14).** Ya no hay dado ni objetivo global: **cada aldea
 ahorra**. El 55% de lo que produce cada vecino va a la hucha de su aldea y de ella sale el coste
 de vida de los que ya estan. Cuando la hucha cubre el **coste del siguiente vecino**
-(`35 * n^1.1`, sube con la poblacion), llega uno —nace de una pareja fertil de esa aldea o se
+(`30 * 2^(n-2)`: **cada vecino cuesta el doble que el anterior**, asi que el pueblo arranca
+rapido y se atasca solo hacia los 6-7; de ahi en adelante hace falta la ayuda del jugador),
+llega uno —nace de una pareja fertil de esa aldea o se
 instala un forastero— y la hucha vuelve a cero. Si la hucha entra en **numeros rojos**, la aldea
 pierde a un vecino (emigra). El marcador muestra ese porcentaje: es literalmente lo que falta
 para el proximo vecino. El **plugin es la autoridad** de la poblacion y la reporta al backend por
 `POST /v1/village/population` (el backend ya no la sortea; la usa para su economia).
 
-**El jugador puede invertir en una aldea.** **Agachado + clic derecho sobre el ALCALDE** dona
-25 AET a la hucha de SU aldea: el jugador empuja el crecimiento del pueblo que le interese (el
-clic normal sigue siendo hablar con el). El alcalde, cada pocos minutos, se acerca a un jugador
-cercano, le dice cuanto falta para el proximo vecino y le explica como colaborar.
+**El jugador puede invertir en una aldea** (`DonationModule`), por tres vias y ninguna
+obligatoria por comando:
+1. **ARCA del pueblo**: un cofre rotulado (con letrero flotante) en la plaza de cada aldea; al
+   hacerle clic se abre una ventana con lo ahorrado, lo que falta y botones de 25/100/500 AET.
+2. **ALCALDE**: agachado + clic derecho sobre el (de pie, el clic sigue siendo conversar). El
+   alcalde se acerca cada pocos minutos a un jugador cercano, le dice cuanto falta exactamente
+   y le explica el gesto.
+3. **`/donar [cantidad]`** para quien prefiera teclear (aporta a la aldea en la que estas).
+
+Todo entra en la misma hucha. **Los ninos cuentan como vecinos** en el marcador, en el panel de
+la plaza, en el coste del proximo vecino y en los edificios civicos (taberna >=4, mercado >=6):
+si no, el jugador veia 6 habitantes y el mercado no aparecia.
 
 Techo de **8 aldeas x 8 vecinos = 64**; al llenarse el mundo las aldeas se
 densifican en vez de fundar mas. Al fundar una aldea se traza una **carretera** desde la mas

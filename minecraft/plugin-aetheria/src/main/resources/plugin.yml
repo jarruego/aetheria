@@ -74,6 +74,10 @@ commands:
     description: Lista los destinos de viaje rapido
     usage: /warps
     permission: aetheria.use
+  donar:
+    description: Aporta AET al fondo de la aldea en la que estas (acelera su crecimiento)
+    usage: /donar [cantidad]
+    permission: aetheria.use
 permissions:
   aetheria.use:
     description: Permite usar los comandos de Aetheria

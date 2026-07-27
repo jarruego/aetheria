@@ -217,7 +217,12 @@ public final class SettlementModule implements Listener {
      * hay mas gente produciendo: el pueblo arranca despacio y luego coge ritmo, sin dispararse.
      */
     private static double growthCost(int n) {
-        return 35.0 * Math.pow(Math.max(1, n), 1.1);
+        // Cada vecino cuesta EL DOBLE que el anterior: el pueblo arranca rapido y luego se
+        // atasca solo. Pasar de 6 o 7 vecinos ya no sale por si mismo: ahi es donde entra la
+        // ayuda del jugador (donaciones al arca o al alcalde). El exponente se acota para que
+        // una aldea densificada no pida cifras absurdas.
+        final int step = Math.max(0, Math.min(10, n - 2));
+        return 30.0 * Math.pow(2, step);
     }
 
     private final List<Town> towns = new ArrayList<>();
@@ -653,7 +658,7 @@ public final class SettlementModule implements Listener {
         final var rng = ThreadLocalRandom.current();
         for (int vid = 0; vid < towns.size(); vid++) {
             final Town t = towns.get(vid);
-            final int n = countInTown(vid);
+            final int n = townPopulation(vid);   // los ninos tambien comen (y cuentan en el HUD)
             t.pool -= LIVING_COST * n;   // lo que cuesta dar de comer y alojar a los que ya estan
             final double need = growthCost(n);
             if (t.pool >= need) {
@@ -789,7 +794,7 @@ public final class SettlementModule implements Listener {
                     final Town t = towns.get(vid);
                     t.pool += DONATION;
                     saveTowns();
-                    final int falta = (int) Math.max(0, growthCost(countInTown(vid)) - t.pool);
+                    final int falta = (int) Math.max(0, growthCost(townPopulation(vid)) - t.pool);
                     p.sendMessage("§a[" + alcalde + "] §f¡Gracias! " + t.name + " lo aprovechara "
                             + "bien. §7(faltan " + falta + " AET para el proximo vecino)");
                     gateway.postEvent("donacion",
@@ -824,7 +829,7 @@ public final class SettlementModule implements Listener {
                 lastPitch = now;
                 alc.getPathfinder().moveTo(p.getLocation(), 1.0);   // se acerca a saludar
                 final int falta = (int) Math.max(0,
-                        growthCost(countInTown(vid)) - towns.get(vid).pool);
+                        growthCost(townPopulation(vid)) - towns.get(vid).pool);
                 p.sendMessage("§6[" + entry.getValue() + "] §f" + p.getName() + ", soy el alcalde de "
                         + towns.get(vid).name + ". Nos faltan §e" + falta + " AET§f para que se "
                         + "instale otro vecino.");
@@ -837,6 +842,53 @@ public final class SettlementModule implements Listener {
     }
 
     private long lastPitch;
+
+    // --- API para el modulo de DONACIONES (arca de la plaza y /donar) ---
+
+    /** La aldea en cuyo radio esta el jugador, o -1 si esta a campo abierto. */
+    public int townAt(Player p) {
+        if (!p.getWorld().equals(world)) {
+            return -1;
+        }
+        int near = -1;
+        double best = TOWN_RADIUS;
+        for (int i = 0; i < towns.size(); i++) {
+            final Town t = towns.get(i);
+            final double d = Math.hypot(p.getX() - (t.cx + 0.5), p.getZ() - (t.cz + 0.5));
+            if (d <= TOWN_RADIUS && d < best) {
+                best = d;
+                near = i;
+            }
+        }
+        return near;
+    }
+
+    public String townName(int vid) {
+        return vid >= 0 && vid < towns.size() ? towns.get(vid).name : "";
+    }
+
+    /** Lo que la aldea lleva ahorrado para su proximo vecino. */
+    public double townPool(int vid) {
+        return vid >= 0 && vid < towns.size() ? Math.max(0, towns.get(vid).pool) : 0;
+    }
+
+    /** Lo que cuesta el proximo vecino de esa aldea. */
+    public double townNeed(int vid) {
+        return vid >= 0 && vid < towns.size() ? growthCost(townPopulation(vid)) : 0;
+    }
+
+    /** El alcalde en ejercicio de esa aldea (cadena vacia si no hay). */
+    public String mayorOf(int vid) {
+        return alcaldes.getOrDefault(vid, "");
+    }
+
+    /** DONACION del jugador: entra directa en la hucha de la aldea y se persiste. */
+    public void donate(int vid, double amount) {
+        if (vid >= 0 && vid < towns.size() && amount > 0) {
+            towns.get(vid).pool += amount;
+            saveTowns();
+        }
+    }
 
     /** #11 - Suma a la hucha de una aldea lo que sus vecinos han producido con su trabajo. */
     public void addTownPool(int vid, double amount) {
@@ -1652,6 +1704,7 @@ public final class SettlementModule implements Listener {
             }
             final String alcalde = alc != null ? alc.name : "";
             ensureCivics(vid, t);   // granero (siempre), taberna (>=4 hab), mercado (>=6 hab)
+            ensureDonationChest(vid, t);   // arca del pueblo: donde el jugador puede aportar
             infoPanel(vid, t, alcalde);
             final String prev = alcaldes.get(vid);
             if (!alcalde.isEmpty() && !alcalde.equals(prev)) {
@@ -1663,6 +1716,45 @@ public final class SettlementModule implements Listener {
             // El granero ya NO se llena solo: lo llena el TRABAJO FISICO de los aldeanos
             // (LaborModule deposita cada cosecha, tala, lingote... segun se producen).
         }
+    }
+
+    /** Posicion del ARCA del pueblo (fondo comun) en la plaza de una aldea. */
+    public int[] donationChest(int vid) {
+        if (vid < 0 || vid >= towns.size()) {
+            return null;
+        }
+        final Town t = towns.get(vid);
+        return new int[] {t.cx + 4, t.baseY + 1, t.cz + 4};
+    }
+
+    /**
+     * ARCA DEL PUEBLO: un cofre en la plaza con su rotulo flotante. Haciendole clic el jugador
+     * puede APORTAR dinero a la hucha de esa aldea (sin comandos ni gestos raros). Es la via
+     * visible; tambien se puede donar al alcalde o con /donar.
+     */
+    private void ensureDonationChest(int vid, Town t) {
+        final int[] c = donationChest(vid);
+        final Block b = world.getBlockAt(c[0], c[1], c[2]);
+        if (b.getType() != Material.CHEST) {
+            world.getBlockAt(c[0], c[1] - 1, c[2]).setType(Material.STONE_BRICKS, false);
+            b.setType(Material.CHEST, false);
+        }
+        final String tag = "aetheria_arca_" + vid;
+        final Location loc = new Location(world, c[0] + 0.5, c[1] + 1.4, c[2] + 0.5);
+        for (final org.bukkit.entity.Entity e : world.getNearbyEntities(loc, 3, 3, 3)) {
+            if (e instanceof TextDisplay td && e.getScoreboardTags().contains(tag)) {
+                td.text(Component.text("§6Arca de " + t.name + "\n§7clic para aportar"));
+                return;
+            }
+        }
+        final TextDisplay td = (TextDisplay) world.spawnEntity(loc, EntityType.TEXT_DISPLAY);
+        td.addScoreboardTag(PANEL_TAG);
+        td.addScoreboardTag(tag);
+        td.setBillboard(Display.Billboard.CENTER);
+        td.setPersistent(true);
+        td.setAlignment(TextDisplay.TextAlignment.CENTER);
+        td.setBackgroundColor(Color.fromARGB(170, 20, 15, 5));
+        td.text(Component.text("§6Arca de " + t.name + "\n§7clic para aportar"));
     }
 
     private static final String PANEL_TAG = "aetheria_panel";
@@ -1697,7 +1789,7 @@ public final class SettlementModule implements Listener {
             panel.setBackgroundColor(Color.fromARGB(190, 15, 15, 25));
             panel.setAlignment(TextDisplay.TextAlignment.CENTER);
         }
-        final int hab = countInTown(vid);
+        final int hab = townPopulation(vid);
         panel.text(Component.text(
                 "§6§l" + t.name + "\n"
                 + "§r§8· pueblo de Aetheria ·\n \n"
@@ -1738,11 +1830,13 @@ public final class SettlementModule implements Listener {
     private void ensureCivics(int vid, Town t) {
         ensureCivic(vid, "granero", t.cx - 12, t.cz, t.baseY, 4,
                 "El pueblo construye un granero en " + t.name + ".");
-        if (countInTown(vid) >= 4) {
+        // OJO: se cuentan los mismos vecinos que muestra el marcador (ninos incluidos). Antes
+        // esto miraba solo a los adultos y el mercado no aparecia con 6 habitantes a la vista.
+        if (townPopulation(vid) >= 4) {
             ensureCivic(vid, "taberna", t.cx + 9, t.cz, t.baseY, 5,
                     "El pueblo abre una taberna en " + t.name + ".");
         }
-        if (countInTown(vid) >= 6) {
+        if (townPopulation(vid) >= 6) {
             ensureCivic(vid, "mercado", t.cx - 3, t.cz + 12, t.baseY, 5,
                     "El pueblo levanta un mercado en " + t.name + ".");
         }
@@ -1835,6 +1929,18 @@ public final class SettlementModule implements Listener {
         if (inv == null) {
             return amount;
         }
+        // TOPE POR PRODUCTO (2 arcas). Sin esto, el oficio mas rapido llenaba el granero entero
+        // y ya no cabia nada mas: el herrero se quedaba sin piedra que fundir y el arquero sin
+        // madera para flechas. Lo que pasa del tope se vende fuera (excedente al comercio).
+        int have = 0;
+        for (final org.bukkit.inventory.ItemStack st : inv.getContents()) {
+            if (st != null && st.getType() == good) {
+                have += st.getAmount();
+            }
+        }
+        if (have >= 128) {
+            return amount;
+        }
         final var left = inv.addItem(new org.bukkit.inventory.ItemStack(good, amount));
         int rest = 0;
         for (final org.bukkit.inventory.ItemStack s : left.values()) {
@@ -1897,9 +2003,9 @@ public final class SettlementModule implements Listener {
         if (near < 0) {
             return null;
         }
-        final int hab = countInTown(near);
+        final int hab = townPopulation(near);   // los ninos tambien son vecinos del pueblo
         final double wealth = townWealth(near);
-        final double need = growthCost(hab);
+        final double need = growthCost(hab);   // hab ya incluye a los ninos
         final double pool = towns.get(near).pool;
         return new String[] {
             towns.get(near).name,
@@ -2390,6 +2496,18 @@ public final class SettlementModule implements Listener {
     private Location townCenter(int vid) {
         final Town t = towns.get(Math.max(0, Math.min(vid, towns.size() - 1)));
         return new Location(world, t.cx + 0.5, t.baseY + 1, t.cz + 0.5);
+    }
+
+    /** Vecinos de una aldea CONTANDO A LOS NINOS: es lo que ve el jugador (si acaba de nacer
+     *  uno, el marcador y el panel de la plaza lo reflejan al momento, no cuando crece). */
+    private int townPopulation(int vid) {
+        int n = countInTown(vid);
+        for (final Child c : children) {
+            if (c.vid == vid) {
+                n++;
+            }
+        }
+        return n;
     }
 
     private int countInTown(int vid) {

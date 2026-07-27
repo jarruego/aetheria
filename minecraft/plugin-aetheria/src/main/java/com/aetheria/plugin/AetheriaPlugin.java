@@ -129,6 +129,12 @@ public final class AetheriaPlugin extends JavaPlugin {
                 // ese trabajo real vive la economia del pueblo.
                 new LaborModule(this, gameWorld, gateway, routines).start(settlement);
 
+                // DONACIONES: el jugador acelera el crecimiento de la aldea que quiera
+                // (arca de la plaza, el alcalde, o /donar).
+                final DonationModule donations = new DonationModule(this, gateway, settlement);
+                getServer().getPluginManager().registerEvents(donations, this);
+                Objects.requireNonNull(getCommand("donar")).setExecutor(donations);
+
                 // Viaje rapido por los puntos de interes (plaza, mercado, taberna, spawn).
                 final WarpModule warps = new WarpModule(village, gameWorld);
                 Objects.requireNonNull(getCommand("warp")).setExecutor(warps);

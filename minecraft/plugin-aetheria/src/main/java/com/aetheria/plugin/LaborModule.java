@@ -58,11 +58,17 @@ public final class LaborModule {
     /** Resultado de una faena: que se ha producido y cuanto vale. */
     private static final class Yield {
         final Material good;
+        final int amount;
         final double value;
         final String verb;
 
         Yield(Material good, double value, String verb) {
+            this(good, 1, value, verb);
+        }
+
+        Yield(Material good, int amount, double value, String verb) {
             this.good = good;
+            this.amount = amount;
             this.value = value;
             this.verb = verb;
         }
@@ -128,7 +134,8 @@ public final class LaborModule {
             return;
         }
         npc.swingMainHand();
-        final int left = y.good == null ? 0 : settlement.depositInGranary(lab.vid, y.good, 1);
+        final int left = y.good == null ? 0
+                : settlement.depositInGranary(lab.vid, y.good, y.amount);
         // Lo que no cabe en el granero se vende fuera: excedente al sector comercio.
         credit(lab, y.value, y.good, left > 0 ? 1 : 0);
     }
@@ -137,7 +144,7 @@ public final class LaborModule {
     private Yield doWork(Laborer lab, Location at) {
         return switch (lab.profKey) {
             case "farmer" -> harvest(at);
-            case "fletcher" -> chopTree(at);
+            case "fletcher" -> fletch(lab, at);
             case "mason" -> quarry(lab, at);
             case "toolsmith" -> smelt(lab, at);
             case "shepherd" -> shear(at);
@@ -174,8 +181,28 @@ public final class LaborModule {
         return null;
     }
 
-    /** ARQUERO/leñador: tala un tronco (nunca de una casa) y deja un BROTE para que vuelva a
-     *  crecer el arbol. Tala de abajo arriba, hasta 3 bloques: no arrasa el bosque. */
+    /**
+     * ARQUERO. Su oficio es hacer FLECHAS, y para eso necesita madera: si el granero de su aldea
+     * tiene troncos, se pone en su banco de fletcher y saca un puñado de flechas; si no hay
+     * madera, coge el hacha y va a talar (reponiendo el arbol con un brote). Asi el granero
+     * acaba teniendo flechas de verdad, no solo troncos.
+     */
+    private Yield fletch(Laborer lab, Location at) {
+        final Block table = find(at, b -> b.getType() == Material.FLETCHING_TABLE);
+        if (table != null) {
+            final Material wood = settlement.takeFromGranary(lab.vid,
+                    new Material[] {Material.OAK_LOG, Material.SPRUCE_LOG, Material.BIRCH_LOG});
+            if (wood != null) {
+                effect(table.getLocation().add(0.5, 1, 0.5), Particle.CRIT,
+                        Sound.ITEM_CROSSBOW_LOADING_MIDDLE);
+                return new Yield(Material.ARROW, 4, 1.7, "flechas");
+            }
+        }
+        return chopTree(at);   // sin madera en el granero, a por ella
+    }
+
+    /** Tala un tronco (nunca de una casa) y deja un BROTE para que vuelva a crecer el arbol.
+     *  Tala de abajo arriba, hasta 3 bloques: no arrasa el bosque. */
     private Yield chopTree(Location at) {
         final Block log = find(at, b -> Tag.LOGS.isTagged(b.getType())
                 && !settlement.isVillageBuilt(b));
@@ -196,7 +223,7 @@ public final class LaborModule {
         if (Tag.DIRT.isTagged(soil.getType()) && log.getType().isAir()) {
             log.setType(saplingFor(soil), false);
         }
-        return new Yield(Material.OAK_LOG, 1.1, "tala");
+        return new Yield(Material.OAK_LOG, 2, 1.1, "tala");   // un arbol da mas de un tronco
     }
 
     /** CANTERO: pica piedra en la cantera junto a su taller. Solo terreno natural y como mucho

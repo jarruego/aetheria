@@ -172,7 +172,10 @@ services:
       SIMULATION_DISTANCE: "5"
       ALLOW_NETHER: "true"
       # Chunky: pregeneracion de mundos. FAWE: pegar esquematicos del catalogo (WorldEdit API).
-      MODRINTH_PROJECTS: "chunky,fastasyncworldedit"
+      # ProtocolLib + LibsDisguises: dar ASPECTO HUMANO (skins) a los NPC (DisguiseModule, blando:
+      # si no cargan, los NPC siguen siendo aldeanos sin romper nada).
+      MODRINTH_PROJECTS: "chunky,fastasyncworldedit,protocollib,libsdisguises"
+      MODRINTH_DOWNLOAD_DEPENDENCIES: "required"
       # El plugin Aetheria usa este token para autenticarse contra el API Gateway.
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:-changeme-generate-a-long-random-secret}"
     volumes:

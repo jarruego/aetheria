@@ -59,6 +59,7 @@ public final class NpcRoutineModule {
         Location bed;       // cama de su casa (para dormir de noche); se busca una vez
         boolean bedSearched;
         String prof = "vecino";   // oficio (para que hable de LO SUYO, no todos lo mismo)
+        String gender = "m";      // sexo (para la skin humana del disfraz)
         boolean stayAtWork;       // el tabernero no se va de paseo: se queda sirviendo
 
         Worker(String npcId, String name, Location home, Location work, Location plaza, Location town) {
@@ -127,7 +128,13 @@ public final class NpcRoutineModule {
      *  y pasea en SU aldea (townCenter). */
     public void addColono(String npcId, String name, Location home, Location work,
             Villager.Profession prof, Location townCenter) {
+        addColono(npcId, name, home, work, prof, townCenter, "m");
+    }
+
+    public void addColono(String npcId, String name, Location home, Location work,
+            Villager.Profession prof, Location townCenter, String gender) {
         final Worker w = new Worker(npcId, name, home, work, plazaSpot(townCenter), townCenter);
+        w.gender = gender;
         w.entity = spawnWorker(w);
         w.prof = profWord(prof);
         if (w.entity instanceof Villager v) {
@@ -457,6 +464,7 @@ public final class NpcRoutineModule {
                 final String pn = PlainTextComponentSerializer.plainText().serialize(ex.customName());
                 if (pn.equals(w.name) || pn.startsWith(w.name + " ")) {
                     convo.registerConversable(ex, w.npcId, w.name);
+                    DisguiseModule.humanize(ex, w.gender, w.name);   // aspecto humano (si hay plugin)
                     return ex;
                 }
             }
@@ -472,6 +480,7 @@ public final class NpcRoutineModule {
         v.setVillagerType(TYPES[h % TYPES.length]);   // ropaje variado segun el nombre
         v.setVillagerLevel(5);             // maestro: muestra el distintivo del oficio
         convo.registerConversable(v, w.npcId, w.name);
+        DisguiseModule.humanize(v, w.gender, w.name);   // aspecto humano (si hay plugin de disfraz)
         return v;
     }
 

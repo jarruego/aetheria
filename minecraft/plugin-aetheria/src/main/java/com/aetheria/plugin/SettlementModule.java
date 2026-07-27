@@ -509,7 +509,7 @@ public final class SettlementModule implements Listener {
                 }
                 routines.addColono("colono", c.name, new Location(world, c.x + 0.5, c.y, c.z + 0.5),
                         ensureBuilding(c.vid, profFromKey(c.profKey)), profFromKey(c.profKey),
-                        townCenter(c.vid));
+                        townCenter(c.vid), c.gender);
                 routines.setStayAtWork(c.name, isKeeper(c.profKey));
                 if (c.retired) {
                     routines.retire(c.name);
@@ -960,6 +960,22 @@ public final class SettlementModule implements Listener {
 
     /** Nace un nino de una PAREJA fertil (un hombre y una mujer, casados) DE ESA ALDEA. Dos
      *  personas del mismo sexo no tienen hijos biologicos. Devuelve true si hubo nacimiento. */
+    /** Cuantos hijos tiene ya esa madre (bebes + hijos ya adultos), por su nombre. */
+    private int childCount(String motherName) {
+        int n = 0;
+        for (final Child c : children) {
+            if (motherName.equals(c.parent)) {
+                n++;
+            }
+        }
+        for (final Colono c : colonos) {
+            if (motherName.equals(c.parent)) {
+                n++;
+            }
+        }
+        return n;
+    }
+
     private boolean bearChild(int vid) {
         final var rng = ThreadLocalRandom.current();
         // Madres posibles: mujer no jubilada, casada con un hombre no jubilado.
@@ -973,8 +989,9 @@ public final class SettlementModule implements Listener {
                 mothers.add(c);
             }
         }
+        mothers.removeIf(m -> childCount(m.name) >= 2);   // cada pareja: MAXIMO 2 hijos
         if (mothers.isEmpty()) {
-            return false;   // no hay pareja fertil ahora mismo: que venga un inmigrante
+            return false;   // sin pareja fertil (o ya con 2 hijos): que venga un inmigrante
         }
         final Colono mother = mothers.get(rng.nextInt(mothers.size()));
         final Colono father = findColono(mother.spouse);
@@ -1221,7 +1238,7 @@ public final class SettlementModule implements Listener {
         save();
 
         final Location home = new Location(world, cx + 0.5, fy + 1, cz + 0.5);
-        routines.addColono("colono", name, home, workspot, prof, center);
+        routines.addColono("colono", name, home, workspot, prof, center, gender);
         routines.setStayAtWork(name, prof == TAVERN_KEEPER);
         final String pueblo = towns.get(Math.max(0, Math.min(vid, towns.size() - 1))).name;
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(

@@ -919,17 +919,17 @@ public final class SettlementModule implements Listener {
             return;
         }
         final Location center = townCenter(a.vid);
-        final int[] spot = findBuildSpot(center, colonos.size() + 2);
-        if (spot == null) {
-            return;   // sin sitio libre ahora; se reintenta el proximo ciclo
-        }
-        final int cx = spot[0];
-        final int cz = spot[1];
-        final int fy = spot[2];
+        // La MEDIANA se construye SOBRE el solar de A (se demuele su casita y se levanta la nueva
+        // encima); la casita de B queda EN VENTA. Asi la pareja pasa de dos casitas a UNA mediana +
+        // una en venta (2 casas para 2 personas), sin dejar dos casas vacias por magia.
+        final int cx = a.x;
+        final int cz = a.z;
+        final int fy = a.y - 1;
         final Material[] pal = COMBOS[rng.nextInt(COMBOS.length)];
         final int halfX = 3;
         final int halfZ = rng.nextInt(100) < 40 ? 4 : 3;   // MEDIANA (algo mayor que la de soltero)
         final BlockFace door = towardPlaza(center, cx, cz);
+        demolish(a);                        // libera y limpia el solar de A para la casa mayor
         prepareTerrain(cx, cz, fy);
         Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
                 pal[0], pal[1], pal[2], pal[3], true, 3, a.name + " y " + b.name);   // 3 camas
@@ -938,14 +938,13 @@ public final class SettlementModule implements Listener {
         final Location workA = ensureBuilding(a.vid, profFromKey(a.profKey));
         final Location workB = ensureBuilding(b.vid, profFromKey(b.profKey));
 
-        // Sus dos casitas NO se demuelen: quedan EN VENTA (sin dueno) y se reasignaran a los
-        // proximos colonos. Asi el pueblo no hace aparecer/desaparecer casas por arte de magia.
-        vacate(a);
-        vacate(b);
+        vacate(b);   // la casita de B queda EN VENTA para el proximo colono
 
         a.x = cx;  a.y = fy + 1;  a.z = cz;  a.floors = 1;  a.spouse = b.name;
         b.x = cx;  b.y = fy + 1;  b.z = cz;  b.floors = 1;  b.spouse = a.name;
         placed.add(new int[] {cx, cz});
+        plugin.buildRegistry().add(new int[] {cx - halfX - 1, fy - 2, cz - halfZ - 1,
+                cx + halfX + 1, fy + 14, cz + halfZ + 1});
         save();
 
         // Casa compartida (con destinos ligeramente distintos para no apilarse), pero cada uno

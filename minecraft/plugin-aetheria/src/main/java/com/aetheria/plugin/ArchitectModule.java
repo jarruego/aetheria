@@ -193,17 +193,20 @@ public final class ArchitectModule implements CommandExecutor, Listener {
                 .append(Component.text("  "))
                 .append(opt("§a[Aldeana]", "/arquitecto estilo aldeana"))
                 .append(Component.text("  "))
-                .append(opt("§a[Torre]", "/arquitecto estilo torre")));
-        player.sendMessage("§7Casona: equilibrada. Aldeana: compacta, estilo pueblo. Torre: alta y "
-                + "estrecha.");
+                .append(opt("§a[Torre]", "/arquitecto estilo torre"))
+                .append(Component.text("  "))
+                .append(opt("§b[Vanilla]", "/arquitecto estilo vanilla")));
+        player.sendMessage("§7Casona: equilibrada. Aldeana: compacta estilo pueblo. Torre: alta. "
+                + "Vanilla: una casa de aldea REAL de Minecraft.");
     }
 
     private void setStyle(Player player, String s) {
         final Order o = orders.get(player.getUniqueId());
         if (o == null || o.size == 0 || o.mat == null) { start(player); return; }
         o.style = switch (s.toLowerCase()) {
-            case "aldeana", "aldea", "pueblo", "vanilla" -> "aldeana";
+            case "aldeana", "aldea", "pueblo" -> "aldeana";
             case "torre", "tower" -> "torre";
+            case "vanilla", "real" -> "vanilla";
             default -> "casona";
         };
         player.sendMessage("§6[Arquitecto] §f¿La quieres §eamueblada§f? (habitaciones con muebles)");
@@ -314,7 +317,7 @@ public final class ArchitectModule implements CommandExecutor, Listener {
         int cz = cz0;
         int floorY = TerrainPlanner.meanFirmY(player.getWorld(),
                 cx - o.half, cz - o.half, cx + o.half, cz + o.half);
-        int[] region = Blueprint.houseRegion(cx, cz, floorY, o.half, o.floors);
+        int[] region = orderRegion(o, cx, cz, floorY);
         // Anti-solape: si ahi ya hay algo construido, prueba 2-3 huecos al lado antes de rechazar.
         if (plugin.buildRegistry().overlaps(region)) {
             final int d = o.half * 2 + 3;
@@ -328,7 +331,7 @@ public final class ArchitectModule implements CommandExecutor, Listener {
                 }
                 final int nfy = TerrainPlanner.meanFirmY(player.getWorld(),
                         nx - o.half, nz - o.half, nx + o.half, nz + o.half);
-                final int[] nr = Blueprint.houseRegion(nx, nz, nfy, o.half, o.floors);
+                final int[] nr = orderRegion(o, nx, nz, nfy);
                 if (!plugin.buildRegistry().overlaps(nr)) {
                     cx = nx; cz = nz; floorY = nfy; region = nr; moved = true;
                     break;
@@ -355,7 +358,24 @@ public final class ArchitectModule implements CommandExecutor, Listener {
                         player.sendMessage("§c[Arquitecto] " + why + ". No he construido nada.");
                         return;
                     }
-                    undo.snapshot(player, Blueprint.houseRegion(fCx, fCz, fFloorY, o.half, o.floors), p, "tu casa");
+                    undo.snapshot(player, fRegion, p, "tu casa");
+                    if ("vanilla".equals(o.style)) {
+                        // Casa de aldea REAL de Minecraft (plantilla del propio servidor).
+                        final String key = VanillaStructures.placeRandomHouse(
+                                player.getWorld(), fCx, fCz, fFloorY);
+                        if (key == null) {
+                            gateway.pay(BANCO, player.getUniqueId().toString(), p);   // reembolso
+                            player.sendMessage("§c[Arquitecto] No pude colocar la casa vanilla; te he "
+                                    + "devuelto el dinero. Prueba en otro sitio mas despejado.");
+                            return;
+                        }
+                        plugin.buildRegistry().add(fRegion);
+                        player.sendMessage(String.format("§a[Arquitecto] ¡Hecho! Una casa de aldea "
+                                + "REAL de Minecraft. Se cobraron §e%d AET§a. Si no te gusta, "
+                                + "§f/deshacer§a.", p));
+                        pending.remove(player.getUniqueId());
+                        return;
+                    }
                     final int blocks = Blueprint.buildHouse(player.getWorld(), fCx, fCz, fFloorY, door,
                             o.half, o.floors, pal[0], pal[1], pal[2], pal[3], o.furniture, player.getName());
                     plugin.buildRegistry().add(fRegion);   // registra para que nadie lo pise despues
@@ -364,6 +384,13 @@ public final class ArchitectModule implements CommandExecutor, Listener {
                             TIERS.get(o.mat).label(), o.floors, blocks, p));
                     pending.remove(player.getUniqueId());
                 }));
+    }
+
+    /** Caja 3D del encargo (para anti-solape y deshacer), segun el estilo. */
+    private int[] orderRegion(Order o, int cx, int cz, int floorY) {
+        return "vanilla".equals(o.style)
+                ? VanillaStructures.region(cx, cz, floorY)
+                : Blueprint.houseRegion(cx, cz, floorY, o.half, o.floors);
     }
 
     private static Material[] palette(String tier, Random rng) {

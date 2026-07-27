@@ -55,6 +55,8 @@ public final class NpcRoutineModule {
         long lastSong;      // ultima vez que canto en la taberna
         Location wander;    // destino de paseo actual (o null si esta trabajando)
         long wanderUntil;   // hasta cuando dura el paseo
+        Location bed;       // cama de su casa (para dormir de noche); se busca una vez
+        boolean bedSearched;
         String prof = "vecino";   // oficio (para que hable de LO SUYO, no todos lo mismo)
 
         Worker(String npcId, String name, Location home, Location work, Location plaza, Location town) {
@@ -98,6 +100,8 @@ public final class NpcRoutineModule {
             if (w.name.equals(name)) {
                 w.home = home;
                 w.work = work;
+                w.bed = null;            // nueva casa: se vuelve a buscar su cama
+                w.bedSearched = false;
                 return;
             }
         }
@@ -164,6 +168,36 @@ public final class NpcRoutineModule {
                 td.remove();
             }
         }, 90L);   // ~4,5 s y desaparece
+    }
+
+    /** La CAMA de la casa del vecino: se busca UNA vez un bloque de cama junto a su casa. Ir a la
+     *  cama de noche (y quedarse quieto) es lo que deja que el aldeano se acueste. */
+    private Location bedOf(Worker w) {
+        if (!w.bedSearched) {
+            w.bedSearched = true;
+            w.bed = findBed(w.home);
+        }
+        return w.bed != null ? w.bed : w.home;
+    }
+
+    private Location findBed(Location home) {
+        if (home == null) {
+            return null;
+        }
+        final int hx = home.getBlockX();
+        final int hy = home.getBlockY();
+        final int hz = home.getBlockZ();
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -4; dx <= 4; dx++) {
+                for (int dz = -4; dz <= 4; dz++) {
+                    if (org.bukkit.Tag.BEDS.isTagged(
+                            world.getBlockAt(hx + dx, hy + dy, hz + dz).getType())) {
+                        return new Location(world, hx + dx + 0.5, hy + dy, hz + dz + 0.5);
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     /** Un aldeano jubilado ya no ejerce oficio (profesion NONE): el pueblo le da el relevo. */
@@ -340,7 +374,7 @@ public final class NpcRoutineModule {
                 target = tavernSpot(w);     // ATARDECER: vida social en la taberna del pueblo
                 maybeSing(w);               // y, si esta dentro, a veces canta (texto flotante)
             } else {
-                target = w.home;            // NOCHE: a casa, a la cama
+                target = bedOf(w);          // NOCHE: a la CAMA de su casa (a dormir)
             }
             final Location at = w.entity.getLocation();
             if (!at.getWorld().equals(target.getWorld()) || at.distanceSquared(target) <= ARRIVE_SQ) {

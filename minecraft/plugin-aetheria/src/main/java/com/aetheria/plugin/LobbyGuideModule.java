@@ -29,6 +29,7 @@ public final class LobbyGuideModule {
     private final ConversationManager convo;
     private final World world;
     private final Location center;
+    private final int radius;   // radio de la ronda (tambien es la correa: no se aleja mas)
     // Puntos de ronda (relativos al centro). En el lobby es un cuadrado pequeno; junto al spawn de
     // main es MAS AMPLIO para que Aeon pasee de verdad y no quede encerrado en el cuadro del portal.
     private final int[][] patrol;
@@ -50,6 +51,7 @@ public final class LobbyGuideModule {
         this.convo = convo;
         this.world = center.getWorld();
         this.center = center;
+        this.radius = radius;
         final int r = radius;
         // Un octogono aproximado: da un paseo mas natural que un simple cuadrado.
         this.patrol = new int[][] {
@@ -98,6 +100,15 @@ public final class LobbyGuideModule {
         }
         final Location dest = at(patrol[target]);
         final Location here = npc.getLocation();
+        // CORREA: el cerebro vanilla del aldeano tira de el hacia sus POI y acababa saliendose
+        // del cuadro. Si se aleja mas de la ronda + 2, vuelve de golpe al punto de ronda.
+        final double leash = (radius + 2) * (radius + 2);
+        if (here.distanceSquared(center) > leash) {
+            npc.teleport(dest);
+            stuck = 0;
+            last = dest;
+            return;
+        }
         if (here.distanceSquared(dest) <= ARRIVE_SQ) {
             target = (target + 1) % patrol.length;   // siguiente punto de ronda
             stuck = 0;

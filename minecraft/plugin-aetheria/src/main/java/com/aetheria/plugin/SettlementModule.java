@@ -72,6 +72,11 @@ public final class SettlementModule implements Listener {
         Villager.Profession.FISHERMAN, Villager.Profession.SHEPHERD, Villager.Profession.MASON,
         Villager.Profession.LIBRARIAN, Villager.Profession.TOOLSMITH, Villager.Profession.BUTCHER,
         Villager.Profession.FLETCHER};
+    private static final String[] SURNAMES = {
+        "Rivas", "Soto", "Vega", "Prado", "Campos", "Robles", "Herrero", "Bravo", "Nieto",
+        "Ramos", "Castro", "Vidal", "Marin", "Mora", "Pardo", "Rojas", "Serrano", "Lozano",
+        "Ibarra", "Cuesta", "Aguado", "Fuentes", "Molina", "Vargas", "Otero", "Blanco", "Crespo",
+        "Gil", "Solano", "Ferrer", "Duran", "Escudero", "Pineda", "Valle", "Guerra", "Palacios"};
     private static final Material[] FLOWERS = {Material.POPPY, Material.DANDELION,
         Material.BLUE_ORCHID, Material.ALLIUM, Material.OXEYE_DAISY, Material.CORNFLOWER};
     private static final Material[][] COMBOS = {
@@ -104,14 +109,17 @@ public final class SettlementModule implements Listener {
         final String parent;
         final String gender;
         final int vid;
+        final String surname;
         final long matureAt;
 
-        Child(Villager baby, String name, String parent, String gender, int vid, long matureAt) {
+        Child(Villager baby, String name, String parent, String gender, int vid, String surname,
+                long matureAt) {
             this.baby = baby;
             this.name = name;
             this.parent = parent;
             this.gender = gender;
             this.vid = vid;
+            this.surname = surname;
             this.matureAt = matureAt;
         }
     }
@@ -132,6 +140,7 @@ public final class SettlementModule implements Listener {
         String spouse;       // nombre del conyuge, o null si esta soltero/a
         String gender = "m"; // "m" o "f" (dos hombres no tienen hijos biologicos)
         int vid;             // aldea a la que pertenece (indice en towns)
+        String surname = ""; // apellido (los hijos heredan el de su familia)
 
         double age(long now) {
             return initialAge + (now - bornMillis) * YEARS_PER_DAY / DAY_MS;
@@ -141,7 +150,7 @@ public final class SettlementModule implements Listener {
             return name + ";" + profKey + ";" + x + ";" + y + ";" + z + ";" + bornMillis + ";"
                     + initialAge + ";" + deathAge + ";" + (parent == null ? "" : parent) + ";"
                     + retired + ";" + floors + ";" + (spouse == null ? "" : spouse) + ";" + gender
-                    + ";" + vid;
+                    + ";" + vid + ";" + surname;
         }
     }
 
@@ -361,8 +370,8 @@ public final class SettlementModule implements Listener {
             // Mundo NUEVO: dos fundadores, un hombre y una mujer (asi pueden formar una familia),
             // cada uno con su casa pequena y su puesto.
             final var rng = ThreadLocalRandom.current();
-            growAdult(0, 0, freshName("m", rng), "m", 22 + rng.nextInt(30), "");
-            growAdult(0, 1, freshName("f", rng), "f", 22 + rng.nextInt(30), "");
+            growAdult(0, 0, freshName("m", rng), randomSurname(rng), "m", 22 + rng.nextInt(30), "");
+            growAdult(0, 1, freshName("f", rng), randomSurname(rng), "f", 22 + rng.nextInt(30), "");
         }
         plugin.getServer().getScheduler().runTaskTimer(plugin, this::reconcile, PERIOD, PERIOD);
         plugin.getLogger().info("[Aetheria] Pueblo vivo: reconciliando poblacion cada 60 s ("
@@ -399,6 +408,7 @@ public final class SettlementModule implements Listener {
                     c.spouse = f.length >= 12 && !f[11].isEmpty() ? f[11] : null;
                     c.gender = f.length >= 14 && !f[13].isEmpty() ? f[13] : randGender(rng);
                     c.vid = f.length >= 15 && !f[14].isEmpty() ? Integer.parseInt(f[14]) : 0;
+                    c.surname = f.length >= 16 && !f[15].isEmpty() ? f[15] : "";
                 } else {   // formato antiguo: se le asigna una edad plausible
                     c.bornMillis = System.currentTimeMillis();
                     c.initialAge = 20 + rng.nextInt(40);
@@ -514,6 +524,10 @@ public final class SettlementModule implements Listener {
         return rng.nextBoolean() ? "m" : "f";
     }
 
+    private static String randomSurname(java.util.Random rng) {
+        return SURNAMES[rng.nextInt(SURNAMES.length)];
+    }
+
     private static String roman(int n) {
         final String[] r = {"", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"};
         return n < r.length ? r[n] : String.valueOf(n);
@@ -544,10 +558,12 @@ public final class SettlementModule implements Listener {
                 // Los dos primeros de cada aldea son de distinto sexo (para formar familia).
                 if (enAldea < 2 || target - have >= 2) {
                     final String g = enAldea == 1 ? oppositeOfSole(vid) : randGender(rng);
-                    growAdult(vid, colonos.size(), freshName(g, rng), g, 20 + rng.nextInt(40), "");
+                    growAdult(vid, colonos.size(), freshName(g, rng), randomSurname(rng), g,
+                            20 + rng.nextInt(40), "");
                 } else if (!bearChild()) {
                     final String g = randGender(rng);   // sin pareja fertil, llega un inmigrante
-                    growAdult(vid, colonos.size(), freshName(g, rng), g, 20 + rng.nextInt(40), "");
+                    growAdult(vid, colonos.size(), freshName(g, rng), randomSurname(rng), g,
+                            20 + rng.nextInt(40), "");
                 }
             } else if (have > target) {
                 if (!children.isEmpty()) {
@@ -603,7 +619,9 @@ public final class SettlementModule implements Listener {
         final String of = ", " + hijo + " de " + father.name + " y " + mother.name;
         convo.setBio(name, "Eres " + name + ", un nino pequeno del pueblo de Aetheria" + of
                 + ". Todavia no trabajas; hablas con la inocencia de un nino.");
-        children.add(new Child(baby, name, mother.name, gender, mother.vid,
+        final String famSurname = (father != null && !father.surname.isEmpty())
+                ? father.surname : mother.surname;   // hereda el apellido de la familia
+        children.add(new Child(baby, name, mother.name, gender, mother.vid, famSurname,
                 System.currentTimeMillis() + GROW_MS));
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                 "§d[Pueblo] §fHa nacido §b" + name + "§f" + of + "."));
@@ -625,7 +643,7 @@ public final class SettlementModule implements Listener {
             if (c.baby != null) {
                 c.baby.remove();
             }
-            growAdult(c.vid, colonos.size(), c.name, c.gender, WORK_AGE, c.parent);
+            growAdult(c.vid, colonos.size(), c.name, c.surname, c.gender, WORK_AGE, c.parent);
             Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                     "§a[Pueblo] §b" + c.name + " §7ha crecido y se ha mudado a su propia casa."));
         }
@@ -759,9 +777,10 @@ public final class SettlementModule implements Listener {
         }
     }
 
-    private void growAdult(int vid, int index, String name, String gender, double initialAge,
-            String parent) {
+    private void growAdult(int vid, int index, String given, String surname, String gender,
+            double initialAge, String parent) {
         final Location center = townCenter(vid);
+        final String name = surname.isEmpty() ? given : given + " " + surname;   // "Nombre Apellido"
         final int[] spot = findBuildSpot(center, index);
         if (spot == null) {
             return;   // no encontro sitio libre; lo reintenta el proximo ciclo
@@ -804,6 +823,7 @@ public final class SettlementModule implements Listener {
         c.floors = 1;
         c.gender = gender;
         c.vid = vid;
+        c.surname = surname;
         colonos.add(c);
         save();
 

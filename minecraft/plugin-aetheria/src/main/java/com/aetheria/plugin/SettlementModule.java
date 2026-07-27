@@ -285,6 +285,12 @@ public final class SettlementModule implements Listener {
                 if (eval == null) {
                     continue;
                 }
+                // La aldea debe quedar COHESIONADA: nada de casas en un valle o un cerro lejano a
+                // otra altura. Solo terreno a una cota parecida a la de la plaza (evita edificios
+                // "hundidos" en una hondonada cercana aunque esa hondonada sea llana).
+                if (Math.abs(eval[0] - center.getBlockY()) > 6) {
+                    continue;
+                }
                 if (eval[1] <= 2) {
                     return new int[] {cx, cz, eval[0]};   // llano y CERCANO: perfecto
                 }
@@ -297,8 +303,9 @@ public final class SettlementModule implements Listener {
         return best;
     }
 
-    /** Evalua una posicion: {fy medio, irregularidad} si es tierra firme sin construir; null si
-     *  hay agua/hielo o algo ya construido en su huella (±5). */
+    /** Evalua una posicion: {fy (cota mas baja), irregularidad} si es tierra firme LLANA sin
+     *  construir; null si hay agua/hielo, algo construido, o el desnivel es grande (barranco,
+     *  cueva, cuesta) en su huella (±5). */
     private int[] evaluateSpot(int cx, int cz) {
         int min = Integer.MAX_VALUE;
         int max = Integer.MIN_VALUE;
@@ -334,8 +341,14 @@ public final class SettlementModule implements Listener {
                 }
             }
         }
-        // El suelo se pone en la cota MAS BAJA de la huella: asi se TALLA el terreno que sobresale
-        // (aspecto de casa encajada en el relieve) en vez de RELLENAR con tierra por debajo (que
+        // Rechaza huellas con mucho desnivel (barranco/cueva/cuesta): construir ahi obligaria a
+        // tallar/rellenar un cortado enorme (fue lo que hundio un edificio a y=40). Solo terreno
+        // razonablemente llano; si no hay, no se construye este ciclo y se reintenta luego.
+        if (max - min > 4) {
+            return null;
+        }
+        // El suelo se pone en la cota MAS BAJA de la huella: asi se TALLA el poco terreno que
+        // sobresale (casa encajada en el relieve) en vez de RELLENAR con tierra por debajo (que
         // dejaba las casas elevadas sobre un "pegote"). Sin agua/hielo en la huella (ya rechazado).
         return new int[] {min, max - min};
     }

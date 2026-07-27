@@ -290,6 +290,12 @@ public final class SettlementModule implements Listener {
                         water = true;
                         break;
                     }
+                    final Material gm = g.getType();
+                    if (gm == Material.ICE || gm == Material.PACKED_ICE || gm == Material.BLUE_ICE
+                            || gm == Material.FROSTED_ICE) {
+                        water = true;   // no se construye sobre hielo (se derrite, resbala)
+                        break;
+                    }
                     // Agua SOBRE el suelo (mar/estanque adyacente): groundY baja hasta el fondo,
                     // asi que hay que mirar tambien encima para no plantar la casa junto al agua.
                     for (int y = gy + 1; y <= gy + 4 && !water; y++) {
@@ -1214,7 +1220,7 @@ public final class SettlementModule implements Listener {
     /** Panel HOLOGRAFICO de color (Text Display) flotando sobre la plaza: nombre del pueblo,
      *  alcalde, habitantes y prosperidad — como una pantalla de informacion, sin carteles. */
     private void infoPanel(int vid, Town t, String alcalde) {
-        final int gy = groundY(t.cx, t.cz);
+        final int gy = t.baseY;   // cota fija de la plaza (nada de groundY: no debe "trepar")
         // Limpia posibles carteles/poste viejos apilados (bug anterior) sobre el punto del cartel.
         for (int yy = gy; yy <= gy + 20; yy++) {
             final Material m = world.getBlockAt(t.cx, yy, t.cz - 4).getType();
@@ -1254,8 +1260,9 @@ public final class SettlementModule implements Listener {
     private void produceInto(int vid, Town t) {
         final int bx = t.cx + 3;
         final int bz = t.cz;
-        final int gy = groundY(bx, bz);
-        final org.bukkit.block.Block bb = world.getBlockAt(bx, gy + 1, bz);
+        // Cota FIJA (suelo de la plaza), NO groundY: si no, el barril se ve a si mismo como suelo
+        // y cada ciclo se planta otro encima -> pila vertical de barriles.
+        final org.bukkit.block.Block bb = world.getBlockAt(bx, t.baseY + 1, bz);
         if (bb.getType() != Material.BARREL) {
             bb.setType(Material.BARREL, false);
         }

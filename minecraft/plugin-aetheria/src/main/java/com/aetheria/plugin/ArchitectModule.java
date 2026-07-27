@@ -85,6 +85,7 @@ public final class ArchitectModule implements CommandExecutor, Listener {
         int half;
         int floors;
         String mat;
+        String style = "casona";   // casona (equilibrada) | aldeana (estilo pueblo) | torre (alta)
         Material[] palette;
         boolean furniture;
         boolean furnitureSet;
@@ -130,6 +131,7 @@ public final class ArchitectModule implements CommandExecutor, Listener {
         switch (args[0].toLowerCase()) {
             case "size" -> setSize(player, args.length > 1 ? args[1] : "");
             case "mat" -> setMat(player, args.length > 1 ? args[1] : "");
+            case "estilo" -> setStyle(player, args.length > 1 ? args[1] : "");
             case "muebles" -> setFurniture(player, args.length > 1 ? args[1] : "");
             case "confirmar" -> confirm(player);
             case "aqui" -> buildInFront(player);
@@ -185,6 +187,25 @@ public final class ArchitectModule implements CommandExecutor, Listener {
             return;
         }
         o.mat = m;
+        player.sendMessage("§6[Arquitecto] §f¿En que §eestilo§f?");
+        player.sendMessage(Component.text("  ")
+                .append(opt("§a[Casona]", "/arquitecto estilo casona"))
+                .append(Component.text("  "))
+                .append(opt("§a[Aldeana]", "/arquitecto estilo aldeana"))
+                .append(Component.text("  "))
+                .append(opt("§a[Torre]", "/arquitecto estilo torre")));
+        player.sendMessage("§7Casona: equilibrada. Aldeana: compacta, estilo pueblo. Torre: alta y "
+                + "estrecha.");
+    }
+
+    private void setStyle(Player player, String s) {
+        final Order o = orders.get(player.getUniqueId());
+        if (o == null || o.size == 0 || o.mat == null) { start(player); return; }
+        o.style = switch (s.toLowerCase()) {
+            case "aldeana", "aldea", "pueblo", "vanilla" -> "aldeana";
+            case "torre", "tower" -> "torre";
+            default -> "casona";
+        };
         player.sendMessage("§6[Arquitecto] §f¿La quieres §eamueblada§f? (habitaciones con muebles)");
         player.sendMessage(Component.text("  ")
                 .append(opt("§a[Si, amueblada]", "/arquitecto muebles si"))
@@ -201,11 +222,17 @@ public final class ArchitectModule implements CommandExecutor, Listener {
         final Random rng = new Random();
         o.half = 2 + o.size + rng.nextInt(2);     // pequena 3-4, mediana 4-5, grande 5-6
         o.floors = o.size + rng.nextInt(2);       // pequena 1-2, mediana 2-3, grande 3-4
-        o.palette = palette(o.mat, rng);
+        // El ESTILO cambia la silueta (y la paleta en "aldeana", para el look de aldea vanilla).
+        switch (o.style) {
+            case "torre" -> { o.floors += 2; o.half = Math.max(2, o.half - 1); }   // alta y estrecha
+            case "aldeana" -> { o.floors = Math.min(o.floors, 2); o.half = 2 + o.size; }  // compacta
+            default -> { }   // casona: equilibrada, como sale del dado
+        }
+        o.palette = "aldeana".equals(o.style) ? villagePalette(rng) : palette(o.mat, rng);
         final int p = price(o);
-        player.sendMessage(String.format("§6[Arquitecto] §fUna casa §e%s§f, %dx%d y %d plantas%s. "
-                + "Presupuesto: §a%d AET§f.", TIERS.get(o.mat).label(), o.half * 2 + 1, o.half * 2 + 1,
-                o.floors, o.furniture ? ", amueblada" : "", p));
+        player.sendMessage(String.format("§6[Arquitecto] §fUna casa §e%s§f estilo §e%s§f, %dx%d y %d "
+                + "plantas%s. Presupuesto: §a%d AET§f.", TIERS.get(o.mat).label(), o.style,
+                o.half * 2 + 1, o.half * 2 + 1, o.floors, o.furniture ? ", amueblada" : "", p));
         player.sendMessage(Component.text("  ")
                 .append(opt("§a[Confirmar por " + p + " AET]", "/arquitecto confirmar"))
                 .append(Component.text("  "))
@@ -346,6 +373,20 @@ public final class ArchitectModule implements CommandExecutor, Listener {
             t.corners()[rng.nextInt(t.corners().length)],
             t.roofs()[rng.nextInt(t.roofs().length)],
             t.accents()[rng.nextInt(t.accents().length)],
+        };
+    }
+
+    /** Paleta del estilo ALDEANA: recrea el look de las casas de aldea vanilla (entramado de
+     *  madera sobre base de piedra), independientemente de la gama elegida. */
+    private static Material[] villagePalette(Random rng) {
+        final Material[] walls = {Material.OAK_PLANKS, Material.SPRUCE_PLANKS, Material.BIRCH_PLANKS};
+        final Material[] corners = {Material.OAK_LOG, Material.SPRUCE_LOG, Material.STRIPPED_OAK_LOG};
+        final Material[] roofs = {Material.COBBLESTONE, Material.SPRUCE_PLANKS, Material.DARK_OAK_PLANKS};
+        final Material[] accents = {Material.COBBLESTONE, Material.MOSSY_COBBLESTONE,
+                Material.STRIPPED_SPRUCE_LOG};
+        return new Material[] {
+            walls[rng.nextInt(walls.length)], corners[rng.nextInt(corners.length)],
+            roofs[rng.nextInt(roofs.length)], accents[rng.nextInt(accents.length)],
         };
     }
 

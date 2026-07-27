@@ -97,14 +97,33 @@ public final class HudModule implements Listener, CommandExecutor {
                         || v.getScoreboardTags().contains("aetheria_baby"))
                 .count();
         // Lineas de mayor (arriba) a menor (abajo).
-        line(obj, "§eTu saldo:", 8);
-        line(obj, String.format("§a%.2f AET", balance), 7);
-        line(obj, "§0", 6);
+        line(obj, "§eTu saldo:", 9);
+        line(obj, String.format("§a%.2f AET", balance), 8);
+        line(obj, "§0", 7);
+        line(obj, "§eHora: §f" + worldTime(player.getWorld().getTime()), 6);
         line(obj, "§ePueblo: §f" + prosperity, 5);
         line(obj, "§eHabitantes: §f" + habitantes, 4);
         line(obj, "§eJugadores: §f" + Bukkit.getOnlinePlayers().size(), 3);
         line(obj, "§1", 2);
         line(obj, "§7gana AET: /sell · ayuda: /guia", 1);
+    }
+
+    /** Hora del mundo en formato HH:MM con icono de la parte del dia (tick 0 = 06:00). */
+    private static String worldTime(long ticks) {
+        final long t = ((ticks % 24000) + 24000) % 24000;
+        final int hour = (int) (((t / 1000) + 6) % 24);
+        final int minute = (int) ((t % 1000) * 60 / 1000);
+        final String fase;
+        if (t < 1000 || t >= 23000) {
+            fase = "§6(alba)";
+        } else if (t < 11000) {
+            fase = "§e(dia)";
+        } else if (t < 13500) {
+            fase = "§6(atardecer)";
+        } else {
+            fase = "§9(noche)";
+        }
+        return String.format("%02d:%02d %s", hour, minute, fase);
     }
 
     private void line(Objective obj, String text, int score) {

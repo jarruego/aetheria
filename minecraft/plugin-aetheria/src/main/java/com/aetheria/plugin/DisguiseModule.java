@@ -19,21 +19,29 @@ public final class DisguiseModule {
     private DisguiseModule() {
     }
 
-    // UUID del NPC -> sexo (para elegir skin) y -> nombre real (para el nametag). Y entityId -> UUID.
+    // UUID del NPC -> sexo, -> nombre real, -> oficio (clave en ingles). Y entityId -> UUID.
     private static final java.util.Map<UUID, String> BY_UUID = new ConcurrentHashMap<>();
     private static final java.util.Map<UUID, String> NAME_BY_UUID = new ConcurrentHashMap<>();
+    private static final java.util.Map<UUID, String> PROF_BY_UUID = new ConcurrentHashMap<>();
     private static final java.util.Map<Integer, UUID> BY_ENTITY = new ConcurrentHashMap<>();
 
     public static boolean available() {
         return Bukkit.getPluginManager().getPlugin("packetevents") != null;
     }
 
-    /** Marca a un NPC para que se vea humano (skin segun sexo, nombre real encima). */
+    /** Marca a un NPC para que se vea humano (skin de OFICIO si la hay, si no por sexo). */
     public static void humanize(Entity npc, String gender, String name) {
+        humanize(npc, gender, name, null);
+    }
+
+    public static void humanize(Entity npc, String gender, String name, String profKey) {
         if (npc != null) {
             BY_UUID.put(npc.getUniqueId(), (gender == null || gender.isEmpty()) ? "m" : gender);
             if (name != null && !name.isEmpty()) {
                 NAME_BY_UUID.put(npc.getUniqueId(), name);
+            }
+            if (profKey != null && !profKey.isEmpty()) {
+                PROF_BY_UUID.put(npc.getUniqueId(), profKey);
             }
         }
     }
@@ -41,6 +49,11 @@ public final class DisguiseModule {
     /** Sexo del NPC con ese UUID, o null si no es NPC nuestro. */
     public static String genderOf(UUID uuid) {
         return BY_UUID.get(uuid);
+    }
+
+    /** Oficio (clave en ingles) del NPC, o null. */
+    public static String profOf(UUID uuid) {
+        return PROF_BY_UUID.get(uuid);
     }
 
     /** Nombre real del NPC (para mostrarlo encima como nombre de jugador), o null. */

@@ -78,7 +78,7 @@ public final class MarketModule implements Listener {
         v.setRemoveWhenFarAway(false);
         v.setAI(false);   // quieto tras el mostrador
         v.addScoreboardTag(TRADER_TAG);
-        DisguiseModule.humanize(v, "m", "Mercader");   // aspecto humano (si hay plugin de disfraz)
+        DisguiseModule.humanize(v, "m", "Mercader", "trader");   // aspecto humano (si hay plugin)
     }
 
     @EventHandler

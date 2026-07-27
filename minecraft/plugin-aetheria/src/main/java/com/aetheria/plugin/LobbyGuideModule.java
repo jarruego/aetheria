@@ -85,7 +85,7 @@ public final class LobbyGuideModule {
         v.setVillagerLevel(5);
         v.addScoreboardTag(TAG);
         convo.registerConversable(v, NPC_ID, "Aeon");
-        DisguiseModule.humanize(v, "m", "Aeon");   // aspecto humano (si hay plugin de disfraz)
+        DisguiseModule.humanize(v, "m", "Aeon", "concierge");   // aspecto humano (si hay plugin)
         return v;
     }
 

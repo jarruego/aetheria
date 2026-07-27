@@ -58,7 +58,8 @@ public final class NpcRoutineModule {
         long wanderUntil;   // hasta cuando dura el paseo
         Location bed;       // cama de su casa (para dormir de noche); se busca una vez
         boolean bedSearched;
-        String prof = "vecino";   // oficio (para que hable de LO SUYO, no todos lo mismo)
+        String prof = "vecino";   // oficio en castellano (para que hable de LO SUYO)
+        String profKey = "";      // oficio en INGLES (clave de la skin de disfraz)
         String gender = "m";      // sexo (para la skin humana del disfraz)
         boolean stayAtWork;       // el tabernero no se va de paseo: se queda sirviendo
 
@@ -135,8 +136,9 @@ public final class NpcRoutineModule {
             Villager.Profession prof, Location townCenter, String gender) {
         final Worker w = new Worker(npcId, name, home, work, plazaSpot(townCenter), townCenter);
         w.gender = gender;
-        w.entity = spawnWorker(w);
         w.prof = profWord(prof);
+        w.profKey = prof.name().toLowerCase(java.util.Locale.ROOT);   // clave de skin (ingles)
+        w.entity = spawnWorker(w);   // ya con prof/profKey/gender puestos, para el disfraz
         if (w.entity instanceof Villager v) {
             v.setProfession(prof);
         }
@@ -464,7 +466,7 @@ public final class NpcRoutineModule {
                 final String pn = PlainTextComponentSerializer.plainText().serialize(ex.customName());
                 if (pn.equals(w.name) || pn.startsWith(w.name + " ")) {
                     convo.registerConversable(ex, w.npcId, w.name);
-                    DisguiseModule.humanize(ex, w.gender, w.name);   // aspecto humano (si hay plugin)
+                    DisguiseModule.humanize(ex, w.gender, w.name, w.profKey);   // aspecto humano
                     return ex;
                 }
             }
@@ -480,7 +482,7 @@ public final class NpcRoutineModule {
         v.setVillagerType(TYPES[h % TYPES.length]);   // ropaje variado segun el nombre
         v.setVillagerLevel(5);             // maestro: muestra el distintivo del oficio
         convo.registerConversable(v, w.npcId, w.name);
-        DisguiseModule.humanize(v, w.gender, w.name);   // aspecto humano (si hay plugin de disfraz)
+        DisguiseModule.humanize(v, w.gender, w.name, w.profKey);   // aspecto humano (skin de oficio)
         return v;
     }
 

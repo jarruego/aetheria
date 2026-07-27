@@ -34,7 +34,8 @@ public final class AetheriaPlugin extends JavaPlugin {
         // disfraza los aldeanos de jugador con skin. Dependencia BLANDA: sin el, siguen de aldeanos.
         if (getServer().getPluginManager().getPlugin("packetevents") != null) {
             final SkinCache skins = new SkinCache();
-            skins.loadAsync(this);
+            skins.loadProfSkins();   // skins por oficio (las que va pasando el dueno)
+            skins.loadAsync(this);   // set de arranque por sexo (fallback), en 2o plano
             com.github.retrooper.packetevents.PacketEvents.getAPI().getEventManager()
                     .registerListener(new HumanSkinListener(skins));
             getLogger().info("Aetheria: skins humanas de NPC activas (packetevents).");

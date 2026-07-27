@@ -48,7 +48,7 @@ public final class HumanSkinListener extends PacketListenerAbstract {
             }
             // 1) ADD_PLAYER con la skin (el cliente lo necesita para renderizar el jugador).
             final UserProfile profile = new UserProfile(uuid, npcName(uuid));
-            final String[] tex = skins.skinFor(gender, uuid.toString());
+            final String[] tex = skins.skinFor(DisguiseModule.profOf(uuid), gender, uuid.toString());
             if (tex != null) {
                 profile.getTextureProperties().add(new TextureProperty("textures", tex[0], tex[1]));
             }

@@ -197,7 +197,7 @@ public final class ArchitectModule implements CommandExecutor, Listener {
                 .append(Component.text("  "))
                 .append(opt("§b[Vanilla]", "/arquitecto estilo vanilla")));
         player.sendMessage("§7Casona: equilibrada. Aldeana: compacta estilo pueblo. Torre: alta. "
-                + "Vanilla: una casa de aldea REAL de Minecraft.");
+                + "Vanilla: una casa de aldea REAL de Minecraft (del tamano que has elegido).");
     }
 
     private void setStyle(Player player, String s) {
@@ -233,9 +233,17 @@ public final class ArchitectModule implements CommandExecutor, Listener {
         }
         o.palette = "aldeana".equals(o.style) ? villagePalette(rng) : palette(o.mat, rng);
         final int p = price(o);
-        player.sendMessage(String.format("§6[Arquitecto] §fUna casa §e%s§f estilo §e%s§f, %dx%d y %d "
-                + "plantas%s. Presupuesto: §a%d AET§f.", TIERS.get(o.mat).label(), o.style,
-                o.half * 2 + 1, o.half * 2 + 1, o.floors, o.furniture ? ", amueblada" : "", p));
+        if ("vanilla".equals(o.style)) {
+            // En vanilla no manda el dado: se sortea una plantilla REAL del grupo de ese tamano.
+            final String tam = o.size == 1 ? "pequena" : o.size == 2 ? "mediana" : "grande";
+            player.sendMessage(String.format("§6[Arquitecto] §fUna casa de aldea §eREAL de "
+                    + "Minecraft§f, %s (se sortea entre las plantillas de ese tamano). "
+                    + "Presupuesto: §a%d AET§f.", tam, p));
+        } else {
+            player.sendMessage(String.format("§6[Arquitecto] §fUna casa §e%s§f estilo §e%s§f, %dx%d y %d "
+                    + "plantas%s. Presupuesto: §a%d AET§f.", TIERS.get(o.mat).label(), o.style,
+                    o.half * 2 + 1, o.half * 2 + 1, o.floors, o.furniture ? ", amueblada" : "", p));
+        }
         player.sendMessage(Component.text("  ")
                 .append(opt("§a[Confirmar por " + p + " AET]", "/arquitecto confirmar"))
                 .append(Component.text("  "))
@@ -361,8 +369,9 @@ public final class ArchitectModule implements CommandExecutor, Listener {
                     undo.snapshot(player, fRegion, p, "tu casa");
                     if ("vanilla".equals(o.style)) {
                         // Casa de aldea REAL de Minecraft (plantilla del propio servidor).
+                        // El tamano elegido decide el grupo: small_1..8, medium_1..2 o big_1.
                         final String key = VanillaStructures.placeRandomHouse(
-                                player.getWorld(), fCx, fCz, fFloorY);
+                                player.getWorld(), fCx, fCz, fFloorY, o.size);
                         if (key == null) {
                             gateway.pay(BANCO, player.getUniqueId().toString(), p);   // reembolso
                             player.sendMessage("§c[Arquitecto] No pude colocar la casa vanilla; te he "

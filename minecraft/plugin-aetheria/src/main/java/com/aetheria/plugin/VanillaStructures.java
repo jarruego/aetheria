@@ -22,8 +22,9 @@ public final class VanillaStructures {
     private VanillaStructures() {
     }
 
-    /** Casas de aldea de LLANURA del vanilla (claves del registro del servidor). */
-    private static final String[] PLAINS_HOUSES = {
+    // Casas de aldea de LLANURA del vanilla (claves del registro del servidor), agrupadas por
+    // TAMANO: el arquitecto ofrece pequena/mediana/grande y se sortea una del grupo elegido.
+    private static final String[] SMALL = {
         "village/plains/houses/plains_small_house_1",
         "village/plains/houses/plains_small_house_2",
         "village/plains/houses/plains_small_house_3",
@@ -32,10 +33,34 @@ public final class VanillaStructures {
         "village/plains/houses/plains_small_house_6",
         "village/plains/houses/plains_small_house_7",
         "village/plains/houses/plains_small_house_8",
+    };
+    private static final String[] MEDIUM = {
         "village/plains/houses/plains_medium_house_1",
         "village/plains/houses/plains_medium_house_2",
+    };
+    private static final String[] BIG = {
         "village/plains/houses/plains_big_house_1",
     };
+
+    /** Todas las plantillas, de menor a mayor (para el catalogo del creativo). */
+    private static final String[] PLAINS_HOUSES = concat(SMALL, MEDIUM, BIG);
+
+    private static String[] concat(String[]... groups) {
+        final java.util.List<String> all = new java.util.ArrayList<>();
+        for (final String[] g : groups) {
+            java.util.Collections.addAll(all, g);
+        }
+        return all.toArray(new String[0]);
+    }
+
+    /** Grupo de plantillas segun el tamano pedido (1 pequena, 2 mediana, 3 grande). */
+    private static String[] group(int size) {
+        return switch (size) {
+            case 3 -> BIG;
+            case 2 -> MEDIUM;
+            default -> SMALL;
+        };
+    }
 
     // Caja generosa alrededor del punto de colocacion (las casas de llanura caben de sobra en
     // ±8 en horizontal). Se usa para nivelar, limpiar el andamiaje y registrar el anti-solape.
@@ -69,7 +94,16 @@ public final class VanillaStructures {
      * Devuelve la clave colocada, o null si algo falla.
      */
     public static String placeRandomHouse(World world, int cx, int cz, int floorY) {
-        final String key = PLAINS_HOUSES[ThreadLocalRandom.current().nextInt(PLAINS_HOUSES.length)];
+        return placeRandomHouse(world, cx, cz, floorY, 0);
+    }
+
+    /**
+     * Igual, pero del TAMANO pedido (1 pequena, 2 mediana, 3 grande; 0 = cualquiera): se sortea
+     * una plantilla de ese grupo, que es como el vanilla organiza sus casas de aldea.
+     */
+    public static String placeRandomHouse(World world, int cx, int cz, int floorY, int size) {
+        final String[] pool = size <= 0 ? PLAINS_HOUSES : group(size);
+        final String key = pool[ThreadLocalRandom.current().nextInt(pool.length)];
         // 1) Nivela y despeja un solar amplio a la cota del suelo (talla lomas/arboles, rellena
         //    huecos): la casa vanilla se apoya a ras y con sus patas cortas de cimiento.
         TerrainPlanner.prepare(world, cx - PAD, cz - PAD, cx + PAD, cz + PAD, floorY,

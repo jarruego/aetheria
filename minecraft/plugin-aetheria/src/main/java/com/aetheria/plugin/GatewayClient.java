@@ -219,6 +219,17 @@ public final class GatewayClient {
         return sendCapturing("/v1/production", gson.toJson(body));
     }
 
+    /**
+     * #14 - Reporta la poblacion REAL del mundo. Desde el crecimiento por hucha, quien decide
+     * cuanta gente hay es el plugin; el backend la usa para la economia (ingreso y gasto).
+     */
+    public CompletableFuture<JsonObject> setPopulation(int population) {
+        final JsonObject body = new JsonObject();
+        body.addProperty("world", "main");
+        body.addProperty("population", population);
+        return sendCapturing("/v1/village/population", gson.toJson(body));
+    }
+
     /** Registra un suceso en la cronica del mundo (nacimiento, jubilacion, muerte...). */
     public CompletableFuture<JsonObject> postEvent(String kind, String description) {
         final JsonObject body = new JsonObject();

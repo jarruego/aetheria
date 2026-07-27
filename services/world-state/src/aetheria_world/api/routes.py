@@ -414,6 +414,22 @@ async def world_prosperity() -> dict:
         return await sim_prosperity(conn)
 
 
+@router.post("/village/population")
+async def set_population(body: dict) -> dict:
+    """Poblacion REAL del mundo, que reporta el plugin (#14: el crecimiento lo decide el).
+
+    El backend la usa para la economia (ingreso base y gasto por habitante); ya no la sortea.
+    """
+    _require_db()
+    pop = max(0, min(500, int(body.get("population", 0))))
+    async with pool().acquire() as conn:
+        await conn.execute(
+            "update settlement set population = $1, updated_at = now() where world = $2",
+            pop, str(body.get("world", "main"))[:32],
+        )
+    return {"status": "ok", "population": pop}
+
+
 @router.get("/village")
 async def village() -> dict:
     """Estado del pueblo vivo: poblacion objetivo, prosperidad y riqueza."""

@@ -63,6 +63,12 @@ async def prosperity():
     return await _ws("GET", "/internal/world/prosperity")
 
 
+@router.post("/village/population", dependencies=[Depends(require_internal_token)])
+async def set_population(body: dict):
+    """El plugin reporta la poblacion REAL (es quien decide el crecimiento desde #14)."""
+    return await _ws("POST", "/internal/village/population", json=body)
+
+
 @router.get("/village", dependencies=[Depends(require_internal_token)])
 async def village():
     """Estado del pueblo vivo (poblacion, prosperidad) para que el plugin reconcilie."""

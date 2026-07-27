@@ -246,8 +246,21 @@ reunen en la **plaza** y se quejan de que hace falta una (sin taberna no hay can
 la aldea tiene cantero vivo. **Cotilleo**: las noticias corren de boca en boca entre vecinos que
 coinciden, solo si hay un jugador cerca para oirlo.
 
-**Crecimiento y caminos (#14).** Natalidad **proporcional a la poblacion** (crecimiento
-exponencial), techo de **8 aldeas x 8 vecinos = 64**; al llenarse el mundo las aldeas se
+**Crecimiento por HUCHA, aldea a aldea (#14).** Ya no hay dado ni objetivo global: **cada aldea
+ahorra**. El 55% de lo que produce cada vecino va a la hucha de su aldea y de ella sale el coste
+de vida de los que ya estan. Cuando la hucha cubre el **coste del siguiente vecino**
+(`35 * n^1.1`, sube con la poblacion), llega uno —nace de una pareja fertil de esa aldea o se
+instala un forastero— y la hucha vuelve a cero. Si la hucha entra en **numeros rojos**, la aldea
+pierde a un vecino (emigra). El marcador muestra ese porcentaje: es literalmente lo que falta
+para el proximo vecino. El **plugin es la autoridad** de la poblacion y la reporta al backend por
+`POST /v1/village/population` (el backend ya no la sortea; la usa para su economia).
+
+**El jugador puede invertir en una aldea.** **Agachado + clic derecho sobre el ALCALDE** dona
+25 AET a la hucha de SU aldea: el jugador empuja el crecimiento del pueblo que le interese (el
+clic normal sigue siendo hablar con el). El alcalde, cada pocos minutos, se acerca a un jugador
+cercano, le dice cuanto falta para el proximo vecino y le explica como colaborar.
+
+Techo de **8 aldeas x 8 vecinos = 64**; al llenarse el mundo las aldeas se
 densifican en vez de fundar mas. Al fundar una aldea se traza una **carretera** desde la mas
 cercana (3 de ancho, puentes de madera sobre el agua, faroles), construida por lotes. Todos los
 caminos llevan **rasante regulada**: medio bloque de desnivel por casilla con escalones de losa,

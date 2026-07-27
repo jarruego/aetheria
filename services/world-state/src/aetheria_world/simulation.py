@@ -255,35 +255,17 @@ _NEXT_LEVEL = {
 
 
 async def evolve_population(conn) -> dict:
-    """Ajusta la poblacion OBJETIVO del pueblo segun su prosperidad (crece o emigra)."""
+    """Ya NO decide la poblacion: la decide el PLUGIN (#14).
+
+    Cada aldea llena su hucha con el trabajo fisico de sus vecinos y, cuando cubre el coste del
+    siguiente (que sube con la poblacion), nace o llega uno; si la hucha entra en numeros rojos,
+    se pierde uno. El plugin reporta el total por `POST /v1/village/population`. Aqui solo se
+    devuelve el estado, para que el bucle de simulacion siga informando por el log.
+    """
     prov = await prosperity(conn)
     row = await conn.fetchrow("select population from settlement where world = 'main'")
     pop = row["population"] if row else settings.sim_min_population
-    old = pop
-    level = prov["level"]
-    # Crecimiento EXPONENCIAL (#14): cuanta mas gente hay, mas nace y mas rapido crece el pueblo
-    # (la natalidad es proporcional a la poblacion, como en la realidad). Un caserio de dos
-    # tarda en arrancar; un mundo de cuarenta vecinos se llena solo.
-    factor = 1.0 + pop / 8.0            # x1.25 con 2 vecinos, x5 con 32
-    step = max(1, pop // 12)            # y no llegan de uno en uno cuando el mundo ya es grande
-    r = random.random()
-    if level == "floreciente" and pop < settings.sim_max_population and r < 0.12 * factor:
-        pop = min(settings.sim_max_population, pop + step)
-    elif level == "prospero" and pop < settings.sim_max_population and r < 0.05 * factor:
-        pop = min(settings.sim_max_population, pop + step)
-    elif level == "en apuros" and pop > settings.sim_min_population and r < 0.25:
-        pop = max(settings.sim_min_population, pop - step)
-
-    if pop != old:
-        await conn.execute(
-            "update settlement set population = $1, updated_at = now() where world = 'main'", pop)
-        if pop > old:
-            await _event(conn, "growth",
-                         "El pueblo prospera: llega un nuevo vecino a instalarse.", {"population": pop})
-        else:
-            await _event(conn, "decline",
-                         "Tiempos duros: un vecino hace las maletas y emigra.", {"population": pop})
-    return {"population": pop, "level": level}
+    return {"population": pop, "level": prov["level"]}
 
 
 async def village_state(conn) -> dict:

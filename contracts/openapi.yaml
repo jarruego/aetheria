@@ -239,6 +239,37 @@ paths:
         "400": { description: Lote inválido }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /v1/village/population:
+    post:
+      tags: [world]
+      summary: Población REAL del mundo, que reporta el plugin (es quien la decide)
+      description: >-
+        Desde #14 el crecimiento lo decide el plugin: cada aldea ahorra en su hucha y, al cubrir
+        el coste del siguiente vecino, nace o llega uno (y al revés, si la hucha entra en números
+        rojos, se pierde uno). El backend ya no tira el dado: recibe el número real y lo usa para
+        la economía (ingreso base y gasto por habitante).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [population]
+              properties:
+                world: { type: string, example: main }
+                population: { type: integer, minimum: 0, example: 12 }
+      responses:
+        "200":
+          description: Población actualizada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  population: { type: integer, example: 12 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /v1/claims:
     get:
       tags: [social]

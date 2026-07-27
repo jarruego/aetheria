@@ -200,12 +200,24 @@ public final class SettlementModule implements Listener {
         final int cx;
         final int cz;
         final int baseY;
+        /** HUCHA de la aldea: lo que lleva ahorrado para traer al siguiente vecino. Sube con el
+         *  trabajo de sus habitantes y baja con lo que cuesta mantenerlos. */
+        double pool;
         Town(String name, int cx, int cz, int baseY) {
             this.name = name;
             this.cx = cx;
             this.cz = cz;
             this.baseY = baseY;
         }
+    }
+
+    /**
+     * Lo que le cuesta a una aldea de {@code n} vecinos traer al siguiente: casa, enseres y
+     * comida hasta que produzca. <b>Cada vecino cuesta mas que el anterior</b>, pero a la vez
+     * hay mas gente produciendo: el pueblo arranca despacio y luego coge ritmo, sin dispararse.
+     */
+    private static double growthCost(int n) {
+        return 35.0 * Math.pow(Math.max(1, n), 1.1);
     }
 
     private final List<Town> towns = new ArrayList<>();
@@ -619,50 +631,228 @@ public final class SettlementModule implements Listener {
             spendUpkeep();      // cada vecino gasta lo suyo en vivir (su peculio no solo sube)
             updateBios();       // refresca su ficha (edad/oficio/familia) para que hablen de si
 
-            // Todos los aldeanos son colonos (no hay vecinos "base"): el objetivo es la poblacion.
-            final int target = Math.max(2, json.get("population").getAsInt());
-            final int adults = colonos.size();
-            final int have = adults + children.size();
-            if (have < target) {
-                final var rng = ThreadLocalRandom.current();
-                // ¿A que aldea va el nuevo? La primera con sitio; si todas estan llenas, se FUNDA
-                // una nueva lejos (una pareja parte a prosperar a otra zona).
-                final int vid = assignTown();
-                final int enAldea = countInTown(vid);
-                // Los dos primeros de cada aldea son de distinto sexo (para formar familia).
-                if (enAldea < 2 || target - have >= 2) {
-                    final String g = enAldea == 1 ? oppositeOfSole(vid) : randGender(rng);
-                    growAdult(vid, colonos.size(), freshName(g, rng), randomSurname(rng), g,
-                            20 + rng.nextInt(40), "");
-                } else if (!bearChild()) {
-                    final String g = randGender(rng);   // sin pareja fertil, llega un inmigrante
-                    growAdult(vid, colonos.size(), freshName(g, rng), randomSurname(rng), g,
-                            20 + rng.nextInt(40), "");
-                }
-            } else if (have > target) {
-                if (!children.isEmpty()) {
-                    final Child c = children.remove(children.size() - 1);
-                    if (c.baby != null) {
-                        c.baby.remove();
-                    }
-                } else {
-                    shrink();
-                }
-            }
+            growTowns();        // cada aldea ahorra: al llenar la hucha, llega/nace un vecino
             final String level = json.has("level") ? json.get("level").getAsString() : "estable";
             worldWork(level);   // los NPC mejoran el mundo (amplian cultivos) con el tiempo
             townLife();         // alcalde de cada aldea + granero donde los oficios producen
+            mayorPitch();       // el alcalde invita a los jugadores a colaborar con su aldea
         }));
     }
 
-    /** Nace un nino de una PAREJA fertil (un hombre y una mujer, casados). Dos personas del
-     *  mismo sexo no tienen hijos biologicos. Devuelve true si hubo nacimiento. */
-    private boolean bearChild() {
+    /**
+     * CRECIMIENTO POR ALDEA. Cada aldea tiene una <b>hucha</b> que llena con el trabajo de sus
+     * vecinos y vacia con lo que cuesta mantenerlos. Cuando la hucha cubre el <b>coste del
+     * siguiente vecino</b> (que sube con la poblacion), llega uno: nace de una pareja fertil de
+     * esa aldea o, si no hay ninguna, se instala un forastero; y la hucha vuelve a empezar.
+     *
+     * <p>Al reves tambien: si la hucha se queda <b>en numeros rojos</b>, la aldea no da de comer
+     * a todos y pierde a un vecino (se marcha, o simplemente desaparece un dia). Es lo que hace
+     * que un pueblo que deja de trabajar mengue de verdad.
+     */
+    private void growTowns() {
+        final var rng = ThreadLocalRandom.current();
+        for (int vid = 0; vid < towns.size(); vid++) {
+            final Town t = towns.get(vid);
+            final int n = countInTown(vid);
+            t.pool -= LIVING_COST * n;   // lo que cuesta dar de comer y alojar a los que ya estan
+            final double need = growthCost(n);
+            if (t.pool >= need) {
+                t.pool -= need;
+                newNeighbour(vid, rng);
+            } else if (t.pool < 0) {
+                t.pool += need * 0.5;    // se liquida lo del que se va (y la hucha no se hunde)
+                loseNeighbour(vid, rng);
+            }
+        }
+        saveTowns();   // la hucha se persiste: el progreso no se pierde al reiniciar
+        final int pop = totalPopulation();
+        if (pop != lastReportedPop) {   // el backend necesita el numero real para su economia
+            lastReportedPop = pop;
+            gateway.setPopulation(pop);
+        }
+    }
+
+    private int lastReportedPop = -1;
+
+    /** Coste de vida por vecino y ciclo (60 s), que sale de la hucha de su aldea. */
+    private static final double LIVING_COST = 0.8;
+
+    /** Llega un vecino nuevo a esa aldea: nace de una pareja de alli o viene de fuera. Si la
+     *  aldea esta llena, el recien llegado se va a otra (o funda una nueva). */
+    private void newNeighbour(int vid, java.util.Random rng) {
+        int dest = vid;
+        if (countInTown(vid) >= PER_TOWN) {
+            dest = assignTown();   // aldea con sitio; si no hay, se funda una nueva lejos
+        }
+        final int enAldea = countInTown(dest);
+        if (enAldea < 2) {
+            // Los dos primeros de una aldea son de distinto sexo (para que pueda haber familia).
+            final String g = enAldea == 1 ? oppositeOfSole(dest) : randGender(rng);
+            growAdult(dest, colonos.size(), freshName(g, rng), randomSurname(rng), g,
+                    20 + rng.nextInt(40), "");
+            return;
+        }
+        if (!bearChild(dest)) {   // sin pareja fertil en la aldea, llega un forastero
+            final String g = randGender(rng);
+            growAdult(dest, colonos.size(), freshName(g, rng), randomSurname(rng), g,
+                    20 + rng.nextInt(40), "");
+        }
+    }
+
+    /** La aldea no da para tantos: se pierde un vecino (primero los ninos, luego alguien al azar). */
+    private void loseNeighbour(int vid, java.util.Random rng) {
+        for (int i = children.size() - 1; i >= 0; i--) {
+            if (children.get(i).vid == vid) {
+                final Child c = children.remove(i);
+                if (c.baby != null) {
+                    c.baby.remove();
+                }
+                Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
+                        "§7[Pueblo] La familia de §b" + c.name + " §7se marcha buscando mejor suerte."));
+                return;
+            }
+        }
+        final List<Colono> vecinos = new ArrayList<>();
+        for (final Colono c : colonos) {
+            if (c.vid == vid) {
+                vecinos.add(c);
+            }
+        }
+        if (vecinos.size() <= 2) {
+            return;   // una aldea nunca se queda por debajo de la pareja fundadora
+        }
+        final Colono gone = vecinos.get(rng.nextInt(vecinos.size()));
+        colonos.remove(gone);
+        routines.removeColono(gone.name);
+        convo.clearBio(gone.name);
+        inherit(gone);   // lo que ahorro se queda en la familia
+        final Colono widow = findColono(gone.spouse);
+        if (widow != null) {
+            widow.spouse = null;
+        } else {
+            demolish(gone);
+        }
+        save();
+        final String msg = gone.name + " se marcha de " + t(vid) + ": el pueblo no da para todos.";
+        gateway.postEvent("emigracion", msg);
+        routines.pushGossip(msg);
+        Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage("§7[Pueblo] " + msg));
+    }
+
+    // --- DONACIONES: el jugador puede acelerar el crecimiento de UNA aldea concreta ---
+
+    /** Lo que aporta el jugador cada vez que dona a una aldea. */
+    private static final double DONATION = 25;
+
+    /**
+     * DONACION a una aldea concreta: <b>agachado + clic derecho sobre su ALCALDE</b>. El dinero
+     * sale de la cuenta del jugador y entra en la <b>hucha</b> del pueblo, asi que adelanta de
+     * verdad la llegada del proximo vecino: el jugador puede empujar el crecimiento de LA aldea
+     * que le interese.
+     *
+     * <p>Va agachado a proposito: el clic normal sobre el alcalde sigue siendo hablar con el, y
+     * asi nadie dona sin querer. No compra ventajas: lo adelantado vuelve como excedente del
+     * granero del pueblo, que el jugador puede recoger.
+     */
+    @EventHandler(priority = org.bukkit.event.EventPriority.LOW)
+    public void onDonate(org.bukkit.event.player.PlayerInteractEntityEvent e) {
+        if (e.getHand() != org.bukkit.inventory.EquipmentSlot.HAND || !e.getPlayer().isSneaking()) {
+            return;   // solo mano principal y AGACHADO (de pie, el clic es para conversar)
+        }
+        final org.bukkit.entity.Entity ent = e.getRightClicked();
+        if (!(ent instanceof Villager) || ent.customName() == null) {
+            return;
+        }
+        final String name = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
+                .plainText().serialize(ent.customName());
+        int found = -1;
+        for (final var entry : alcaldes.entrySet()) {
+            if (name.startsWith(entry.getValue())) {
+                found = entry.getKey();
+                break;
+            }
+        }
+        if (found < 0 || found >= towns.size()) {
+            return;   // no es un alcalde: que siga el flujo normal
+        }
+        final int vid = found;
+        final Player p = e.getPlayer();
+        e.setCancelled(true);   // esta donando, no conversando
+        gateway.pay(p.getUniqueId().toString(), "00000000-0000-0000-0000-000000000000", DONATION)
+                .whenComplete((json, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    final String alcalde = alcaldes.getOrDefault(vid, "El alcalde");
+                    if (err != null || json == null || !json.get("ok").getAsBoolean()) {
+                        p.sendMessage("§c[" + alcalde + "] No llevas esos " + (int) DONATION
+                                + " AET encima, amigo.");
+                        return;
+                    }
+                    final Town t = towns.get(vid);
+                    t.pool += DONATION;
+                    saveTowns();
+                    final int falta = (int) Math.max(0, growthCost(countInTown(vid)) - t.pool);
+                    p.sendMessage("§a[" + alcalde + "] §f¡Gracias! " + t.name + " lo aprovechara "
+                            + "bien. §7(faltan " + falta + " AET para el proximo vecino)");
+                    gateway.postEvent("donacion",
+                            p.getName() + " ha donado " + (int) DONATION + " AET a " + t.name + ".");
+                    routines.pushGossip(p.getName() + " ha ayudado a " + t.name + " con su dinero.");
+                    world.spawnParticle(org.bukkit.Particle.HAPPY_VILLAGER,
+                            ent.getLocation().add(0, 1.5, 0), 14, 0.4, 0.4, 0.4, 0.02);
+                }));
+    }
+
+
+    /** El ALCALDE se acerca de vez en cuando a un jugador cercano y le explica que puede
+     *  colaborar con el crecimiento de su aldea. Con cooldown, y solo si hay alguien cerca. */
+    private void mayorPitch() {
+        final long now = System.currentTimeMillis();
+        if (now - lastPitch < 240_000L) {
+            return;   // como mucho, una invitacion cada 4 minutos
+        }
+        for (final var entry : alcaldes.entrySet()) {
+            final int vid = entry.getKey();
+            if (vid >= towns.size()) {
+                continue;
+            }
+            final org.bukkit.entity.Mob alc = routines.entityOf(entry.getValue());
+            if (alc == null || alc.isDead()) {
+                continue;
+            }
+            for (final Player p : world.getPlayers()) {
+                if (p.getLocation().distanceSquared(alc.getLocation()) > 400) {
+                    continue;   // a 20 bloques
+                }
+                lastPitch = now;
+                alc.getPathfinder().moveTo(p.getLocation(), 1.0);   // se acerca a saludar
+                final int falta = (int) Math.max(0,
+                        growthCost(countInTown(vid)) - towns.get(vid).pool);
+                p.sendMessage("§6[" + entry.getValue() + "] §f" + p.getName() + ", soy el alcalde de "
+                        + towns.get(vid).name + ". Nos faltan §e" + falta + " AET§f para que se "
+                        + "instale otro vecino.");
+                p.sendMessage("§7Si quieres echar una mano, ponte §fagachado y haz clic derecho "
+                        + "sobre mi§7: donas " + (int) DONATION + " AET a la aldea. Lo que adelantes "
+                        + "vuelve al granero del pueblo.");
+                return;
+            }
+        }
+    }
+
+    private long lastPitch;
+
+    /** #11 - Suma a la hucha de una aldea lo que sus vecinos han producido con su trabajo. */
+    public void addTownPool(int vid, double amount) {
+        if (vid >= 0 && vid < towns.size() && amount > 0) {
+            towns.get(vid).pool += amount;
+        }
+    }
+
+    /** Nace un nino de una PAREJA fertil (un hombre y una mujer, casados) DE ESA ALDEA. Dos
+     *  personas del mismo sexo no tienen hijos biologicos. Devuelve true si hubo nacimiento. */
+    private boolean bearChild(int vid) {
         final var rng = ThreadLocalRandom.current();
         // Madres posibles: mujer no jubilada, casada con un hombre no jubilado.
         final List<Colono> mothers = new ArrayList<>();
         for (final Colono c : colonos) {
-            if (c.retired || !"f".equals(c.gender) || c.spouse == null) {
+            if (c.vid != vid || c.retired || !"f".equals(c.gender) || c.spouse == null) {
                 continue;
             }
             final Colono sp = findColono(c.spouse);
@@ -1709,43 +1899,22 @@ public final class SettlementModule implements Listener {
         }
         final int hab = countInTown(near);
         final double wealth = townWealth(near);
-        final double per = hab <= 0 ? 0 : wealth / hab;
+        final double need = growthCost(hab);
+        final double pool = towns.get(near).pool;
         return new String[] {
             towns.get(near).name,
             String.valueOf(hab),
             String.format("%.0f", wealth),
             townLevel(wealth, hab),
             alcaldes.getOrDefault(near, ""),
-            String.format("%.0f", townProgress(per)),
-            townNextLevel(per),
+            // Progreso de la HUCHA hacia el proximo vecino: al 100% llega uno y vuelve a 0.
+            String.format("%.0f", Math.max(0, Math.min(100, pool * 100 / need))),
+            String.format("%.0f/%.0f", Math.max(0, pool), need),
         };
     }
 
     // Escalones de prosperidad de UNA aldea, en AET ahorrados POR VECINO.
     private static final double[] TOWN_STEPS = {8, 30, 80};
-
-    /** Cuanto le falta a la aldea para su siguiente escalon de prosperidad (0-100). */
-    private static double townProgress(double per) {
-        double low = 0;
-        for (final double step : TOWN_STEPS) {
-            if (per < step) {
-                return Math.max(0, Math.min(100, (per - low) * 100 / (step - low)));
-            }
-            low = step;
-        }
-        return 100;
-    }
-
-    /** El siguiente escalon al que aspira la aldea. */
-    private static String townNextLevel(double per) {
-        if (per < TOWN_STEPS[0]) {
-            return "estable";
-        }
-        if (per < TOWN_STEPS[1]) {
-            return "prospera";
-        }
-        return per < TOWN_STEPS[2] ? "floreciente" : "floreciente";
-    }
 
     /** Riqueza de una aldea = lo que han ahorrado SUS vecinos con su trabajo (no un numero
      *  global): las aldeas que producen mas son de verdad mas ricas que las demas. */
@@ -2065,26 +2234,6 @@ public final class SettlementModule implements Listener {
         return h;
     }
 
-    private void shrink() {
-        final String name = routines.removeNewestColono();
-        if (name != null) {
-            convo.clearBio(name);
-            if (!colonos.isEmpty()) {
-                final Colono gone = colonos.remove(colonos.size() - 1);
-                final Colono widow = findColono(gone.spouse);
-                if (widow != null) {
-                    widow.spouse = null;   // su pareja se queda con la casa
-                } else {
-                    demolish(gone);        // al emigrar (vivia solo), su casa se derriba
-                }
-            }
-            save();
-            Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
-                    "§7[Pueblo] " + name + " ha hecho las maletas y ha emigrado a otra tierra."));
-            plugin.getLogger().info("[Aetheria] Pueblo vivo: -1 colono (" + name + " emigra).");
-        }
-    }
-
 
     /** Edad de muerte: 65..110, concentrada en 80-90 (media de dos uniformes, pico ~87). */
     private static int randomDeathAge(java.util.Random rng) {
@@ -2374,8 +2523,12 @@ public final class SettlementModule implements Listener {
                     while ((line = r.readLine()) != null) {
                         final String[] f = line.split(";", -1);
                         if (f.length >= 4 && !f[0].isBlank()) {
-                            towns.add(new Town(f[0], Integer.parseInt(f[1]),
-                                    Integer.parseInt(f[2]), Integer.parseInt(f[3])));
+                            final Town t = new Town(f[0], Integer.parseInt(f[1]),
+                                    Integer.parseInt(f[2]), Integer.parseInt(f[3]));
+                            if (f.length >= 5 && !f[4].isEmpty()) {
+                                t.pool = Double.parseDouble(f[4]);   // hucha de crecimiento
+                            }
+                            towns.add(t);
                         }
                     }
                 }
@@ -2394,7 +2547,7 @@ public final class SettlementModule implements Listener {
     private void saveTowns() {
         try (FileWriter w = new FileWriter(nameFile, false)) {
             for (final Town t : towns) {
-                w.write(t.name + ";" + t.cx + ";" + t.cz + ";" + t.baseY + "\n");
+                w.write(t.name + ";" + t.cx + ";" + t.cz + ";" + t.baseY + ";" + t.pool + "\n");
             }
         } catch (Exception ex) {
             plugin.getLogger().warning("[Aetheria] no pude guardar aldeas: " + ex.getMessage());

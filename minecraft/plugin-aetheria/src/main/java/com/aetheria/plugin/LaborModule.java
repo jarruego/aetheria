@@ -367,6 +367,8 @@ public final class LaborModule {
             return;
         }
         settlement.addWealth(lab.name, value * 0.45);   // lo que se queda el aldeano
+        settlement.addTownPool(lab.vid, value * 0.55);  // y lo que va al comun de la aldea
+                                                        // (la hucha del proximo vecino)
         final String sector = surplus > 0 ? "comercio" : sectorOf(lab.profKey);
         pending.computeIfAbsent(sector, k -> new double[1])[0] += value;
         if (good != null) {

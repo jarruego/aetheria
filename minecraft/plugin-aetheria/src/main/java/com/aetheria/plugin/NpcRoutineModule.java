@@ -390,18 +390,6 @@ public final class NpcRoutineModule {
         return center.clone().add(Math.cos(ang) * r, 0, Math.sin(ang) * r);
     }
 
-    /** Da de baja al colono mas reciente (emigra). Nunca toca al nucleo. Devuelve su nombre. */
-    public String removeNewestColono() {
-        if (workers.size() <= BASE) {
-            return null;
-        }
-        final Worker w = workers.remove(workers.size() - 1);
-        if (w.entity != null) {
-            w.entity.remove();
-        }
-        return w.name;
-    }
-
     /** Da de baja a un colono concreto por su nombre (p.ej. al morir). */
     public boolean removeColono(String name) {
         for (int i = workers.size() - 1; i >= BASE; i--) {

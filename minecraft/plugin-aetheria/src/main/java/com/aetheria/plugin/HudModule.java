@@ -112,8 +112,9 @@ public final class HudModule implements Listener, CommandExecutor {
             line(obj, "§6▸ " + town[0], i--);
             line(obj, "§7 Vecinos: §f" + town[1] + " §7· §f" + town[2] + " AET", i--);
             line(obj, "§7 Va §f" + town[3], i--);
-            // El progreso de crecimiento es de la ALDEA que pisas, no del mundo entero.
-            line(obj, "§7 " + bar(tp) + " §f" + (int) tp + "% §7→ " + town[6], i--);
+            // Lo que la aldea lleva ahorrado para el PROXIMO vecino: al 100% llega uno.
+            line(obj, "§7 Proximo vecino: §f" + (int) tp + "%", i--);
+            line(obj, "§7 " + bar(tp) + " §8" + town[6], i--);
             if (!town[4].isEmpty()) {
                 line(obj, "§7 Alcalde: §f" + town[4], i--);
             }

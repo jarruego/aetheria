@@ -104,6 +104,7 @@ public final class AetheriaPlugin extends JavaPlugin {
             }
 
             // Fase 7: aldea fisica + vecinos con rutina diaria en el mundo principal (no en creativo).
+            SettlementModule settlementRef = null;   // lo usa el HUD para los datos por aldea
             if (!role.equals("creative") && getConfig().getBoolean("npc-routines.enabled", true)) {
                 final org.bukkit.World gameWorld = getServer().getWorlds().get(0);
                 final VillageModule village = new VillageModule(this, gameWorld);
@@ -122,6 +123,7 @@ public final class AetheriaPlugin extends JavaPlugin {
                         new SettlementModule(this, gateway, village, routines, convo, gameWorld, market);
                 getServer().getPluginManager().registerEvents(settlement, this);   // protege sus casas
                 settlement.start();
+                settlementRef = settlement;
 
                 // #11: los aldeanos TRABAJAN fisicamente (cosechan, talan, pican, funden) y de
                 // ese trabajo real vive la economia del pueblo.
@@ -166,7 +168,7 @@ public final class AetheriaPlugin extends JavaPlugin {
             Objects.requireNonNull(getCommand("worth")).setExecutor(shop);
             Objects.requireNonNull(getCommand("shop")).setExecutor(shop);
 
-            final HudModule hud = new HudModule(this, gateway);
+            final HudModule hud = new HudModule(this, gateway, settlementRef);
             getServer().getPluginManager().registerEvents(hud, this);
             Objects.requireNonNull(getCommand("guia")).setExecutor(hud);
             hud.start();

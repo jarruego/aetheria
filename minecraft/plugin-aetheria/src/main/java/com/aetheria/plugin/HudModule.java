@@ -29,10 +29,13 @@ public final class HudModule implements Listener, CommandExecutor {
 
     private final AetheriaPlugin plugin;
     private final GatewayClient gateway;
+    /** Pueblo vivo (puede ser null en el mundo creativo): da los datos POR ALDEA del marcador. */
+    private final SettlementModule settlement;
 
-    public HudModule(AetheriaPlugin plugin, GatewayClient gateway) {
+    public HudModule(AetheriaPlugin plugin, GatewayClient gateway, SettlementModule settlement) {
         this.plugin = plugin;
         this.gateway = gateway;
+        this.settlement = settlement;
     }
 
     /** Refresca el marcador de todos los jugadores cada 5 s. */
@@ -98,23 +101,34 @@ public final class HudModule implements Listener, CommandExecutor {
         final Objective obj = board.registerNewObjective("aetheria", "dummy",
                 Component.text("§6✦ §eAetheria §6✦"));
         obj.setDisplaySlot(DisplaySlot.SIDEBAR);
-        // Habitantes de Aetheria = aldeanos vivos del mundo (con etiqueta de vecino o bebe).
-        final long habitantes = player.getWorld().getEntitiesByClass(org.bukkit.entity.Villager.class)
-                .stream()
-                .filter(v -> v.getScoreboardTags().contains("aetheria_worker")
-                        || v.getScoreboardTags().contains("aetheria_baby"))
-                .count();
+        // #15 - Datos de la ALDEA en cuyo radio esta el jugador (cambian al cambiar de aldea) y,
+        // debajo, el total de la COMARCA. Si esta a campo abierto, solo se ve la comarca.
+        final String[] town = settlement != null ? settlement.townInfo(player) : null;
         // Lineas de mayor (arriba) a menor (abajo).
-        line(obj, "§eTu saldo:", 9);
-        line(obj, String.format("§a%.2f AET", balance), 8);
-        line(obj, "§0", 7);
-        line(obj, "§eHora: §f" + worldTime(player.getWorld().getTime()), 6);
-        line(obj, "§ePueblo: §f" + prosperity, 5);
-        line(obj, "§eCrecimiento: §f" + bar(progress) + " §7" + (int) progress + "%", 4);
-        line(obj, "§7  → " + nextLevel, 3);
-        line(obj, "§eHabitantes: §f" + habitantes, 2);
-        line(obj, "§eJugadores: §f" + Bukkit.getOnlinePlayers().size(), 1);
-        line(obj, "§7gana AET: /sell · ayuda: /guia", 0);
+        int i = 13;
+        line(obj, "§eTu saldo:", i--);
+        line(obj, String.format("§a%.2f AET", balance), i--);
+        line(obj, "§eHora: §f" + worldTime(player.getWorld().getTime()), i--);
+        line(obj, "§0", i--);
+        if (town != null) {
+            line(obj, "§6▸ " + town[0], i--);
+            line(obj, "§7 Vecinos: §f" + town[1] + " §7· §f" + town[2] + " AET", i--);
+            line(obj, "§7 Va §f" + town[3], i--);
+            if (!town[4].isEmpty()) {
+                line(obj, "§7 Alcalde: §f" + town[4], i--);
+            }
+        } else {
+            line(obj, "§6▸ A campo abierto", i--);
+            line(obj, "§7 (entra en una aldea)", i--);
+        }
+        line(obj, "§1", i--);
+        line(obj, "§6▸ Comarca de Aetheria", i--);
+        line(obj, "§7 " + (settlement != null ? settlement.townCount() : 0) + " aldeas · §f"
+                + (settlement != null ? settlement.totalPopulation() : 0) + " §7habitantes", i--);
+        line(obj, "§7 Economia: §f" + prosperity, i--);
+        line(obj, "§7 " + bar(progress) + " §f" + (int) progress + "% §7→ " + nextLevel, i--);
+        line(obj, "§2", i--);
+        line(obj, "§7Jugadores: §f" + Bukkit.getOnlinePlayers().size(), i--);
     }
 
     /** Barra de progreso de 10 casillas (lo que le falta al pueblo para el siguiente escalon). */

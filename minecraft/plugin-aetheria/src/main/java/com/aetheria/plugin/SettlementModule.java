@@ -185,6 +185,7 @@ public final class SettlementModule implements Listener {
     private final List<int[]> vacants = new ArrayList<>();   // {x, y, z, floors}
     private final java.util.Map<java.util.UUID, Integer> inTown = new java.util.HashMap<>();
 
+    private static final double TOWN_RADIUS = 48;   // desde donde se considera que estas "en" la aldea
     private static final int PER_TOWN = 8;   // al llenarse, una pareja funda otra aldea lejos
     private static final int MAX_TOWNS = 8;  // techo de la comarca: 8 aldeas x 8 vecinos
     private static final String[] TOWN_NAMES = {"Rocavieja", "Valverde", "Fuenteclara", "Montenar",
@@ -610,6 +611,7 @@ public final class SettlementModule implements Listener {
             matureChildren();   // los ninos que ya han crecido se mudan a su casa
             maybeMarry();       // dos solteros pueden casarse y mudarse a una casa mediana nueva
             repairHouses();     // mantenimiento: seca las casas que se hayan inundado
+            spendUpkeep();      // cada vecino gasta lo suyo en vivir (su peculio no solo sube)
             updateBios();       // refresca su ficha (edad/oficio/familia) para que hablen de si
 
             // Todos los aldeanos son colonos (no hay vecinos "base"): el objetivo es la poblacion.
@@ -1676,6 +1678,80 @@ public final class SettlementModule implements Listener {
         }
     }
 
+    // --- #15: datos por ALDEA y de toda la COMARCA (para el marcador) ---
+
+    /** Ficha de la aldea en cuyo radio esta el jugador: nombre, vecinos, riqueza, prosperidad y
+     *  alcalde. Devuelve null si esta a campo abierto (fuera de toda aldea). */
+    public String[] townInfo(Player p) {
+        if (!p.getWorld().equals(world)) {
+            return null;
+        }
+        int near = -1;
+        double bestD = TOWN_RADIUS;
+        for (int i = 0; i < towns.size(); i++) {
+            final Town t = towns.get(i);
+            final double d = Math.hypot(p.getX() - (t.cx + 0.5), p.getZ() - (t.cz + 0.5));
+            if (d <= TOWN_RADIUS && d < bestD) {
+                bestD = d;
+                near = i;
+            }
+        }
+        if (near < 0) {
+            return null;
+        }
+        final int hab = countInTown(near);
+        final double wealth = townWealth(near);
+        return new String[] {
+            towns.get(near).name,
+            String.valueOf(hab),
+            String.format("%.0f", wealth),
+            townLevel(wealth, hab),
+            alcaldes.getOrDefault(near, ""),
+        };
+    }
+
+    /** Riqueza de una aldea = lo que han ahorrado SUS vecinos con su trabajo (no un numero
+     *  global): las aldeas que producen mas son de verdad mas ricas que las demas. */
+    private double townWealth(int vid) {
+        double sum = 0;
+        for (final Colono c : colonos) {
+            if (c.vid == vid) {
+                sum += c.wealth;
+            }
+        }
+        return sum;
+    }
+
+    /** Prosperidad de UNA aldea, por riqueza POR VECINO (una aldea pequena y rica prospera). */
+    private static String townLevel(double wealth, int hab) {
+        final double per = hab <= 0 ? 0 : wealth / hab;
+        if (per < 8) {
+            return "en apuros";
+        }
+        if (per < 30) {
+            return "estable";
+        }
+        return per < 80 ? "prospera" : "floreciente";
+    }
+
+    /** Numero de aldeas de la comarca. */
+    public int townCount() {
+        return towns.size();
+    }
+
+    /** Poblacion total de la comarca (adultos + ninos). */
+    public int totalPopulation() {
+        return colonos.size() + children.size();
+    }
+
+    /** Cada vecino GASTA lo suyo en vivir (comida, lena, ropa). Sin esto el peculio solo subiria
+     *  y toda aldea acabaria "floreciente": asi la riqueza de una aldea refleja si trabaja. */
+    private void spendUpkeep() {
+        for (final Colono c : colonos) {
+            c.wealth = Math.max(0, c.wealth - 0.6);
+        }
+    }
+
     /** Instantanea de los colonos EN ACTIVO (ni jubilados ni muertos) para el trabajo fisico. */
     public List<LaborModule.Laborer> activeLaborers() {
         final List<LaborModule.Laborer> out = new ArrayList<>();
@@ -2063,11 +2139,11 @@ public final class SettlementModule implements Listener {
             return;
         }
         int near = -1;
-        double bestD = 49;
+        double bestD = TOWN_RADIUS + 1;
         for (int i = 0; i < towns.size(); i++) {
             final Town t = towns.get(i);
             final double d = Math.hypot(p.getX() - (t.cx + 0.5), p.getZ() - (t.cz + 0.5));
-            if (d <= 48 && d < bestD) {
+            if (d <= TOWN_RADIUS && d < bestD) {
                 bestD = d;
                 near = i;
             }

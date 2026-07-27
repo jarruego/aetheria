@@ -92,6 +92,7 @@ public final class SettlementModule implements Listener {
     private final NpcRoutineModule routines;
     private final ConversationManager convo;
     private final World world;
+    private final MarketModule market;
     private int farmRadius = 2;   // los cultivos del pueblo se amplian con el tiempo
     private int civic = 0;        // mejoras civicas de la plaza ya construidas (persistido)
 
@@ -162,6 +163,9 @@ public final class SettlementModule implements Listener {
     private final File nameFile;   // village.txt: una linea por aldea "nombre;cx;cz;baseY"
     private final File buildingsFile;   // buildings.txt: "vid;profKey;cx;cz;baseY" por edificio
     private final File vacantsFile;   // vacants.txt: "x;y;z;floors" casas en venta (sin dueno)
+    private final File civicFile2;    // civic-buildings.txt: "vid:clave" edificios civicos ya construidos
+    // Edificios civicos ya levantados por aldea (granero, taberna, mercado). Clave "vid:tipo".
+    private final java.util.Set<String> civicBuilt = new java.util.HashSet<>();
     // Casas EN VENTA (sin propietario): al casarse, las dos casitas de los novios no se demuelen,
     // quedan vacantes y se reasignan a los proximos colonos (asi no aparecen/desaparecen por magia).
     private final List<int[]> vacants = new ArrayList<>();   // {x, y, z, floors}
@@ -359,19 +363,21 @@ public final class SettlementModule implements Listener {
     }
 
     public SettlementModule(AetheriaPlugin plugin, GatewayClient gateway, VillageModule village,
-            NpcRoutineModule routines, ConversationManager convo, World world) {
+            NpcRoutineModule routines, ConversationManager convo, World world, MarketModule market) {
         this.plugin = plugin;
         this.gateway = gateway;
         this.village = village;
         this.routines = routines;
         this.convo = convo;
         this.world = world;
+        this.market = market;
         plugin.getDataFolder().mkdirs();
         this.dataFile = new File(plugin.getDataFolder(), "colonos.txt");
         this.civicFile = new File(plugin.getDataFolder(), "civic.txt");
         this.nameFile = new File(plugin.getDataFolder(), "village.txt");
         this.buildingsFile = new File(plugin.getDataFolder(), "buildings.txt");
         this.vacantsFile = new File(plugin.getDataFolder(), "vacants.txt");
+        this.civicFile2 = new File(plugin.getDataFolder(), "civic-buildings.txt");
     }
 
     public void start() {
@@ -383,6 +389,7 @@ public final class SettlementModule implements Listener {
         loadTowns();       // las aldeas (nombre + centro) ANTES que los colonos y edificios
         loadBuildings();   // los edificios de oficio (permanentes)
         loadVacants();     // casas en venta que quedaron de bodas anteriores
+        loadCivicBuildings();   // que edificios civicos (granero/taberna/mercado) ya existen
         load();            // reaparecen los colonos ya existentes en sus casas (sin reconstruir)
         loadCivic();
         if (fresh && colonos.isEmpty()) {
@@ -1304,6 +1311,7 @@ public final class SettlementModule implements Listener {
                 }
             }
             final String alcalde = alc != null ? alc.name : "";
+            ensureCivics(vid, t);   // granero (siempre), taberna (>=4 hab), mercado (>=6 hab)
             infoPanel(vid, t, alcalde);
             final String prev = alcaldes.get(vid);
             if (!alcalde.isEmpty() && !alcalde.equals(prev)) {
@@ -1357,9 +1365,80 @@ public final class SettlementModule implements Listener {
         panel.teleport(loc);
     }
 
-    /** Cada oficio deposita 1 unidad de su produccion en el granero (barril) de su aldea. */
+    /** Construye los edificios civicos que la POBLACION de la aldea justifica (una vez cada uno):
+     *  el GRANERO desde el principio, la TABERNA con 4 habitantes y el MERCADO con 6. Posiciones
+     *  fijas alrededor de la plaza; se registran para que las casas no los pisen. */
+    private void ensureCivics(int vid, Town t) {
+        ensureCivic(vid, "granero", t.cx - 12, t.cz, t.baseY, 4,
+                "El pueblo construye un granero en " + t.name + ".");
+        if (countInTown(vid) >= 4) {
+            ensureCivic(vid, "taberna", t.cx + 9, t.cz, t.baseY, 5,
+                    "El pueblo abre una taberna en " + t.name + ".");
+        }
+        if (countInTown(vid) >= 6) {
+            ensureCivic(vid, "mercado", t.cx - 3, t.cz + 12, t.baseY, 5,
+                    "El pueblo levanta un mercado en " + t.name + ".");
+        }
+        // El mercader (entidad) puede desaparecer entre reinicios: se re-asegura si hay mercado.
+        if (civicBuilt.contains(vid + ":mercado")) {
+            market.ensureTrader(new Location(world, t.cx - 3 + 0.5, t.baseY + 1, t.cz + 12 + 0.5),
+                    t.name);
+        }
+    }
+
+    private void ensureCivic(int vid, String type, int cx, int cz, int baseY, int half, String msg) {
+        final String key = vid + ":" + type;
+        if (civicBuilt.contains(key)) {
+            return;
+        }
+        switch (type) {
+            case "granero" -> village.buildGranary(cx, cz, baseY);
+            case "taberna" -> village.buildTavern(cx, cz, baseY);
+            case "mercado" -> village.buildMarket(cx, cz, baseY);
+            default -> { return; }
+        }
+        plugin.buildRegistry().add(new int[] {cx - half - 1, baseY - 2, cz - half - 1,
+                cx + half + 1, baseY + 16, cz + half + 1});
+        placed.add(new int[] {cx, cz});
+        civicBuilt.add(key);
+        saveCivicBuildings();
+        gateway.postEvent("edificio", msg);
+    }
+
+    private String t(int vid) {
+        return towns.get(Math.max(0, Math.min(vid, towns.size() - 1))).name;
+    }
+
+    private void loadCivicBuildings() {
+        civicBuilt.clear();
+        if (!civicFile2.exists()) {
+            return;
+        }
+        try (BufferedReader r = new BufferedReader(new FileReader(civicFile2))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (!line.isBlank()) {
+                    civicBuilt.add(line.trim());
+                }
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Aetheria] no pude cargar edificios civicos: " + e.getMessage());
+        }
+    }
+
+    private void saveCivicBuildings() {
+        try (FileWriter w = new FileWriter(civicFile2, false)) {
+            for (final String k : civicBuilt) {
+                w.write(k + "\n");
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Aetheria] no pude guardar edificios civicos: " + e.getMessage());
+        }
+    }
+
+    /** Cada oficio deposita 1 unidad de su produccion en el barril central del GRANERO de su aldea. */
     private void produceInto(int vid, Town t) {
-        final int bx = t.cx + 3;
+        final int bx = t.cx - 12;   // barril central del granero (ver ensureCivics)
         final int bz = t.cz;
         // Cota FIJA (suelo de la plaza), NO groundY: si no, el barril se ve a si mismo como suelo
         // y cada ciclo se planta otro encima -> pila vertical de barriles.

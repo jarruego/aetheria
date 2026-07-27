@@ -46,6 +46,11 @@ public final class ShopModule implements CommandExecutor {
         }
     }
 
+    /** Precio de venta por unidad (AET) de un material, o null si no se compra. Lo usa el mercado. */
+    public static Double priceOf(Material m) {
+        return PRICE.get(m);
+    }
+
     private final AetheriaPlugin plugin;
     private final GatewayClient gateway;
 

@@ -364,17 +364,14 @@ public final class VillageModule {
         set(cx, floorY + 1, cz - 3, Material.COBBLESTONE_WALL);
         set(cx, floorY + 2, cz - 3, Material.COBBLESTONE_WALL);
         set(cx, floorY + 3, cz - 3, Material.BELL);
-        // Taberna del pueblo, al este de la plaza (donde los vecinos se reunen al atardecer). A la
-        // misma cota que la plaza. Antes se apoyaba solo en su propio cimiento (±2) y, si el suelo
-        // 11 bloques al este subia, quedaba INCRUSTADA y con la puerta tapada. Ahora se nivela y
-        // despeja un solar amplio (±5) a la cota de la plaza para que quede a ras y con acceso.
-        levelPad(cx + 12, cz, 6, floorY);
-        this.tavern = buildTavern(cx + 12, cz, floorY);
+        // La TABERNA, el MERCADO y el GRANERO ya NO se levantan aqui: los construye el pueblo vivo
+        // (SettlementModule) segun la POBLACION (granero desde el inicio, taberna>=4, mercado>=6).
         return new Location(world, cx + 3 + 0.5, floorY + 1, cz + 0.5);   // punto de reunion al lado
     }
 
-    /** Plaza-mercado con puestos (toldos de colores) y barriles de genero. */
-    private Location buildMarket(int cx, int cz, int floorY) {
+    /** Plaza-mercado con puestos (toldos de colores) y barriles de genero. Nivela su solar. */
+    public Location buildMarket(int cx, int cz, int floorY) {
+        levelPad(cx, cz, 5, floorY);
         foundation(cx, cz, 3, floorY, Material.SMOOTH_STONE, 4);
         final Material[] toldo = {Material.RED_WOOL, Material.BLUE_WOOL, Material.YELLOW_WOOL,
                 Material.LIME_WOOL};
@@ -401,10 +398,60 @@ public final class VillageModule {
         return new Location(world, cx + 0.5, floorY + 1, cz + 0.5);
     }
 
+    /** GRANERO del pueblo (7x7): granja de almacenaje con barriles y heno, tejado de heno (granero)
+     *  y cartel. El barril CENTRAL es donde cada oficio deposita su produccion. Nivela su solar. */
+    public Location buildGranary(int cx, int cz, int floorY) {
+        final int half = 3;
+        levelPad(cx, cz, half + 2, floorY);
+        foundation(cx, cz, half, floorY, Material.SPRUCE_PLANKS, 6);
+        // Muros de 3 de alto: esquinas de tronco, tablon; frente (sur) ABIERTO de par en par.
+        for (int y = floorY + 1; y <= floorY + 3; y++) {
+            for (int dx = -half; dx <= half; dx++) {
+                for (int dz = -half; dz <= half; dz++) {
+                    if (Math.abs(dx) != half && Math.abs(dz) != half) {
+                        continue;
+                    }
+                    if (dz == half && Math.abs(dx) <= 1) {
+                        continue;   // porton del granero (sur)
+                    }
+                    final boolean corner = Math.abs(dx) == half && Math.abs(dz) == half;
+                    set(cx + dx, y, cz + dz, corner ? Material.SPRUCE_LOG : Material.SPRUCE_PLANKS);
+                }
+            }
+        }
+        // Tejado a dos aguas de HENO (aspecto de granero) con voladizo.
+        for (int dx = -half - 1; dx <= half + 1; dx++) {
+            for (int dz = -half - 1; dz <= half + 1; dz++) {
+                set(cx + dx, floorY + 4, cz + dz, Material.HAY_BLOCK);
+            }
+        }
+        for (int dx = -half + 1; dx <= half - 1; dx++) {
+            for (int dz = -half + 1; dz <= half - 1; dz++) {
+                set(cx + dx, floorY + 5, cz + dz, Material.HAY_BLOCK);
+            }
+        }
+        // Interior: barriles de almacenaje por las paredes del fondo y los lados, y balas de heno.
+        for (int dx = -half + 1; dx <= half - 1; dx++) {
+            set(cx + dx, floorY + 1, cz - half + 1, Material.BARREL);   // fondo (norte)
+            set(cx + dx, floorY + 2, cz - half + 1, Material.BARREL);
+        }
+        set(cx - half + 1, floorY + 1, cz, Material.HAY_BLOCK);
+        set(cx + half - 1, floorY + 1, cz, Material.HAY_BLOCK);
+        set(cx - half + 1, floorY + 1, cz + 1, Material.HAY_BLOCK);
+        // Farol e iluminacion.
+        set(cx, floorY + 3, cz, Material.LANTERN);
+        // Barril CENTRAL de deposito (donde produce cada oficio).
+        set(cx, floorY + 1, cz, Material.BARREL);
+        // Cartel sobre el porton (sur).
+        placeWallSign(cx + 2, floorY + 2, cz + half, BlockFace.SOUTH, "§6Granero", "del pueblo");
+        return new Location(world, cx + 0.5, floorY + 1, cz + 0.5);
+    }
+
     /** Taberna GRANDE (9x9): salon de madera con barra, mesas con sillas, barriles y cristaleras.
-     *  La puerta mira al OESTE (hacia la plaza). Devuelve su centro. */
-    private Location buildTavern(int cx, int cz, int floorY) {
+     *  La puerta mira al OESTE (hacia la plaza). Nivela su solar. Devuelve su centro. */
+    public Location buildTavern(int cx, int cz, int floorY) {
         final int half = 4;
+        levelPad(cx, cz, half + 2, floorY);   // solar a ras y despejado (no incrustada)
         foundation(cx, cz, half, floorY, Material.SPRUCE_PLANKS, 6);
         // Muros de 4 de alto: esquinas de tronco, paredes de tablon.
         for (int y = floorY + 1; y <= floorY + 4; y++) {

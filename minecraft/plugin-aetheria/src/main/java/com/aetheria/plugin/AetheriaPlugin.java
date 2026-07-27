@@ -107,9 +107,14 @@ public final class AetheriaPlugin extends JavaPlugin {
                         new NpcRoutineModule(this, convo, gameWorld, village);
                 routines.start();
 
+                // Mercado FISICO con menu de inventario (mercader clicable). Se registra como
+                // listener; SettlementModule spawnea el mercader cuando la aldea llega a 6 vecinos.
+                final MarketModule market = new MarketModule(this, gateway);
+                getServer().getPluginManager().registerEvents(market, this);
+
                 // Pueblo vivo: crece (casas + colonos) o mengua (emigracion) segun prosperidad.
                 final SettlementModule settlement =
-                        new SettlementModule(this, gateway, village, routines, convo, gameWorld);
+                        new SettlementModule(this, gateway, village, routines, convo, gameWorld, market);
                 getServer().getPluginManager().registerEvents(settlement, this);   // protege sus casas
                 settlement.start();
 

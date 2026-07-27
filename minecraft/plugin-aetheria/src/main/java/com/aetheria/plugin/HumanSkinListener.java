@@ -53,7 +53,7 @@ public final class HumanSkinListener extends PacketListenerAbstract {
                 profile.getTextureProperties().add(new TextureProperty("textures", tex[0], tex[1]));
             }
             final WrapperPlayServerPlayerInfoUpdate.PlayerInfo info =
-                    new WrapperPlayServerPlayerInfoUpdate.PlayerInfo(profile, false, 0,
+                    new WrapperPlayServerPlayerInfoUpdate.PlayerInfo(profile, true, 0,
                             GameMode.SURVIVAL, null, null);
             event.getUser().sendPacketSilently(new WrapperPlayServerPlayerInfoUpdate(
                     WrapperPlayServerPlayerInfoUpdate.Action.ADD_PLAYER, info));

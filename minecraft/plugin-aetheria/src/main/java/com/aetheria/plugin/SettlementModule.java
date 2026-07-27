@@ -186,6 +186,7 @@ public final class SettlementModule implements Listener {
     private final java.util.Map<java.util.UUID, Integer> inTown = new java.util.HashMap<>();
 
     private static final int PER_TOWN = 8;   // al llenarse, una pareja funda otra aldea lejos
+    private static final int MAX_TOWNS = 8;  // techo de la comarca: 8 aldeas x 8 vecinos
     private static final String[] TOWN_NAMES = {"Rocavieja", "Valverde", "Fuenteclara", "Montenar",
         "Rivablanca", "Espinar", "Robledo", "Vallehondo", "Penaflor", "Aldealba", "Sotobravo",
         "Villalce", "Olmedal", "Riofrio", "Costaluna", "Miralbosque", "Pradoverde", "Encinar",
@@ -1834,6 +1835,94 @@ public final class SettlementModule implements Listener {
         }
     }
 
+    /**
+     * #14 - CARRETERA entre dos aldeas. Es un camino de verdad: 3 casillas de ancho, con la
+     * misma <b>rasante regulada</b> que los senderos (medio bloque por casilla, con losas de
+     * escalon, para poder recorrerla andando), <b>puentes de madera</b> donde cruza agua y
+     * faroles cada tramo.
+     *
+     * <p>Se construye <b>por lotes</b> (unas pocas casillas por tick): son cientos de bloques y
+     * cargar de golpe 300 casillas —muchas en trozos de mundo aun sin generar— congelaria el
+     * servidor. Asi la carretera "se va abriendo" sin que se note.
+     */
+    private void buildRoad(int x0, int z0, int x1, int z1) {
+        final List<int[]> tiles = new ArrayList<>();
+        int x = x0;
+        int z = z0;
+        for (int guard = 0; (x != x1 || z != z1) && guard < 900; guard++) {
+            final int dx = x1 - x;
+            final int dz = z1 - z;
+            if (Math.abs(dx) >= Math.abs(dz)) {
+                x += Integer.signum(dx);
+                tiles.add(new int[] {x, z, 0, 1});   // avanza en X -> el ancho va en Z
+            } else {
+                z += Integer.signum(dz);
+                tiles.add(new int[] {x, z, 1, 0});   // avanza en Z -> el ancho va en X
+            }
+        }
+        final int[] state = {0, 2 * (groundY(x0, z0) + 1)};   // {indice, altura en medios bloques}
+        final int[] task = new int[1];
+        task[0] = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            for (int n = 0; n < 6 && state[0] < tiles.size(); n++, state[0]++) {
+                final int[] t = tiles.get(state[0]);
+                state[1] = paveTile(t[0], t[1], state[1], t[2], t[3], state[0]);
+            }
+            if (state[0] >= tiles.size()) {
+                Bukkit.getScheduler().cancelTask(task[0]);
+            }
+        }, 1L, 1L).getTaskId();
+    }
+
+    /** Pavimenta UNA casilla de carretera (con sus dos arcenes) respetando la rasante. Devuelve
+     *  la nueva altura de la superficie medida en MEDIOS bloques. */
+    private int paveTile(int x, int z, int prevH, int perpX, int perpZ, int index) {
+        final int gy = groundY(x, z);
+        final boolean water = world.getBlockAt(x, gy, z).isLiquid();
+        final int wantH = 2 * (gy + 1);
+        final int h = water ? prevH : Math.max(prevH - 1, Math.min(prevH + 1, wantH));
+        final int ny = Math.floorDiv(h, 2) - 1;
+        final boolean slab = Math.floorMod(h, 2) == 1;
+        for (int w = -1; w <= 1; w++) {
+            final int px = x + perpX * w;
+            final int pz = z + perpZ * w;
+            final Material at = world.getBlockAt(px, ny, pz).getType();
+            if (!at.isAir() && !natural(at)) {
+                continue;   // algo construido (una plaza, una casa): la carretera no lo pisa
+            }
+            for (int y = ny + 1; y <= ny + 4; y++) {
+                final Material m = world.getBlockAt(px, y, pz).getType();
+                if (!m.isAir() && natural(m)) {
+                    world.getBlockAt(px, y, pz).setType(Material.AIR, false);
+                }
+            }
+            if (water) {   // PUENTE: tablero de madera y barandilla en los arcenes
+                world.getBlockAt(px, ny, pz).setType(Material.OAK_PLANKS, false);
+                if (w != 0) {
+                    world.getBlockAt(px, ny + 1, pz).setType(Material.OAK_FENCE, false);
+                }
+                continue;
+            }
+            for (int y = ny; y >= ny - 5; y--) {
+                final Block b = world.getBlockAt(px, y, pz);
+                if (b.getType().isAir() || b.isLiquid()) {
+                    b.setType(Material.DIRT, false);
+                } else {
+                    break;
+                }
+            }
+            world.getBlockAt(px, ny, pz).setType(
+                    w == 0 && !slab ? Material.DIRT_PATH : Material.GRAVEL, false);
+            if (slab && w == 0) {
+                world.getBlockAt(px, ny + 1, pz).setType(Material.COBBLESTONE_SLAB, false);
+            }
+        }
+        if (index % 24 == 12 && !water) {   // farol de camino cada tramo, en el arcen
+            world.getBlockAt(x + perpX, ny + 1, z + perpZ).setType(Material.OAK_FENCE, false);
+            world.getBlockAt(x + perpX, ny + 2, z + perpZ).setType(Material.LANTERN, false);
+        }
+        return h;
+    }
+
     private void shrink() {
         final String name = routines.removeNewestColono();
         if (name != null) {
@@ -2038,24 +2127,37 @@ public final class SettlementModule implements Listener {
                 return i;
             }
         }
+        if (towns.size() >= MAX_TOWNS) {
+            // La comarca ya esta completa (8 aldeas): en vez de fundar mas, las aldeas se
+            // DENSIFICAN. El nuevo vecino va a la menos poblada.
+            int best = 0;
+            for (int i = 1; i < towns.size(); i++) {
+                if (countInTown(i) < countInTown(best)) {
+                    best = i;
+                }
+            }
+            return best;
+        }
         return foundNewTown();
     }
 
     /** Funda una aldea NUEVA lejos de todas (fuera de vista), sobre tierra firme. Devuelve su id. */
     private int foundNewTown() {
         final var rng = ThreadLocalRandom.current();
-        final Town origin = towns.get(0);
+        // Se parte de una aldea CUALQUIERA ya existente (no siempre de la primera): asi la
+        // comarca se extiende en racimo en vez de en una estrella alrededor del pueblo madre.
+        final Town origin = towns.get(rng.nextInt(towns.size()));
         int bcx = 0;
         int bcz = 0;
         boolean found = false;
-        for (int t = 0; t < 40 && !found; t++) {
+        for (int t = 0; t < 80 && !found; t++) {
             final double ang = rng.nextDouble() * Math.PI * 2;
-            final int dist = 220 + rng.nextInt(180);   // 220-400 bloques: bien lejos
+            final int dist = 200 + rng.nextInt(160);   // 200-360 bloques de la aldea de origen
             final int cx = origin.cx + (int) Math.round(Math.cos(ang) * dist);
             final int cz = origin.cz + (int) Math.round(Math.sin(ang) * dist);
             boolean far = true;
             for (final Town tw : towns) {
-                if (Math.hypot(cx - tw.cx, cz - tw.cz) < 180) {
+                if (Math.hypot(cx - tw.cx, cz - tw.cz) < 150) {
                     far = false;
                     break;
                 }
@@ -2091,12 +2193,34 @@ public final class SettlementModule implements Listener {
         final Location plaza = village.buildPlazaAt(bcx, bcz);
         towns.add(new Town(name, plaza.getBlockX(), plaza.getBlockZ(), plaza.getBlockY() - 1));
         saveTowns();
+        // CARRETERA desde la aldea MAS CERCANA hasta la nueva: la comarca queda conectada.
+        final Town from = nearestTown(plaza.getBlockX(), plaza.getBlockZ(), towns.size() - 1);
+        if (from != null) {
+            buildRoad(from.cx, from.cz, plaza.getBlockX(), plaza.getBlockZ());
+        }
         final String msg = "Unos colonos parten a fundar una nueva aldea, " + name + ", lejos de aqui.";
         gateway.postEvent("fundacion", msg);
         routines.pushGossip(msg);
         Bukkit.getOnlinePlayers().forEach(pl -> pl.sendMessage("§d[Mundo] §f" + msg));
         plugin.getLogger().info("[Aetheria] Nueva aldea fundada: " + name + " en " + bcx + "," + bcz);
         return towns.size() - 1;
+    }
+
+    /** La aldea ya existente mas cercana a un punto (ignorando la de indice `skip`). */
+    private Town nearestTown(int x, int z, int skip) {
+        Town best = null;
+        double bestD = Double.MAX_VALUE;
+        for (int i = 0; i < towns.size(); i++) {
+            if (i == skip) {
+                continue;
+            }
+            final double d = Math.hypot(towns.get(i).cx - x, towns.get(i).cz - z);
+            if (d < bestD) {
+                bestD = d;
+                best = towns.get(i);
+            }
+        }
+        return best;
     }
 
     private void loadTowns() {

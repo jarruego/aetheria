@@ -103,7 +103,7 @@ public final class LaborModule {
         if (all.isEmpty()) {
             return;
         }
-        final int batch = Math.min(4, all.size() / 6 + 1);   // ~1 faena por vecino cada 15 s
+        final int batch = Math.min(8, all.size() / 6 + 1);   // ~1 faena por vecino cada 15-24 s
         for (int i = 0; i < batch; i++) {
             cursor = (cursor + 1) % all.size();
             workOne(all.get(cursor));

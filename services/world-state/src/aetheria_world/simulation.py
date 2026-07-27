@@ -141,7 +141,7 @@ async def run_tick(conn) -> dict:
     # reves). Es el vinculo entre la sociedad viva (Fase 7) y la economia (Fase 8).
     pop_row = await conn.fetchrow("select population from settlement where world = 'main'")
     population = pop_row["population"] if pop_row else settings.sim_min_population
-    pop_factor = decimal.Decimal(str(max(0.4, min(3.0, population / 5.0))))
+    pop_factor = decimal.Decimal(str(max(0.4, min(8.0, population / 5.0))))
 
     # Gasto fijo del pueblo por HABITANTE (comida, techo, mantenimiento), repartido entre los
     # sectores. Es lo que obliga a que el pueblo TRABAJE de verdad para sostenerse.
@@ -261,14 +261,18 @@ async def evolve_population(conn) -> dict:
     pop = row["population"] if row else settings.sim_min_population
     old = pop
     level = prov["level"]
-    # Crecimiento LENTO (que no se dispare la poblacion): solo de vez en cuando llega alguien.
+    # Crecimiento EXPONENCIAL (#14): cuanta mas gente hay, mas nace y mas rapido crece el pueblo
+    # (la natalidad es proporcional a la poblacion, como en la realidad). Un caserio de dos
+    # tarda en arrancar; una comarca de cuarenta se llena sola.
+    factor = 1.0 + pop / 8.0            # x1.25 con 2 vecinos, x5 con 32
+    step = max(1, pop // 12)            # y no llegan de uno en uno cuando ya es una comarca
     r = random.random()
-    if level == "floreciente" and pop < settings.sim_max_population and r < 0.12:
-        pop += 1
-    elif level == "prospero" and pop < settings.sim_max_population and r < 0.05:
-        pop += 1
+    if level == "floreciente" and pop < settings.sim_max_population and r < 0.12 * factor:
+        pop = min(settings.sim_max_population, pop + step)
+    elif level == "prospero" and pop < settings.sim_max_population and r < 0.05 * factor:
+        pop = min(settings.sim_max_population, pop + step)
     elif level == "en apuros" and pop > settings.sim_min_population and r < 0.25:
-        pop -= 1
+        pop = max(settings.sim_min_population, pop - step)
 
     if pop != old:
         await conn.execute(

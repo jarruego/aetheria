@@ -175,6 +175,7 @@ public final class SettlementModule implements Listener {
     private final File buildingsFile;   // buildings.txt: "vid;profKey;cx;cz;baseY" por edificio
     private final File vacantsFile;   // vacants.txt: "x;y;z;floors" casas en venta (sin dueno)
     private final File civicFile2;    // civic-buildings.txt: "vid:clave" edificios civicos ya construidos
+    private final File childFile;     // ninos.txt: los ninos del pueblo (aun no son adultos)
     // Edificios civicos ya levantados por aldea (granero, taberna, mercado). Clave "vid:tipo".
     private final java.util.Set<String> civicBuilt = new java.util.HashSet<>();
     // Solares RESERVADOS para edificios civicos aun no construidos (taberna/mercado): las casas
@@ -418,6 +419,7 @@ public final class SettlementModule implements Listener {
         this.buildingsFile = new File(plugin.getDataFolder(), "buildings.txt");
         this.vacantsFile = new File(plugin.getDataFolder(), "vacants.txt");
         this.civicFile2 = new File(plugin.getDataFolder(), "civic-buildings.txt");
+        this.childFile = new File(plugin.getDataFolder(), "ninos.txt");
     }
 
     public void start() {
@@ -436,6 +438,7 @@ public final class SettlementModule implements Listener {
             }
         }
         load();            // reaparecen los colonos ya existentes en sus casas (sin reconstruir)
+        loadChildren();    // y los ninos, que tambien son vecinos (antes se perdian al reiniciar)
         loadCivic();
         reserveCivicSpots();   // reserva/levanta los solares civicos ANTES de fundar casas (anti-choque)
         refreshTradeSigns();   // corrige el rotulo/orientacion de los carteles de oficio ya puestos
@@ -519,6 +522,63 @@ public final class SettlementModule implements Listener {
         }
         if (renamed) {
             save();   // persiste los nombres ya diferenciados
+        }
+    }
+
+    /** Crea el bebe de un nino del pueblo (entidad, nombre sobre la cabeza y conversable). */
+    private Villager spawnBaby(String name, Location at) {
+        final Villager baby = (Villager) world.spawnEntity(at, EntityType.VILLAGER);
+        baby.setBaby();
+        baby.customName(Component.text("§b" + name + " §7(nino)"));
+        baby.setCustomNameVisible(true);
+        baby.setPersistent(true);
+        baby.setRemoveWhenFarAway(false);
+        baby.setInvulnerable(true);
+        baby.addScoreboardTag(BABY_TAG);
+        convo.registerConversable(baby, "nino", name);   // se puede hablar con los ninos
+        return baby;
+    }
+
+    /**
+     * Los NINOS tambien se persisten. Antes solo vivian en memoria: al reiniciar el servidor
+     * desaparecian y la aldea perdia habitantes de golpe (con la poblacion cuentan igual que un
+     * adulto para el marcador, el coste del siguiente vecino y los edificios civicos).
+     */
+    private void saveChildren() {
+        try (FileWriter w = new FileWriter(childFile, false)) {
+            for (final Child c : children) {
+                w.write(c.name + ";" + (c.parent == null ? "" : c.parent) + ";" + c.gender + ";"
+                        + c.vid + ";" + c.surname + ";" + c.matureAt + "\n");
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Aetheria] no pude guardar ninos: " + e.getMessage());
+        }
+    }
+
+    private void loadChildren() {
+        children.clear();
+        if (!childFile.exists()) {
+            return;
+        }
+        try (BufferedReader r = new BufferedReader(new FileReader(childFile))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                final String[] f = line.split(";", -1);
+                if (f.length < 6) {
+                    continue;
+                }
+                final String parent = f[1];
+                final int vid = Integer.parseInt(f[3]);
+                // Reaparece junto a la casa de su familia (o en la plaza si ya no queda nadie).
+                final Colono fam = findColono(parent);
+                final Location at = fam != null
+                        ? new Location(world, fam.x + 0.5, fam.y, fam.z + 2.5)
+                        : townCenter(vid);
+                children.add(new Child(spawnBaby(f[0], at), f[0], parent, f[2], vid, f[4],
+                        Long.parseLong(f[5])));
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Aetheria] no pude cargar ninos: " + e.getMessage());
         }
     }
 
@@ -712,6 +772,7 @@ public final class SettlementModule implements Listener {
                 if (c.baby != null) {
                     c.baby.remove();
                 }
+                saveChildren();
                 Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                         "§7[Pueblo] La familia de §b" + c.name + " §7se marcha buscando mejor suerte."));
                 return;
@@ -922,15 +983,7 @@ public final class SettlementModule implements Listener {
         // Aparece junto a la casa de su familia.
         final Location base = new Location(world, mother.x + 0.5, mother.y, mother.z + 2.5);
         final Location at = base.clone().add(rng.nextInt(3) - 1, 0, rng.nextInt(3) - 1);
-        final Villager baby = (Villager) world.spawnEntity(at, EntityType.VILLAGER);
-        baby.setBaby();
-        baby.customName(net.kyori.adventure.text.Component.text("§b" + name + " §7(nino)"));
-        baby.setCustomNameVisible(true);
-        baby.setPersistent(true);
-        baby.setRemoveWhenFarAway(false);
-        baby.setInvulnerable(true);
-        baby.addScoreboardTag(BABY_TAG);
-        convo.registerConversable(baby, "nino", name);   // se puede hablar con los ninos
+        final Villager baby = spawnBaby(name, at);
         final String hijo = "f".equals(gender) ? "hija" : "hijo";
         final String of = ", " + hijo + " de " + father.name + " y " + mother.name;
         convo.setBio(name, "Eres " + name + ", un nino pequeno del pueblo de Aetheria" + of
@@ -939,6 +992,7 @@ public final class SettlementModule implements Listener {
                 ? father.surname : mother.surname;   // hereda el apellido de la familia
         children.add(new Child(baby, name, mother.name, gender, mother.vid, famSurname,
                 System.currentTimeMillis() + GROW_MS));
+        saveChildren();
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                 "§d[Pueblo] §fHa nacido §b" + name + "§f" + of + "."));
         gateway.postEvent("nacimiento", "Nace " + name + of + ".");
@@ -960,6 +1014,7 @@ public final class SettlementModule implements Listener {
             if (c.baby != null) {
                 c.baby.remove();
             }
+            saveChildren();
             growAdult(c.vid, colonos.size(), c.name, c.surname, c.gender, WORK_AGE, c.parent);
             Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                     "§a[Pueblo] §b" + c.name + " §7ha crecido y se ha mudado a su propia casa."));

@@ -302,8 +302,6 @@ public final class SettlementModule implements Listener {
     private int[] evaluateSpot(int cx, int cz) {
         int min = Integer.MAX_VALUE;
         int max = Integer.MIN_VALUE;
-        long sum = 0;
-        int n = 0;
         for (int dx = -5; dx <= 5; dx++) {
             for (int dz = -5; dz <= 5; dz++) {
                 final int gy = groundY(cx + dx, cz + dz);
@@ -333,12 +331,13 @@ public final class SettlementModule implements Listener {
                 if (dx >= -4 && dx <= 4 && dz >= -4 && dz <= 4) {
                     min = Math.min(min, gy);
                     max = Math.max(max, gy);
-                    sum += gy;
-                    n++;
                 }
             }
         }
-        return new int[] {Math.round(sum / (float) n), max - min};
+        // El suelo se pone en la cota MAS BAJA de la huella: asi se TALLA el terreno que sobresale
+        // (aspecto de casa encajada en el relieve) en vez de RELLENAR con tierra por debajo (que
+        // dejaba las casas elevadas sobre un "pegote"). Sin agua/hielo en la huella (ya rechazado).
+        return new int[] {min, max - min};
     }
 
     public SettlementModule(AetheriaPlugin plugin, GatewayClient gateway, VillageModule village,

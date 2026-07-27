@@ -654,12 +654,26 @@ public final class Blueprint {
             block.setBlockData(dir, false);
         }
         if (block.getState() instanceof Sign sign) {
-            // Solo el nombre de pila: el apellido no cabe en una linea de cartel.
-            final String given = ownerName.contains(" ") ? ownerName.substring(0, ownerName.indexOf(' ')) : ownerName;
             sign.getSide(Side.FRONT).line(1, Component.text("Casa de"));
-            sign.getSide(Side.FRONT).line(2, Component.text("§6" + given));
+            if (ownerName.contains(" y ")) {
+                // Matrimonio: "Nombre1 Ap1 y Nombre2 Ap2" -> los DOS nombres de pila, en dos lineas
+                // (antes solo salia uno porque se cortaba en el primer espacio).
+                final String[] pair = ownerName.split(" y ", 2);
+                sign.getSide(Side.FRONT).line(2, Component.text("§6" + given(pair[0]) + " y"));
+                sign.getSide(Side.FRONT).line(3, Component.text("§6" + given(pair[1])));
+            } else {
+                // Soltero: solo el nombre de pila (el apellido no cabe en una linea de cartel).
+                sign.getSide(Side.FRONT).line(2, Component.text("§6" + given(ownerName)));
+            }
             sign.update(true);
         }
+    }
+
+    /** Nombre de pila (primer token) de un "Nombre Apellido". */
+    private static String given(String full) {
+        final String t = full.trim();
+        final int sp = t.indexOf(' ');
+        return sp > 0 ? t.substring(0, sp) : t;
     }
 
     private static List<Block> platform() {

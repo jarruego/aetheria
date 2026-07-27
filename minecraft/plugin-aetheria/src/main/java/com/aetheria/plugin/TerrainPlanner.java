@@ -20,6 +20,9 @@ public final class TerrainPlanner {
     private TerrainPlanner() {
     }
 
+    /** Altura del volumen que se despeja sobre el suelo (para talar arboles que atraviesen). */
+    private static final int CLEAR_HEIGHT = 16;
+
     /** True si el material es NATURAL (se puede talar/allanar): aire, agua, tierra, roca, arena,
      *  grava, arboles/hojas, vegetacion, mineral, nieve, hielo... FALSE si es algo construido. */
     public static boolean natural(Material m) {
@@ -117,6 +120,16 @@ public final class TerrainPlanner {
             Material postMaterial) {
         for (int x = minX; x <= maxX; x++) {
             for (int z = minZ; z <= maxZ; z++) {
+                // 0) DESPEJA EL VOLUMEN del edificio: tala arboles y quita vegetacion/nieve por
+                //    encima del suelo. Sin esto, un tronco o unas hojas quedaban ATRAVESANDO la
+                //    construccion (se "construia sobre arboles"). Solo lo natural; nunca lo puesto.
+                for (int y = floorY + 1; y <= floorY + CLEAR_HEIGHT; y++) {
+                    final Block b = world.getBlockAt(x, y, z);
+                    final Material m = b.getType();
+                    if (!m.isAir() && !b.isLiquid() && natural(m)) {
+                        b.setType(Material.AIR, false);
+                    }
+                }
                 if (isLiquidOrIce(world, x, z)) {
                     final boolean edge = x == minX || x == maxX || z == minZ || z == maxZ;
                     final boolean support = (x - minX) % 4 == 0 && (z - minZ) % 4 == 0;

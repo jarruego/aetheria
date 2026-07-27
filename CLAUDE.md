@@ -37,8 +37,13 @@ Un servidor de Minecraft persistente donde la IA es el "sistema operativo del mu
 | `minecraft/` | Velocity, Lobby, Main, plugin Java (imagen `itzg/minecraft-server:java25`; FAWE 2.15.3 exige Java 25) |
 | `minecraft/plugin-aetheria/.../TerrainPlanner.java` | Validador+preparador de **terreno compartido** por todos los caminos de construcción (nivelado columna a columna + pilotes sobre agua/hielo) |
 | `minecraft/plugin-aetheria/.../BuildRegistry.java` | Registro persistente de cajas 3D (`regions.txt`); ningún camino pisa lo ya construido |
-| `minecraft/plugin-aetheria/.../SettlementModule.java` | Pueblo vivo multi-aldea (colonos, oficios, gobierno, edificios permanentes) |
-| `minecraft/plugin-aetheria/.../SchematicModule.java` `CatalogModule.java` | Esquemáticos FAWE + galería del creativo |
+| `minecraft/plugin-aetheria/.../SettlementModule.java` | Pueblo vivo multi-aldea (colonos, oficios, gobierno, **edificios cívicos por población**: granero desde el inicio, taberna≥4, mercado≥6; bodas con cortejo; casas en venta; máx. 2 hijos/pareja) |
+| `minecraft/plugin-aetheria/.../MarketModule.java` | **Mercado con GUI de inventario** (mercader clicable: clic izq compra, clic der vende) |
+| `minecraft/plugin-aetheria/.../DonationModule.java` | **Arca de aportaciones** en la plaza: el jugador invierte en la aldea (crece más rápido) |
+| `minecraft/plugin-aetheria/.../LaborModule.java` | **Producción física** de los colonos (cosechan/talan/minan…) que alimenta la economía |
+| `minecraft/plugin-aetheria/.../VanillaStructures.java` | Coloca casas de aldea **vanilla reales** (`/place template`); `/arquitecto` tiene 2 vías: a medida vs vanilla |
+| `minecraft/plugin-aetheria/.../DisguiseModule.java` `HumanSkinListener.java` `SkinCache.java` | **Skins HUMANAS de los NPC** vía **packetevents** (LibsDisguises/ProtocolLib NO van en Java 25). Skin por oficio (`SkinCache.loadProfSkins`) o por sexo. Dep. blanda. |
+| `minecraft/plugin-aetheria/.../SchematicModule.java` `CatalogModule.java` | Esquemáticos FAWE + galería del creativo (muestra todas las opciones del arquitecto + vanilla) |
 | `infra/` | Terraform (Oracle Cloud) + Docker (Fase 4) |
 | `docs/infra/` | **Estado del despliegue cloud y traspaso entre sesiones** |
 | `docs/ia-local.md` | **IA real a coste cero** (Ollama): instalación, modelos, problemas |

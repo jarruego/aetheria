@@ -50,7 +50,11 @@ public final class HumanSkinListener extends PacketListenerAbstract {
             final UserProfile profile = new UserProfile(uuid, npcName(uuid));
             final String[] tex = skins.skinFor(DisguiseModule.profOf(uuid), gender, uuid.toString());
             if (tex != null) {
-                profile.getTextureProperties().add(new TextureProperty("textures", tex[0], tex[1]));
+                // Firma NULL (no cadena vacia) cuando la skin no esta firmada: asi es una propiedad
+                // "sin firmar" valida (en modo offline el cliente la renderiza). Con "" el cliente la
+                // trata como firma invalida y muestra la skin por defecto.
+                final String sig = (tex.length > 1 && tex[1] != null && !tex[1].isEmpty()) ? tex[1] : null;
+                profile.getTextureProperties().add(new TextureProperty("textures", tex[0], sig));
             }
             final WrapperPlayServerPlayerInfoUpdate.PlayerInfo info =
                     new WrapperPlayServerPlayerInfoUpdate.PlayerInfo(profile, true, 0,

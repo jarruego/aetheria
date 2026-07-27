@@ -33,6 +33,7 @@ from aetheria_world.models import (
     WorldRef,
     WorldSummary,
 )
+from aetheria_world.simulation import apply_life_event as sim_apply_life_event
 from aetheria_world.simulation import collect_rent as sim_collect_rent
 from aetheria_world.simulation import evolve_population as sim_evolve_population
 from aetheria_world.simulation import prosperity as sim_prosperity
@@ -365,11 +366,16 @@ async def world_events(limit: int = 20) -> list[WorldEventOut]:
 async def add_world_event(body: dict) -> dict:
     """Añade un suceso a la cronica (lo usa el plugin: nacimientos, jubilaciones, muertes)."""
     _require_db()
+    kind = str(body.get("kind", "evento"))[:32]
     async with pool().acquire() as conn:
-        await conn.execute(
-            "insert into world_events (kind, description) values ($1, $2)",
-            str(body.get("kind", "evento"))[:32], str(body.get("description", ""))[:500],
-        )
+        async with conn.transaction():
+            await conn.execute(
+                "insert into world_events (kind, description) values ($1, $2)",
+                kind, str(body.get("description", ""))[:500],
+            )
+            # La sociedad mueve la economia: bodas, nacimientos, muertes y fundaciones ajustan la
+            # tesoreria del pueblo (y con ella la prosperidad).
+            await sim_apply_life_event(conn, kind)
     return {"status": "ok"}
 
 

@@ -27,12 +27,25 @@ logger = logging.getLogger("aetheria_world.simulation")
 # Cuenta del sistema (banco/mundo): fuente y sumidero de la masa monetaria.
 _BANCO = uuid.UUID("00000000-0000-0000-0000-000000000000")
 
-# Negocios del pueblo (cuentas 'company'). UUID fijos: se crean de forma perezosa.
+# Sectores economicos del pueblo (cuentas 'company'). UUID fijos: se crean de forma perezosa.
+# Nombres GENERICOS (no de un aldeano concreto): los colonos nacen y mueren, pero los oficios
+# del pueblo permanecen. Antes ponia "La Granja de Nara"/"La Herreria de Bruno" -> datos fantasma
+# de personajes que ya no existen.
 _BUSINESSES = [
-    (uuid.UUID("a0000000-0000-0000-0000-000000000001"), "La Granja de Nara", "agricultura"),
-    (uuid.UUID("a0000000-0000-0000-0000-000000000002"), "La Herreria de Bruno", "metalurgia"),
-    (uuid.UUID("a0000000-0000-0000-0000-000000000003"), "El Mercado del Pueblo", "comercio"),
+    (uuid.UUID("a0000000-0000-0000-0000-000000000001"), "Los huertos y granjas", "agricultura"),
+    (uuid.UUID("a0000000-0000-0000-0000-000000000002"), "Los talleres y la fragua", "artesania"),
+    (uuid.UUID("a0000000-0000-0000-0000-000000000003"), "El mercado y los tratos", "comercio"),
 ]
+
+# Efecto en la tesoreria del pueblo de cada SUCESO DE VIDA (asi la sociedad mueve la economia):
+# negativo = gasto del comun; positivo = ingreso. Ocasionales y modestos (se autocompensan:
+# las herencias equilibran bodas y nacimientos).
+_LIFE_EVENT_AET = {
+    "boda": -40,          # el pueblo costea la casa nueva y la celebracion
+    "nacimiento": -15,    # subsidio al recien nacido
+    "obituario": 50,      # el patrimonio del difunto pasa al comun del pueblo
+    "fundacion": -70,     # capital que se llevan los colonos a fundar otra aldea
+}
 
 _UPKEEP_RATIO = decimal.Decimal("0.6")    # los gastos se comen buena parte del ingreso
 # (mas alto = la economia NO sube siempre: fluctua y se estanca en vez de crecer sin fin)
@@ -106,10 +119,16 @@ async def run_tick(conn) -> dict:
     hardship = 0.12 <= roll < 0.24
     boost = decimal.Decimal("1.6") if festival else decimal.Decimal(1)
 
+    # La economia depende de la POBLACION REAL: mas vecinos trabajando -> mas produccion (y al
+    # reves). Es el vinculo entre la sociedad viva (Fase 7) y la economia (Fase 8).
+    pop_row = await conn.fetchrow("select population from settlement where world = 'main'")
+    population = pop_row["population"] if pop_row else settings.sim_min_population
+    pop_factor = decimal.Decimal(str(max(0.4, min(3.0, population / 5.0))))
+
     for owner_id, _name, sector in _BUSINESSES:
         acc = await _account(conn, owner_id, "company")
         income = _money(decimal.Decimal(str(random.uniform(
-            settings.sim_income_min, settings.sim_income_max))) * boost)
+            settings.sim_income_min, settings.sim_income_max))) * boost * pop_factor)
         upkeep = _money(income * _UPKEEP_RATIO)
         # ~4 de cada 10 ticks un negocio tiene un mal dia (gastos > ingresos): puede perder.
         if random.random() < 0.4 or hardship:
@@ -205,6 +224,22 @@ async def _event(conn, kind: str, description: str, data: dict) -> None:
         "insert into world_events (kind, description, data) values ($1, $2, $3::jsonb)",
         kind, description, _as_json(data),
     )
+
+
+async def apply_life_event(conn, kind: str) -> None:
+    """Mueve AET en la tesoreria del pueblo segun el suceso de vida (boda, nacimiento, muerte,
+    fundacion): asi lo que pasa en la sociedad se nota en la economia y en la prosperidad. Sin
+    efecto para sucesos sin coste (mejoras, relevos, cargos)."""
+    delta = _LIFE_EVENT_AET.get(kind)
+    if not delta:
+        return
+    banco = await _account(conn, _BANCO, "system")
+    treasury = await _account(conn, _BUSINESSES[0][0], "company")  # tesoreria = comun del pueblo
+    amount = _money(abs(delta))
+    if delta < 0:
+        await _move(conn, treasury, banco, amount, f"gasto del comun ({kind})")
+    else:
+        await _move(conn, banco, treasury, amount, f"ingreso al comun ({kind})")
 
 
 async def collect_rent(conn) -> dict:

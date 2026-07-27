@@ -102,6 +102,9 @@ public final class SettlementModule implements Listener {
     private static final long DAY_MS = 86_400_000L;
     private static final int WORK_AGE = 16;
     private static final int RETIRE_AGE = 65;
+    // CORTEJO: un colono no se casa nada mas aparecer; primero tiene que "conocerse" (llevar un
+    // rato como adulto en la aldea). Evita que los fundadores se casen en el primer ciclo.
+    private static final long COURTSHIP_MS = 4 * 60 * 1000L;
 
     /** Un nino del pueblo creciendo: su bebe, su nombre, su padre/madre y cuando se hara adulto. */
     private static final class Child {
@@ -142,6 +145,11 @@ public final class SettlementModule implements Listener {
         String gender = "m"; // "m" o "f" (dos hombres no tienen hijos biologicos)
         int vid;             // aldea a la que pertenece (indice en towns)
         String surname = ""; // apellido (los hijos heredan el de su familia)
+        double wealth;       // PECULIO propio: lo que ha ahorrado con su trabajo (se hereda)
+        int halfX = 2;       // media huella de su casa (para que el albanil la reconstruya igual)
+        int halfZ = 2;
+        int pal;             // paleta de materiales de su casa (indice en COMBOS)
+        boolean dimsKnown;   // ¿sabemos como es su casa? (si no, el albanil NO la reconstruye)
 
         double age(long now) {
             return initialAge + (now - bornMillis) * YEARS_PER_DAY / DAY_MS;
@@ -151,7 +159,7 @@ public final class SettlementModule implements Listener {
             return name + ";" + profKey + ";" + x + ";" + y + ";" + z + ";" + bornMillis + ";"
                     + initialAge + ";" + deathAge + ";" + (parent == null ? "" : parent) + ";"
                     + retired + ";" + floors + ";" + (spouse == null ? "" : spouse) + ";" + gender
-                    + ";" + vid + ";" + surname;
+                    + ";" + vid + ";" + surname + ";" + wealth + ";" + halfX + ";" + halfZ + ";" + pal;
         }
     }
 
@@ -447,6 +455,13 @@ public final class SettlementModule implements Listener {
                     c.gender = f.length >= 13 && !f[12].isEmpty() ? f[12] : randGender(rng);
                     c.vid = f.length >= 14 && !f[13].isEmpty() ? Integer.parseInt(f[13]) : 0;
                     c.surname = f.length >= 15 && !f[14].isEmpty() ? f[14] : "";
+                    c.wealth = f.length >= 16 && !f[15].isEmpty() ? Double.parseDouble(f[15]) : 0;
+                    if (f.length >= 19) {   // huella y paleta de su casa (para reconstruirla igual)
+                        c.halfX = Integer.parseInt(f[16]);
+                        c.halfZ = Integer.parseInt(f[17]);
+                        c.pal = Integer.parseInt(f[18]);
+                        c.dimsKnown = true;
+                    }
                 } else {   // formato antiguo: se le asigna una edad plausible
                     c.bornMillis = System.currentTimeMillis();
                     c.initialAge = 20 + rng.nextInt(40);
@@ -664,6 +679,7 @@ public final class SettlementModule implements Listener {
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                 "§d[Pueblo] §fHa nacido §b" + name + "§f" + of + "."));
         gateway.postEvent("nacimiento", "Nace " + name + of + ".");
+        routines.pushGossip("ha nacido " + name + of + ".");
         plugin.getLogger().info("[Aetheria] Pueblo vivo: nace un nino (" + name + ").");
         return true;
     }
@@ -824,6 +840,9 @@ public final class SettlementModule implements Listener {
         final int cx;
         final int cz;
         final int fy;
+        int hx = 2;        // huella y paleta de su casa: se guardan para poder RECONSTRUIRLA igual
+        int hz = 2;
+        int palIdx = 0;
         // Primero: ¿hay una casa EN VENTA cerca? El colono se muda a ella (no se construye nada,
         // solo cambia el cartel a su nombre). Asi se reaprovechan las casas de los que se casaron.
         final int[] vac = claimVacant(center);
@@ -840,11 +859,14 @@ public final class SettlementModule implements Listener {
             cx = spot[0];
             cz = spot[1];
             fy = spot[2];
-            final Material[] pal = COMBOS[rng.nextInt(COMBOS.length)];
+            palIdx = rng.nextInt(COMBOS.length);
+            final Material[] pal = COMBOS[palIdx];
             // Un aldeano SOLTERO vive en una casa MUY PEQUENA (una sola cama). Al casarse se le
             // construye una mediana (ver maybeMarry).
             final int halfX = 2;
             final int halfZ = rng.nextInt(100) < 35 ? 3 : 2;   // 5x5 o 5x7, modesta
+            hx = halfX;
+            hz = halfZ;
             final BlockFace door = towardPlaza(center, cx, cz); // la puerta mira a la plaza
             prepareTerrain(cx, cz, fy);                        // tala arboles + nivela al suelo real
             Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
@@ -873,6 +895,10 @@ public final class SettlementModule implements Listener {
         c.gender = gender;
         c.vid = vid;
         c.surname = surname;
+        c.halfX = hx;
+        c.halfZ = hz;
+        c.pal = palIdx;
+        c.dimsKnown = vac == null;   // si se mudo a una casa en venta, no sabemos como es por dentro
         colonos.add(c);
         save();
 
@@ -904,14 +930,16 @@ public final class SettlementModule implements Listener {
      */
     private void maybeMarry() {
         final var rng = ThreadLocalRandom.current();
+        final long now = System.currentTimeMillis();
         final List<Colono> singles = new ArrayList<>();
         for (final Colono c : colonos) {
-            if (c.spouse == null && !c.retired) {
+            // Solteros que YA se han "conocido" un rato (cortejo): no se casan recien llegados.
+            if (c.spouse == null && !c.retired && now - c.bornMillis >= COURTSHIP_MS) {
                 singles.add(c);
             }
         }
         if (singles.size() < 2 || rng.nextInt(100) >= 40) {
-            return;   // no siempre hay solteros, ni siempre se casan
+            return;   // no siempre hay solteros elegibles, ni siempre se casan (amor a fuego lento)
         }
         java.util.Collections.shuffle(singles, rng);
         Colono a = null;
@@ -944,7 +972,8 @@ public final class SettlementModule implements Listener {
         final int cx = a.x;
         final int cz = a.z;
         final int fy = a.y - 1;
-        final Material[] pal = COMBOS[rng.nextInt(COMBOS.length)];
+        final int palIdx = rng.nextInt(COMBOS.length);
+        final Material[] pal = COMBOS[palIdx];
         final int halfX = 3;
         final int halfZ = rng.nextInt(100) < 40 ? 4 : 3;   // MEDIANA (algo mayor que la de soltero)
         final BlockFace door = towardPlaza(center, cx, cz);
@@ -961,6 +990,9 @@ public final class SettlementModule implements Listener {
 
         a.x = cx;  a.y = fy + 1;  a.z = cz;  a.floors = 1;  a.spouse = b.name;
         b.x = cx;  b.y = fy + 1;  b.z = cz;  b.floors = 1;  b.spouse = a.name;
+        a.halfX = halfX;  a.halfZ = halfZ;  a.pal = palIdx;   // la casa comun, para reconstruirla
+        b.halfX = halfX;  b.halfZ = halfZ;  b.pal = palIdx;
+        a.dimsKnown = true;  b.dimsKnown = true;
         placed.add(new int[] {cx, cz});
         plugin.buildRegistry().add(new int[] {cx - halfX - 1, fy - 2, cz - halfZ - 1,
                 cx + halfX + 1, fy + 14, cz + halfZ + 1});
@@ -974,6 +1006,7 @@ public final class SettlementModule implements Listener {
         final String msg = a.name + " y " + b.name
                 + " se han casado y se han mudado juntos a una casa nueva.";
         gateway.postEvent("boda", msg);
+        routines.pushGossip(a.name + " y " + b.name + " se han casado.");
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage("§d[Pueblo] §f" + msg));
         plugin.getLogger().info("[Aetheria] Pueblo vivo: boda (" + a.name + " + " + b.name + ").");
     }
@@ -1027,9 +1060,12 @@ public final class SettlementModule implements Listener {
                         c.name, oficioDelDifunto, (int) age,
                         family.isEmpty() ? "" : " Le sobreviven " + family + ".", successor);
                 gateway.postEvent("obituario", msg);
+                routines.pushGossip("ha muerto " + c.name + ", el " + oficioDelDifunto + ".");
                 Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage("§8[Pueblo] §7" + msg));
+                inherit(c);   // su peculio pasa a la viuda/viudo y a sus hijos
                 if (relevo != null) {
                     gateway.postEvent("relevo", relevo);   // cambio de oficio para cubrir la baja
+                    routines.pushGossip(relevo);
                 }
                 convo.clearBio(c.name);
                 final Colono widow = findColono(c.spouse);
@@ -1044,12 +1080,60 @@ public final class SettlementModule implements Listener {
                 routines.retire(c.name);
                 final String msg = c.name + " se jubila de " + oficio(profFromKey(c.profKey)) + ".";
                 gateway.postEvent("jubilacion", msg);
+                routines.pushGossip(msg);
                 Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage("§7[Pueblo] " + msg));
             }
         }
         if (changed) {
             save();
         }
+    }
+
+    /**
+     * #11 - HERENCIA. Lo que un colono ahorro trabajando no se evapora al morir: la mitad va a
+     * su viuda/viudo y el resto se reparte entre sus hijos vivos. Si no deja a nadie, su
+     * patrimonio pasa al comun del pueblo (el evento "obituario" ya lo abona en la tesoreria).
+     * Queda escrito en la cronica, que para eso es una cronica.
+     */
+    private void inherit(Colono dead) {
+        if (dead.wealth < 0.01) {
+            return;
+        }
+        final double total = dead.wealth;
+        dead.wealth = 0;
+        final Colono widow = findColono(dead.spouse);
+        final List<Colono> kids = new ArrayList<>();
+        for (final Colono c : colonos) {
+            if (dead.name.equals(c.parent)) {
+                kids.add(c);
+            }
+        }
+        if (widow == null && kids.isEmpty()) {
+            gateway.postEvent("herencia", String.format(
+                    "%s muere sin herederos: sus %.0f AET pasan al comun del pueblo.",
+                    dead.name, total));
+            return;
+        }
+        final double forWidow = widow != null ? (kids.isEmpty() ? total : total / 2) : 0;
+        final double forKids = total - forWidow;
+        if (widow != null) {
+            widow.wealth += forWidow;
+        }
+        for (final Colono k : kids) {
+            k.wealth += forKids / kids.size();
+        }
+        final StringBuilder quien = new StringBuilder();
+        if (widow != null) {
+            quien.append(widow.name);
+        }
+        for (final Colono k : kids) {
+            quien.append(quien.length() > 0 ? ", " : "").append(k.name);
+        }
+        final String msg = String.format("La herencia de %s (%.0f AET) pasa a %s.",
+                dead.name, total, quien);
+        gateway.postEvent("herencia", msg);
+        routines.pushGossip(msg);
+        Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage("§7[Pueblo] " + msg));
     }
 
     /** Hereda el oficio del fallecido: preferentemente un HIJO/A suyo; si no, el vecino mas joven
@@ -1191,6 +1275,7 @@ public final class SettlementModule implements Listener {
         saveBuildings();
         gateway.postEvent("edificio", "El pueblo levanta " + buildingName(prof) + " en "
                 + towns.get(Math.max(0, Math.min(vid, towns.size() - 1))).name + ".");
+        routines.pushGossip("el pueblo ha levantado " + buildingName(prof) + ".");
         return new Location(world, cx + 0.5, fy + 1, cz + 0.5);
     }
 
@@ -1358,7 +1443,8 @@ public final class SettlementModule implements Listener {
                 }
                 alcaldes.put(vid, alcalde);
             }
-            produceInto(vid, t);
+            // El granero ya NO se llena solo: lo llena el TRABAJO FISICO de los aldeanos
+            // (LaborModule deposita cada cosecha, tala, lingote... segun se producen).
         }
     }
 
@@ -1467,6 +1553,7 @@ public final class SettlementModule implements Listener {
         civicBuilt.add(key);
         saveCivicBuildings();
         gateway.postEvent("edificio", msg);
+        routines.pushGossip(msg);
     }
 
     private String t(int vid) {
@@ -1500,39 +1587,84 @@ public final class SettlementModule implements Listener {
         }
     }
 
-    /** Cada oficio deposita 1 unidad de su produccion en el barril central del GRANERO de su aldea. */
-    private void produceInto(int vid, Town t) {
-        final int bx = t.cx - 12;   // barril central del granero (ver ensureCivics)
-        final int bz = t.cz;
-        // Cota FIJA (suelo de la plaza), NO groundY: si no, el barril se ve a si mismo como suelo
-        // y cada ciclo se planta otro encima -> pila vertical de barriles.
-        final org.bukkit.block.Block bb = world.getBlockAt(bx, t.baseY + 1, bz);
+    /** El barril central del GRANERO de una aldea (se re-crea si alguien lo quito). Cota FIJA
+     *  (suelo de la plaza), NO groundY: si no, el barril se ve a si mismo como suelo y cada ciclo
+     *  se plantaria otro encima -> pila vertical de barriles. */
+    private org.bukkit.inventory.Inventory granary(int vid) {
+        if (vid < 0 || vid >= towns.size()) {
+            return null;
+        }
+        final Town t = towns.get(vid);
+        final org.bukkit.block.Block bb = world.getBlockAt(t.cx - 12, t.baseY + 1, t.cz);
         if (bb.getType() != Material.BARREL) {
+            if (!bb.getType().isAir() && !natural(bb.getType())) {
+                return null;   // hay algo construido ahi: no se pisa
+            }
             bb.setType(Material.BARREL, false);
         }
-        if (!(bb.getState() instanceof org.bukkit.block.Container container)) {
-            return;
+        return bb.getState() instanceof org.bukkit.block.Container c ? c.getInventory() : null;
+    }
+
+    /**
+     * #11 - Deposita en el granero de la aldea lo que un colono acaba de producir DE VERDAD
+     * (una espiga segada, un tronco talado, un lingote fundido...). Devuelve cuantas unidades
+     * NO cupieron: ese excedente se vende fuera y va al sector comercio.
+     */
+    public int depositInGranary(int vid, Material good, int amount) {
+        final org.bukkit.inventory.Inventory inv = granary(vid);
+        if (inv == null) {
+            return amount;
         }
-        final org.bukkit.inventory.Inventory inv = container.getInventory();
-        for (final Colono c : colonos) {
-            if (c.vid == vid && !c.retired) {
-                inv.addItem(new org.bukkit.inventory.ItemStack(tradeGood(c.profKey), 1));
+        final var left = inv.addItem(new org.bukkit.inventory.ItemStack(good, amount));
+        int rest = 0;
+        for (final org.bukkit.inventory.ItemStack s : left.values()) {
+            rest += s.getAmount();
+        }
+        return rest;
+    }
+
+    /**
+     * #11 - Saca del granero UNA unidad del primer material de la lista que haya (la cadena de
+     * oficios: el herrero funde lo que el cantero pico, el carnicero ahuma lo que hay). Devuelve
+     * el material consumido, o null si el granero no tenia nada de eso.
+     */
+    public Material takeFromGranary(int vid, Material[] wanted) {
+        final org.bukkit.inventory.Inventory inv = granary(vid);
+        if (inv == null) {
+            return null;
+        }
+        for (final Material m : wanted) {
+            if (inv.contains(m)) {
+                inv.removeItem(new org.bukkit.inventory.ItemStack(m, 1));
+                return m;
             }
+        }
+        return null;
+    }
+
+    /** True si el bloque es parte de lo CONSTRUIDO del pueblo (casa, edificio o nucleo de plaza):
+     *  el trabajo fisico de los aldeanos nunca pica ni tala nada de esto. */
+    public boolean isVillageBuilt(Block b) {
+        return ownerAt(b) != null || buildingAt(b) || inVillageCore(b);
+    }
+
+    /** #11 - Suma al PECULIO de un colono lo que ha ganado con su trabajo (se hereda al morir). */
+    public void addWealth(String name, double amount) {
+        final Colono c = findColono(name);
+        if (c != null && amount > 0) {
+            c.wealth += amount;
         }
     }
 
-    private static Material tradeGood(String profKey) {
-        return switch (profKey) {
-            case "farmer" -> Material.WHEAT;
-            case "fisherman" -> Material.COD;
-            case "shepherd" -> Material.WHITE_WOOL;
-            case "mason" -> Material.STONE;
-            case "butcher" -> Material.BEEF;
-            case "librarian" -> Material.BOOK;
-            case "toolsmith" -> Material.IRON_INGOT;
-            case "fletcher" -> Material.ARROW;
-            default -> Material.EMERALD;
-        };
+    /** Instantanea de los colonos EN ACTIVO (ni jubilados ni muertos) para el trabajo fisico. */
+    public List<LaborModule.Laborer> activeLaborers() {
+        final List<LaborModule.Laborer> out = new ArrayList<>();
+        for (final Colono c : colonos) {
+            if (!c.retired) {
+                out.add(new LaborModule.Laborer(c.name, c.profKey, c.vid));
+            }
+        }
+        return out;
     }
 
     /** Refresca la ficha (edad, oficio, familia) de cada colono para que hable de si mismo. */
@@ -1559,9 +1691,14 @@ public final class SettlementModule implements Listener {
                 fam.append(" Eres el ALCALDE de ").append(towns.get(c.vid).name)
                         .append("; hablas con orgullo de tu pueblo.");
             }
+            // Su PECULIO (lo que ha ahorrado trabajando): que hable de si le va bien o mal.
+            final String bolsa = c.wealth < 10 ? " Apenas tienes ahorros; vives al dia."
+                    : c.wealth < 60 ? String.format(" Tienes unos %.0f AET ahorrados de tu trabajo.",
+                            c.wealth)
+                    : String.format(" Has ahorrado %.0f AET: te va bien y se te nota.", c.wealth);
             final String bio = "Eres " + c.name + ", " + (fem ? "vecina" : "vecino")
                     + " del pueblo de Aetheria. Tienes " + age
-                    + " anos y tu oficio es " + job + "." + fam
+                    + " anos y tu oficio es " + job + "." + fam + bolsa
                     + " Si te preguntan, habla con naturalidad de tu edad, tu trabajo y tu familia.";
             convo.setBio(c.name, bio);
         }
@@ -1616,29 +1753,65 @@ public final class SettlementModule implements Listener {
         }
     }
 
-    /** Sendero (dirt path) que sigue el relieve desde la casa hacia la plaza. */
+    /**
+     * Sendero desde la casa hasta la plaza que SE PUEDE SUBIR ANDANDO.
+     *
+     * <p>El camino ya no se limita a calcar el relieve (si el terreno daba un salto de un
+     * bloque, el sendero quedaba cortado: habia que saltar). Ahora se regula la RASANTE:
+     * la cota del camino sube o baja como mucho <b>un bloque cada dos casillas</b>, tallando
+     * lo que sobresale y rellenando lo que falta, y en la casilla intermedia se pone una
+     * <b>losa</b>. Asi cada paso es de medio bloque: se sube y se baja caminando, sin saltar,
+     * en los dos sentidos (una escalera de losas, no un escalon).
+     *
+     * <p>Nunca pisa lo construido: talla/rellena solo terreno natural.
+     */
     private void pathTo(int cx, int cz, Location plaza) {
         int x = cx;
         int z = cz;
         final int tx = plaza.getBlockX();
         final int tz = plaza.getBlockZ();
-        for (int guard = 0; (x != tx || z != tz) && guard < 130; guard++) {
+        // Altura de la superficie pisable medida en MEDIOS bloques: asi una losa es +1 y un
+        // bloque entero es +2. La regla del camino es simple: entre dos casillas seguidas la
+        // superficie no cambia mas de MEDIO bloque (|delta| <= 1).
+        int prevH = 2 * (groundY(cx, cz) + 1);
+        for (int guard = 0; (x != tx || z != tz) && guard < 220; guard++) {
             if (Math.abs(tx - x) >= Math.abs(tz - z)) {
                 x += Integer.signum(tx - x);
             } else {
                 z += Integer.signum(tz - z);
             }
             final int gy = groundY(x, z);
-            final Material below = world.getBlockAt(x, gy, z).getType();
-            if (below == Material.WATER || below == Material.LAVA) {
+            if (world.getBlockAt(x, gy, z).isLiquid()) {
+                continue;   // charco/rio: el sendero no lo cruza (los solares ya evitan el agua)
+            }
+            final int wantH = 2 * (gy + 1);                                  // lo que pide el terreno
+            final int h = Math.max(prevH - 1, Math.min(prevH + 1, wantH));   // medio bloque como mucho
+            final int ny = Math.floorDiv(h, 2) - 1;          // bloque de suelo del camino
+            final boolean slab = Math.floorMod(h, 2) == 1;   // media altura: escalon de losa
+            final Material at = world.getBlockAt(x, ny, z).getType();
+            if (!at.isAir() && !natural(at)) {
+                prevH = h;   // hay algo construido (plaza, edificio): no se toca, se sigue de largo
                 continue;
             }
-            if (below == Material.GRASS_BLOCK || below == Material.DIRT || below == Material.STONE
-                    || below == Material.GRAVEL || below == Material.COARSE_DIRT) {
-                world.getBlockAt(x, gy, z).setType(Material.DIRT_PATH, false);
+            for (int y = ny + 1; y <= ny + 4; y++) {          // talla el terreno que sobresale
+                final Material m = world.getBlockAt(x, y, z).getType();
+                if (!m.isAir() && natural(m)) {
+                    world.getBlockAt(x, y, z).setType(Material.AIR, false);
+                }
             }
-            world.getBlockAt(x, gy + 1, z).setType(Material.AIR, false);
-            world.getBlockAt(x, gy + 2, z).setType(Material.AIR, false);
+            for (int y = ny; y >= ny - 5; y--) {              // y rellena el hueco por debajo
+                final Block b = world.getBlockAt(x, y, z);
+                if (b.getType().isAir() || b.isLiquid()) {
+                    b.setType(Material.DIRT, false);
+                } else {
+                    break;
+                }
+            }
+            world.getBlockAt(x, ny, z).setType(slab ? Material.GRAVEL : Material.DIRT_PATH, false);
+            if (slab) {
+                world.getBlockAt(x, ny + 1, z).setType(Material.COBBLESTONE_SLAB, false);
+            }
+            prevH = h;
         }
     }
 
@@ -1890,6 +2063,7 @@ public final class SettlementModule implements Listener {
         saveTowns();
         final String msg = "Unos colonos parten a fundar una nueva aldea, " + name + ", lejos de aqui.";
         gateway.postEvent("fundacion", msg);
+        routines.pushGossip(msg);
         Bukkit.getOnlinePlayers().forEach(pl -> pl.sendMessage("§d[Mundo] §f" + msg));
         plugin.getLogger().info("[Aetheria] Nueva aldea fundada: " + name + " en " + bcx + "," + bcz);
         return towns.size() - 1;
@@ -1949,9 +2123,17 @@ public final class SettlementModule implements Listener {
         return dried;
     }
 
-    /** MANTENIMIENTO: el ALBANIL del pueblo (si lo hay) repara las casas que se hayan inundado.
-     *  Asi, aunque algo se cuele, el pueblo lo arregla solo. Enmarcado como un oficio, no como
-     *  "el servidor", para que quede realista. */
+    /**
+     * MANTENIMIENTO a cargo del ALBANIL (#11). Cada ciclo:
+     * <ol>
+     *   <li>Achica el agua que se haya colado en cualquier casa.</li>
+     *   <li>Revisa UNA casa por turno (rotatorio, barato) y, si esta <b>dañada</b> (boquetes en
+     *       el muro: creeper, incendio, un jugador cavando al lado), la <b>reconstruye</b> igual
+     *       que estaba (misma huella y paleta) y le <b>renivela</b> el solar.</li>
+     * </ol>
+     * Solo se hace si la aldea TIENE un albanil vivo y en activo: si no hay cantero, las casas
+     * se quedan rotas hasta que llegue uno. El pueblo se arregla con sus oficios, no por magia.
+     */
     private void repairHouses() {
         int dried = 0;
         for (final Colono c : colonos) {
@@ -1962,6 +2144,61 @@ public final class SettlementModule implements Listener {
             Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(
                     "§7[Pueblo] " + quien + " ha achicado el agua de una casa inundada."));
         }
+        if (colonos.isEmpty()) {
+            return;
+        }
+        repairCursor = (repairCursor + 1) % colonos.size();
+        final Colono c = colonos.get(repairCursor);
+        if (!c.dimsKnown || !hasMason(c.vid) || damage(c) < 3) {
+            return;   // sin albanil, sin saber como era la casa, o esta entera: nada que hacer
+        }
+        final int fy = c.y - 1;
+        final Material[] pal = COMBOS[Math.max(0, Math.min(c.pal, COMBOS.length - 1))];
+        final BlockFace door = towardPlaza(townCenter(c.vid), c.x, c.z);
+        prepareTerrain(c.x, c.z, fy);   // renivela el solar antes de levantarla otra vez
+        Blueprint.buildHouse(world, c.x, c.z, fy, door, c.halfX, c.halfZ, 1, false,
+                pal[0], pal[1], pal[2], pal[3], true, c.spouse != null ? 3 : 1,
+                c.spouse != null ? c.name + " y " + c.spouse : c.name);
+        deflood(c.x, fy, c.z, c.floors);
+        final String quien = tradesman(Villager.Profession.MASON, "El albanil del pueblo");
+        final String msg = quien + " ha reparado la casa de " + c.name + ".";
+        gateway.postEvent("reparacion", msg);
+        routines.pushGossip(msg);
+        Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage("§7[Pueblo] " + msg));
+    }
+
+    private int repairCursor = -1;
+
+    /** True si esa aldea tiene un cantero/albanil vivo y no jubilado. */
+    private boolean hasMason(int vid) {
+        final String key = profKey(Villager.Profession.MASON);
+        for (final Colono c : colonos) {
+            if (c.vid == vid && !c.retired && key.equals(c.profKey)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Cuenta los BOQUETES del muro de una casa: huecos de aire (o agua) en el anillo perimetral
+     *  a media altura, donde deberia haber pared, ventana o puerta. Barato: ~40 bloques. */
+    private int damage(Colono c) {
+        final int fy = c.y - 1;
+        int holes = 0;
+        for (int dx = -c.halfX; dx <= c.halfX; dx++) {
+            for (int dz = -c.halfZ; dz <= c.halfZ; dz++) {
+                if (Math.abs(dx) != c.halfX && Math.abs(dz) != c.halfZ) {
+                    continue;   // solo el anillo del muro
+                }
+                for (int y = fy + 1; y <= fy + 2; y++) {
+                    final Block b = world.getBlockAt(c.x + dx, y, c.z + dz);
+                    if (b.getType().isAir() || b.isLiquid()) {
+                        holes++;
+                    }
+                }
+            }
+        }
+        return holes;
     }
 
     /** Nombre de un colono con ese oficio (para atribuirle una tarea), o un generico si no hay. */

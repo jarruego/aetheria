@@ -51,6 +51,12 @@ async def add_world_event(body: dict):
     return await _ws("POST", "/internal/world-events", json=body)
 
 
+@router.post("/production", dependencies=[Depends(require_internal_token)])
+async def production(body: dict):
+    """Produccion FISICA de los aldeanos (#11): el trabajo real del pueblo se vuelve economia."""
+    return await _ws("POST", "/internal/production", json=body)
+
+
 @router.get("/prosperity", dependencies=[Depends(require_internal_token)])
 async def prosperity():
     """Estado de prosperidad del pueblo (para mostrarlo en el HUD)."""

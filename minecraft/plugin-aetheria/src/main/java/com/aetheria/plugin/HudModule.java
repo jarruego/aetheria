@@ -72,12 +72,20 @@ public final class HudModule implements Listener, CommandExecutor {
                     return;
                 }
                 final double balance = (e1 == null && bal != null) ? bal.get("balance").getAsDouble() : 0.0;
-                final String level = (e2 == null && pros != null) ? pros.get("level").getAsString() : "estable";
-                render(player, balance, level);
+                final boolean okPros = e2 == null && pros != null;
+                final String level = okPros ? pros.get("level").getAsString() : "estable";
+                // Progreso hacia el SIGUIENTE escalon de prosperidad = lo que falta para que el
+                // pueblo crezca (mas prosperidad -> mas probabilidad de un vecino nuevo).
+                final double progress = okPros && pros.has("progress")
+                        ? pros.get("progress").getAsDouble() : 0.0;
+                final String next = okPros && pros.has("next_level")
+                        ? pros.get("next_level").getAsString() : level;
+                render(player, balance, level, progress, next);
             })));
     }
 
-    private void render(Player player, double balance, String prosperity) {
+    private void render(Player player, double balance, String prosperity, double progress,
+            String nextLevel) {
         Scoreboard board = player.getScoreboard();
         if (board == null || board == Bukkit.getScoreboardManager().getMainScoreboard()) {
             board = Bukkit.getScoreboardManager().getNewScoreboard();
@@ -102,10 +110,17 @@ public final class HudModule implements Listener, CommandExecutor {
         line(obj, "§0", 7);
         line(obj, "§eHora: §f" + worldTime(player.getWorld().getTime()), 6);
         line(obj, "§ePueblo: §f" + prosperity, 5);
-        line(obj, "§eHabitantes: §f" + habitantes, 4);
-        line(obj, "§eJugadores: §f" + Bukkit.getOnlinePlayers().size(), 3);
-        line(obj, "§1", 2);
-        line(obj, "§7gana AET: /sell · ayuda: /guia", 1);
+        line(obj, "§eCrecimiento: §f" + bar(progress) + " §7" + (int) progress + "%", 4);
+        line(obj, "§7  → " + nextLevel, 3);
+        line(obj, "§eHabitantes: §f" + habitantes, 2);
+        line(obj, "§eJugadores: §f" + Bukkit.getOnlinePlayers().size(), 1);
+        line(obj, "§7gana AET: /sell · ayuda: /guia", 0);
+    }
+
+    /** Barra de progreso de 10 casillas (lo que le falta al pueblo para el siguiente escalon). */
+    private static String bar(double pct) {
+        final int full = (int) Math.round(Math.max(0, Math.min(100, pct)) / 10.0);
+        return "§a" + "▉".repeat(full) + "§8" + "▉".repeat(10 - full);
     }
 
     /** Hora del mundo en formato HH:MM con icono de la parte del dia (tick 0 = 06:00). */

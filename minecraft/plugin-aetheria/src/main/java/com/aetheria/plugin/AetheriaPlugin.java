@@ -123,6 +123,10 @@ public final class AetheriaPlugin extends JavaPlugin {
                 getServer().getPluginManager().registerEvents(settlement, this);   // protege sus casas
                 settlement.start();
 
+                // #11: los aldeanos TRABAJAN fisicamente (cosechan, talan, pican, funden) y de
+                // ese trabajo real vive la economia del pueblo.
+                new LaborModule(this, gameWorld, gateway, routines).start(settlement);
+
                 // Viaje rapido por los puntos de interes (plaza, mercado, taberna, spawn).
                 final WarpModule warps = new WarpModule(village, gameWorld);
                 Objects.requireNonNull(getCommand("warp")).setExecutor(warps);

@@ -51,6 +51,24 @@ _UPKEEP_RATIO = decimal.Decimal("0.6")    # los gastos se comen buena parte del 
 # (mas alto = la economia NO sube siempre: fluctua y se estanca en vez de crecer sin fin)
 _CENT = decimal.Decimal("0.01")
 
+# #11 - La economia vive del TRABAJO FISICO de los aldeanos, no de un numero aleatorio.
+# El ingreso "de oficio" (aleatorio) queda como RESIDUAL (rentas, trueques menores); el grueso
+# entra por `record_production`, que abona lo que los colonos han cosechado/talado/picado/fundido
+# de verdad en el mundo. Si el pueblo deja de trabajar, la economia decae sola.
+_BASELINE_RATIO = decimal.Decimal("0.35")
+# Cada habitante CUESTA (comida, techo, mantenimiento). Es el contrapeso de la produccion:
+# un pueblo grande que no trabaja se arruina y emigra gente.
+_UPKEEP_PER_CAPITA = decimal.Decimal("4.0")
+# Techo por peticion de produccion: el plugin nunca puede inyectar dinero sin limite.
+_MAX_PRODUCTION_PER_CALL = decimal.Decimal("150")
+
+# Sector economico de cada apunte de produccion (nombre -> cuenta de negocio).
+_SECTOR_ACCOUNTS = {
+    "agricultura": _BUSINESSES[0][0],
+    "artesania": _BUSINESSES[1][0],
+    "comercio": _BUSINESSES[2][0],
+}
+
 
 def _money(value: float | decimal.Decimal) -> decimal.Decimal:
     return decimal.Decimal(str(value)).quantize(_CENT)
@@ -125,11 +143,17 @@ async def run_tick(conn) -> dict:
     population = pop_row["population"] if pop_row else settings.sim_min_population
     pop_factor = decimal.Decimal(str(max(0.4, min(3.0, population / 5.0))))
 
+    # Gasto fijo del pueblo por HABITANTE (comida, techo, mantenimiento), repartido entre los
+    # sectores. Es lo que obliga a que el pueblo TRABAJE de verdad para sostenerse.
+    per_capita = _money(decimal.Decimal(population) * _UPKEEP_PER_CAPITA / len(_BUSINESSES))
+
     for owner_id, _name, sector in _BUSINESSES:
         acc = await _account(conn, owner_id, "company")
+        # Ingreso RESIDUAL (el grueso lo aporta la produccion fisica de los colonos).
         income = _money(decimal.Decimal(str(random.uniform(
-            settings.sim_income_min, settings.sim_income_max))) * boost * pop_factor)
-        upkeep = _money(income * _UPKEEP_RATIO)
+            settings.sim_income_min, settings.sim_income_max)))
+            * boost * pop_factor * _BASELINE_RATIO)
+        upkeep = _money(income * _UPKEEP_RATIO) + per_capita
         # ~4 de cada 10 ticks un negocio tiene un mal dia (gastos > ingresos): puede perder.
         if random.random() < 0.4 or hardship:
             upkeep += _money(decimal.Decimal(str(random.uniform(0.5, 1.5))) * income)
@@ -162,6 +186,36 @@ async def run_tick(conn) -> dict:
     return {"net": str(net_total), "prosperity": prov["level"], "wealth": prov["wealth"]}
 
 
+async def record_production(conn, entries: list) -> dict:
+    """Abona a los sectores la PRODUCCION FISICA que los aldeanos han hecho de verdad en el
+    mundo (cosechar, talar, picar piedra, fundir metal). Lo envia el plugin por lotes.
+
+    El dinero sale de la cuenta del sistema, como cualquier otro ingreso. El importe total
+    esta ACOTADO por peticion: aunque el plugin se descontrolara (o alguien colara una
+    llamada con el token interno), no puede inyectar dinero sin limite en la economia.
+    """
+    banco = await _account(conn, _BANCO, "system")
+    credited = decimal.Decimal(0)
+    for entry in entries:
+        sector = str(getattr(entry, "sector", "") or "")
+        owner = _SECTOR_ACCOUNTS.get(sector)
+        if owner is None:
+            continue
+        value = _money(max(0.0, float(getattr(entry, "value", 0) or 0)))
+        if value <= 0:
+            continue
+        if credited + value > _MAX_PRODUCTION_PER_CALL:
+            value = _MAX_PRODUCTION_PER_CALL - credited
+            if value <= 0:
+                break
+        acc = await _account(conn, owner, "company")
+        goods = (getattr(entry, "goods", None) or "").strip()[:80]
+        reason = f"trabajo de los aldeanos ({sector})" + (f": {goods}" if goods else "")
+        await _move(conn, banco, acc, value, reason)
+        credited += value
+    return {"status": "ok", "credited": float(credited)}
+
+
 async def prosperity(conn) -> dict:
     """Estado del pueblo segun la riqueza acumulada de sus negocios."""
     row = await conn.fetchrow(
@@ -170,14 +224,34 @@ async def prosperity(conn) -> dict:
     )
     total = float(row["total"])
     if total < 50:
-        level = "en apuros"
+        level, low, high = "en apuros", 0.0, 50.0
     elif total < 500:
-        level = "estable"
+        level, low, high = "estable", 50.0, 500.0
     elif total < 2000:
-        level = "prospero"
+        level, low, high = "prospero", 500.0, 2000.0
     else:
-        level = "floreciente"
-    return {"level": level, "wealth": round(total, 2), "businesses": len(_BUSINESSES)}
+        level, low, high = "floreciente", 2000.0, 2000.0
+    # Cuanto le falta al pueblo para el SIGUIENTE escalon de prosperidad (0-100). Es la barra
+    # de progreso hacia "mas vecinos": la poblacion objetivo sube cuando el pueblo prospera.
+    progress = 100.0 if high <= low else max(0.0, min(100.0, (total - low) * 100.0 / (high - low)))
+    # Probabilidad, por tick, de que llegue un vecino nuevo (o se marche uno) con este nivel.
+    chance = {"floreciente": 12.0, "prospero": 5.0, "estable": 0.0, "en apuros": -25.0}[level]
+    return {
+        "level": level,
+        "wealth": round(total, 2),
+        "businesses": len(_BUSINESSES),
+        "progress": round(progress, 1),
+        "next_level": _NEXT_LEVEL[level],
+        "growth_chance": chance,
+    }
+
+
+_NEXT_LEVEL = {
+    "en apuros": "estable",
+    "estable": "prospero",
+    "prospero": "floreciente",
+    "floreciente": "floreciente",
+}
 
 
 async def evolve_population(conn) -> dict:
@@ -216,6 +290,9 @@ async def village_state(conn) -> dict:
         "population": row["population"] if row else settings.sim_min_population,
         "level": prov["level"],
         "wealth": prov["wealth"],
+        "progress": prov["progress"],
+        "next_level": prov["next_level"],
+        "growth_chance": prov["growth_chance"],
     }
 
 

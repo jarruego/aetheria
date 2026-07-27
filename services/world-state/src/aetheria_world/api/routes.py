@@ -26,6 +26,7 @@ from aetheria_world.models import (
     PlotClaimIn,
     PlotOut,
     PlotUnclaimIn,
+    ProductionIn,
     SummaryOut,
     SummaryUpsert,
     TransferIn,
@@ -37,6 +38,7 @@ from aetheria_world.simulation import apply_life_event as sim_apply_life_event
 from aetheria_world.simulation import collect_rent as sim_collect_rent
 from aetheria_world.simulation import evolve_population as sim_evolve_population
 from aetheria_world.simulation import prosperity as sim_prosperity
+from aetheria_world.simulation import record_production as sim_record_production
 from aetheria_world.simulation import run_tick
 from aetheria_world.simulation import village_state as sim_village_state
 
@@ -377,6 +379,19 @@ async def add_world_event(body: dict) -> dict:
             # tesoreria del pueblo (y con ella la prosperidad).
             await sim_apply_life_event(conn, kind)
     return {"status": "ok"}
+
+
+@router.post("/production")
+async def production(body: ProductionIn) -> dict:
+    """#11 - La produccion FISICA de los aldeanos alimenta la economia del pueblo.
+
+    El plugin agrega el trabajo real (cosechas, talas, piedra, metal) y lo manda por lotes;
+    aqui se abona a la cuenta del sector. Importe acotado por peticion (ver simulation).
+    """
+    _require_db()
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            return await sim_record_production(conn, body.entries)
 
 
 @router.post("/sim/tick")

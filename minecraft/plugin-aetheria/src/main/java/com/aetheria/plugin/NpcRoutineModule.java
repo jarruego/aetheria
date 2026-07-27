@@ -53,6 +53,7 @@ public final class NpcRoutineModule {
         int stuck;          // ticks de rutina seguidos sin avanzar
         long lastRemark;    // ultima vez que solto un comentario curioso
         long lastSong;      // ultima vez que canto en la taberna
+        long lastGossip;    // ultima vez que conto (u oyo) un cotilleo del pueblo
         Location wander;    // destino de paseo actual (o null si esta trabajando)
         long wanderUntil;   // hasta cuando dura el paseo
         Location bed;       // cama de su casa (para dormir de noche); se busca una vez
@@ -134,6 +135,118 @@ public final class NpcRoutineModule {
         workers.add(w);
     }
 
+    /** La entidad de un colono por su nombre (la usa el modulo de trabajo fisico para saber
+     *  DONDE esta trabajando ahora mismo). Null si no existe o esta descargado. */
+    public org.bukkit.entity.Mob entityOf(String name) {
+        for (final Worker w : workers) {
+            if (w.name.equals(name)) {
+                return w.entity;
+            }
+        }
+        return null;
+    }
+
+    // --- COTILLEO: las noticias del pueblo corren de boca en boca ---
+
+    private static final int GOSSIP_MAX = 10;
+    private static final long GOSSIP_COOLDOWN_MS = 60_000L;
+    private static final String[] GOSSIP_OPEN = {
+        "¿Te has enterado?", "Dicen por ahi que", "Me ha contado un vecino:", "Lo comentan en la plaza:",
+        "No se lo cuentes a nadie, pero", "Se dice en la taberna:",
+    };
+    private static final String[] GOSSIP_REPLY = {
+        "Vaya, no tenia ni idea.", "Algo habia oido yo tambien.", "¡No me digas!",
+        "Cosas del pueblo...", "Pues mira tu por donde.", "Ya somos dos que lo sabemos.",
+    };
+    private final java.util.ArrayDeque<String> gossip = new java.util.ArrayDeque<>();
+
+    /** Anota una NOTICIA del pueblo (boda, nacimiento, muerte, obra, cosecha). Los vecinos la
+     *  repetiran entre ellos cuando coincidan, si hay algun jugador cerca para oirlo. */
+    public void pushGossip(String news) {
+        if (news == null || news.isBlank()) {
+            return;
+        }
+        gossip.addFirst(news.length() > 90 ? news.substring(0, 88) + "..." : news);
+        while (gossip.size() > GOSSIP_MAX) {
+            gossip.removeLast();
+        }
+    }
+
+    /** Texto flotante sobre la cabeza de alguien unos segundos (canciones y cotilleos). */
+    private void bubble(Location above, String text, long ticks) {
+        final TextDisplay td = world.spawn(above, TextDisplay.class, t -> {
+            t.text(Component.text(text));
+            t.setBillboard(Display.Billboard.CENTER);
+            t.setSeeThrough(true);
+            t.addScoreboardTag(SONG_TAG);
+        });
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (td.isValid()) {
+                td.remove();
+            }
+        }, ticks);
+    }
+
+    /**
+     * Dos vecinos que coinciden cerca se cuentan las novedades del pueblo (con cooldown y solo
+     * si hay un jugador a la escucha: si no hay nadie, no se gasta nada). Uno suelta la noticia
+     * y el otro responde: se ve como dos bocadillos encadenados.
+     */
+    private void maybeGossip(Worker w) {
+        if (gossip.isEmpty() || w.entity == null) {
+            return;
+        }
+        final long now = System.currentTimeMillis();
+        if (now - w.lastGossip < GOSSIP_COOLDOWN_MS
+                || java.util.concurrent.ThreadLocalRandom.current().nextInt(100) >= 4) {
+            return;
+        }
+        final Location at = w.entity.getLocation();
+        boolean audience = false;
+        for (final Player p : world.getPlayers()) {
+            if (p.getLocation().distanceSquared(at) <= 576) {   // 24 bloques: hay quien lo oiga
+                audience = true;
+                break;
+            }
+        }
+        if (!audience) {
+            return;
+        }
+        Worker other = null;
+        for (final Worker o : workers) {
+            if (o != w && o.entity != null && !o.entity.isDead()
+                    && o.entity.getWorld().equals(at.getWorld())
+                    && o.entity.getLocation().distanceSquared(at) <= 36) {   // a 6 bloques
+                other = o;
+                break;
+            }
+        }
+        if (other == null) {
+            return;
+        }
+        final var rng = java.util.concurrent.ThreadLocalRandom.current();
+        w.lastGossip = now;
+        other.lastGossip = now;
+        final String news = gossip.stream().skip(rng.nextInt(gossip.size())).findFirst().orElse(null);
+        if (news == null) {
+            return;
+        }
+        final String line = GOSSIP_OPEN[rng.nextInt(GOSSIP_OPEN.length)] + " " + news;
+        bubble(at.clone().add(0, 2.3, 0), "§f" + line, 100L);
+        final Worker listener = other;
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (listener.entity != null && !listener.entity.isDead()) {
+                bubble(listener.entity.getLocation().clone().add(0, 2.3, 0),
+                        "§7" + GOSSIP_REPLY[rng.nextInt(GOSSIP_REPLY.length)], 70L);
+            }
+        }, 45L);
+        for (final Player p : world.getPlayers()) {
+            if (p.getLocation().distanceSquared(at) <= 576) {
+                p.sendMessage("§e[" + w.name + "] §7" + line);
+            }
+        }
+    }
+
     /** Si el vecino esta DENTRO de la taberna (al atardecer), de vez en cuando "canta": aparece un
      *  texto flotante sobre su cabeza unos segundos. Da vida a la taberna llena. */
     private void maybeSing(Worker w) {
@@ -156,18 +269,7 @@ public final class NpcRoutineModule {
         }
         w.lastSong = now;
         final String line = SONGS[java.util.concurrent.ThreadLocalRandom.current().nextInt(SONGS.length)];
-        final Location above = at.clone().add(0, 2.3, 0);
-        final TextDisplay td = world.spawn(above, TextDisplay.class, t -> {
-            t.text(Component.text(line));
-            t.setBillboard(Display.Billboard.CENTER);
-            t.setSeeThrough(true);
-            t.addScoreboardTag(SONG_TAG);
-        });
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            if (td.isValid()) {
-                td.remove();
-            }
-        }, 90L);   // ~4,5 s y desaparece
+        bubble(at.clone().add(0, 2.3, 0), line, 90L);   // ~4,5 s y desaparece
     }
 
     /** La CAMA de la casa del vecino: se busca UNA vez un bloque de cama junto a su casa. Ir a la
@@ -366,6 +468,7 @@ public final class NpcRoutineModule {
                 w.entity.setAI(true);         // red de seguridad: reanuda si quedo pausado
             }
             maybeRemark(w);                   // comentario curioso si hay alguien cerca
+            maybeGossip(w);                   // y, si coincide con otro vecino, se cuentan lo ultimo
             final Location target;
             if (time < 12000L) {
                 // Los JUBILADOS (sin oficio) no trabajan: pasan el dia en la plaza y pasean.

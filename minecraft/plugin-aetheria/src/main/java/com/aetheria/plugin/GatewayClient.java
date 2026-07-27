@@ -208,6 +208,17 @@ public final class GatewayClient {
         return getJson("/v1/village");
     }
 
+    /**
+     * #11 - Reporta la PRODUCCION FISICA de los aldeanos (por lotes, un apunte por sector).
+     * El backend la convierte en ingresos del pueblo: la economia vive del trabajo real.
+     */
+    public CompletableFuture<JsonObject> production(com.google.gson.JsonArray entries) {
+        final JsonObject body = new JsonObject();
+        body.addProperty("world", "main");
+        body.add("entries", entries);
+        return sendCapturing("/v1/production", gson.toJson(body));
+    }
+
     /** Registra un suceso en la cronica del mundo (nacimiento, jubilacion, muerte...). */
     public CompletableFuture<JsonObject> postEvent(String kind, String description) {
         final JsonObject body = new JsonObject();

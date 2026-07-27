@@ -211,6 +211,34 @@ paths:
                 items: { $ref: "#/components/schemas/WorldEvent" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /v1/production:
+    post:
+      tags: [world]
+      summary: >-
+        Producción FÍSICA de los aldeanos (#11) — el trabajo real del pueblo (cosechas, talas,
+        piedra picada, metal fundido) se convierte en ingresos de los sectores económicos.
+      description: >-
+        Lo envía el plugin por lotes (no bloque a bloque). El world-state abona el valor a la
+        cuenta del sector correspondiente. El importe por petición está acotado en el backend:
+        el plugin nunca puede inyectar dinero sin límite.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Production" }
+      responses:
+        "200":
+          description: Producción abonada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  credited: { type: number, example: 18.4 }
+        "400": { description: Lote inválido }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /v1/claims:
     get:
       tags: [social]
@@ -452,6 +480,22 @@ components:
         kind: { type: string, example: economy }
         description: { type: string, example: "El pueblo trabajo: La Granja de Nara gano 8 AET..." }
         created_at: { type: string, format: date-time }
+
+    Production:
+      type: object
+      required: [world, entries]
+      properties:
+        world: { type: string, example: main }
+        entries:
+          type: array
+          description: Un apunte por sector economico (se agregan en el plugin, no van uno a uno).
+          items:
+            type: object
+            required: [sector, value]
+            properties:
+              sector: { type: string, example: agricultura }
+              value: { type: number, example: 12.5, description: AET producidos en el lote }
+              goods: { type: string, example: "trigo x6, piedra x3" }
 
     PlotClaim:
       type: object

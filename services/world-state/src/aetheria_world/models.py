@@ -143,3 +143,16 @@ class PlotOut(BaseModel):
     base_y: int = 64
     rental: bool = False
     rent: float = 0.0
+
+
+# --- Produccion FISICA de los aldeanos (#11): el trabajo real alimenta la economia ---
+
+class ProductionEntry(BaseModel):
+    sector: str                # 'agricultura' | 'artesania' | 'comercio'
+    value: float               # AET producidos en el lote
+    goods: str | None = None   # descripcion legible ("trigo x6, piedra x3")
+
+
+class ProductionIn(BaseModel):
+    world: str = "main"
+    entries: list[ProductionEntry] = []

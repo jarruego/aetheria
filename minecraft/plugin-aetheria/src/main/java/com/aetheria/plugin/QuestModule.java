@@ -38,7 +38,7 @@ import net.kyori.adventure.text.Component;
 /**
  * MISIONES del pueblo y PRESTIGIO del jugador.
  *
- * <p>Un <b>pregonero</b> en la plaza de cada aldea (clic derecho = menu de inventario, igual que
+ * <p>Un <b>alguacil</b> en la plaza de cada aldea (clic derecho = menu de inventario, igual que
  * el mercader) reparte los encargos que el pueblo necesita <i>de verdad</i>: lo que falta en su
  * granero, lo que le falta a la hucha para el proximo vecino, hablar con los vecinos, llevar un
  * paquete a la aldea de al lado... Todos los objetivos y todas las recompensas salen de
@@ -100,19 +100,45 @@ public final class QuestModule implements Listener, CommandExecutor {
     private final Map<String, Set<String>> talked = new HashMap<>();
 
     // ------------------------------------------------------------------
-    // El pregonero
+    // El alguacil
     // ------------------------------------------------------------------
 
-    /** Se asegura de que hay UN pregonero en la plaza de esa aldea (no se duplica al reiniciar). */
+    /** Como se llama en cada aldea: "Alguacil de Villalce". */
+    private static String crierName(String town) {
+        return "§eAlguacil de " + town;
+    }
+
+    /** Se asegura de que hay UN alguacil en la plaza de esa aldea (no se duplica). */
     public void ensureCrier(Location loc, String town, int vid) {
+        // Si la aldea esta DESCARGADA no se toca: buscar entidades daria vacio y spawnearia un
+        // alguacil de mas (y al cargarse el chunk apareceria tambien el persistido) -> duplicado.
+        if (!loc.getWorld().isChunkLoaded(loc.getBlockX() >> 4, loc.getBlockZ() >> 4)) {
+            return;
+        }
         final String tag = CRIER_TAG + "_" + vid;
-        for (final org.bukkit.entity.Entity e : loc.getWorld().getNearbyEntities(loc, 4, 4, 4)) {
-            if (e.getScoreboardTags().contains(tag)) {
-                return;
+        // Busca TODOS los alguaciles de esta aldea en un radio amplio (por si se alejo en su ronda),
+        // se queda con UNO y ELIMINA los duplicados que hayan podido aparecer.
+        org.bukkit.entity.Entity keep = null;
+        for (final org.bukkit.entity.Entity e : loc.getWorld().getNearbyEntities(loc, 40, 12, 40)) {
+            if (!e.getScoreboardTags().contains(tag)) {
+                continue;
+            }
+            if (keep == null) {
+                keep = e;
+            } else {
+                e.remove();   // duplicado: fuera
             }
         }
+        if (keep != null) {
+            keep.customName(Component.text(crierName(town)));
+            if (keep instanceof Villager ex) {
+                ex.setAI(true);
+            }
+            criers.put(vid, keep.getUniqueId());
+            return;
+        }
         final Villager v = (Villager) loc.getWorld().spawnEntity(loc, EntityType.VILLAGER);
-        v.customName(Component.text("§ePregonero de " + town));
+        v.customName(Component.text(crierName(town)));
         v.setCustomNameVisible(true);
         v.setProfession(Villager.Profession.LIBRARIAN);
         v.setVillagerType(Villager.Type.PLAINS);
@@ -120,10 +146,119 @@ public final class QuestModule implements Listener, CommandExecutor {
         v.setInvulnerable(true);
         v.setPersistent(true);
         v.setRemoveWhenFarAway(false);
-        v.setAI(false);   // quieto junto al tablon
         v.addScoreboardTag(CRIER_TAG);
         v.addScoreboardTag(tag);
-        DisguiseModule.humanize(v, "m", "Pregonero", "librarian");
+        criers.put(vid, v.getUniqueId());
+        DisguiseModule.humanize(v, "m", "Alguacil", "librarian");
+    }
+
+    // ------------------------------------------------------------------
+    // La RONDA del alguacil: no se queda clavado, pero tampoco se va del pueblo
+    // ------------------------------------------------------------------
+
+    /** Hasta donde se aleja del centro de la plaza en su ronda. */
+    private static final double RONDA = 5.0;
+    /** A que distancia repara en un jugador que pasa. */
+    private static final double SALUDO = 7.0;
+    /** Cada cuanto puede volver a ofrecerle faena al MISMO jugador. */
+    private static final long SALUDO_MS = 120_000L;
+
+    private final Map<Integer, UUID> criers = new HashMap<>();
+    private final Map<UUID, Long> greeted = new HashMap<>();
+
+    /** Arranca la ronda de los alguaciles (una pasada cada 2 s, barata: solo aldeas cargadas). */
+    public void start() {
+        Bukkit.getScheduler().runTaskTimer(plugin, this::patrol, 100L, 40L);
+    }
+
+    private void patrol() {
+        for (int vid = 0; vid < settlement.townCount(); vid++) {
+            final org.bukkit.entity.Mob crier = crierOf(vid);
+            if (crier == null) {
+                continue;   // aldea sin cargar (o sin alguacil todavia)
+            }
+            final Location plaza = settlement.plazaCenter(vid);
+            if (plaza == null) {
+                continue;
+            }
+            final Player near = nearestPlayer(crier);
+            if (near != null) {
+                // SE PARA a hablar con quien pasa: deja la ronda, se gira y le ofrece faena.
+                crier.getPathfinder().stopPathfinding();
+                faceToward(crier, near);
+                offerWork(near, crier, vid);
+                continue;
+            }
+            final double away = crier.getLocation().distance(plaza);
+            if (away > RONDA + 1.5) {
+                crier.getPathfinder().moveTo(plaza, 0.9);   // se ha ido lejos: vuelve a la plaza
+            } else if (ThreadLocalRandom.current().nextInt(100) < 30) {
+                // Paseo corto por la plaza, siempre dentro del radio de la ronda.
+                final double ang = ThreadLocalRandom.current().nextDouble() * Math.PI * 2;
+                final double r = 1.5 + ThreadLocalRandom.current().nextDouble() * (RONDA - 1.5);
+                crier.getPathfinder().moveTo(plaza.clone().add(Math.cos(ang) * r, 0,
+                        Math.sin(ang) * r), 0.7);
+            }
+        }
+    }
+
+    /** El alguacil de esa aldea, si esta cargado (se recuerda por UUID; si no, se busca por tag). */
+    private org.bukkit.entity.Mob crierOf(int vid) {
+        final UUID id = criers.get(vid);
+        if (id != null && Bukkit.getEntity(id) instanceof org.bukkit.entity.Mob m && m.isValid()) {
+            return m;
+        }
+        final Location plaza = settlement.plazaCenter(vid);
+        if (plaza == null) {
+            return null;
+        }
+        final String tag = CRIER_TAG + "_" + vid;
+        for (final org.bukkit.entity.Entity e : plaza.getWorld().getNearbyEntities(plaza, 16, 8, 16)) {
+            if (e instanceof org.bukkit.entity.Mob m && e.getScoreboardTags().contains(tag)) {
+                criers.put(vid, e.getUniqueId());
+                return m;
+            }
+        }
+        return null;
+    }
+
+    private Player nearestPlayer(org.bukkit.entity.Mob crier) {
+        Player best = null;
+        double bestD = SALUDO * SALUDO;
+        for (final Player p : crier.getWorld().getPlayers()) {
+            final double d = p.getLocation().distanceSquared(crier.getLocation());
+            if (d < bestD) {
+                bestD = d;
+                best = p;
+            }
+        }
+        return best;
+    }
+
+    /** Le ofrece faena de palabra al que pasa (con enfriamiento, para no cansar). */
+    private void offerWork(Player p, org.bukkit.entity.Mob crier, int vid) {
+        final long now = System.currentTimeMillis();
+        final Long last = greeted.get(p.getUniqueId());
+        if (last != null && now - last < SALUDO_MS) {
+            return;
+        }
+        greeted.put(p.getUniqueId(), now);
+        final String who = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
+                .plainText().serialize(crier.customName() == null
+                        ? Component.text("Alguacil") : crier.customName());
+        p.sendMessage("§6[" + who + "] §fHay faena en " + settlement.townName(vid)
+                + ", si te interesa haz clic y te cuento.");
+        p.playSound(crier.getLocation(), Sound.ENTITY_VILLAGER_AMBIENT, 0.7f, 1.1f);
+    }
+
+    /** Gira al alguacil hacia el jugador (funciona aunque este parado). */
+    private static void faceToward(org.bukkit.entity.Entity npc, Player p) {
+        final Location l = npc.getLocation();
+        final double dx = p.getLocation().getX() - l.getX();
+        final double dz = p.getLocation().getZ() - l.getZ();
+        l.setYaw((float) Math.toDegrees(Math.atan2(-dx, dz)));
+        l.setPitch(0f);
+        npc.teleport(l);
     }
 
     @EventHandler
@@ -177,7 +312,7 @@ public final class QuestModule implements Listener, CommandExecutor {
         }
     }
 
-    /** Marca la ventana del pregonero (y de que aldea es) para reconocer los clics. */
+    /** Marca la ventana del alguacil (y de que aldea es) para reconocer los clics. */
     private static final class BoardHolder implements InventoryHolder {
         final int vid;
 
@@ -193,7 +328,7 @@ public final class QuestModule implements Listener, CommandExecutor {
 
     /** Pide al backend las misiones vivas, completa el cupo con encargos nuevos y abre el menu. */
     private void openBoard(Player p, int vid) {
-        p.sendMessage("§7El pregonero repasa sus notas...");
+        p.sendMessage("§7El alguacil repasa sus notas...");
         refresh(p, vid, () -> {
             final List<Quest> mine = questsFor(p, vid);
             final int missing = MAX_ACTIVE - (int) mine.stream()
@@ -239,7 +374,7 @@ public final class QuestModule implements Listener, CommandExecutor {
                             list.add(parse(el.getAsJsonObject()));
                         }
                     } else if (err != null) {
-                        p.sendMessage("§7(el pregonero no encuentra sus notas ahora mismo)");
+                        p.sendMessage("§7(el alguacil no encuentra sus notas ahora mismo)");
                     }
                     checkLadder(p, vid);   // escalera de prestigio: ¿ya has llegado al puesto pedido?
                     // Autocobra las que YA llegaron al objetivo pero quedaron sin cobrar (p.ej. un
@@ -407,7 +542,7 @@ public final class QuestModule implements Listener, CommandExecutor {
         if (deliverable(q)) {
             lore.add(Component.text("§aClic: entregar lo que llevas encima"));
         } else {
-            lore.add(Component.text("§8Se cumple ahi fuera; el pregonero se entera solo."));
+            lore.add(Component.text("§8Se cumple ahi fuera; el alguacil se entera solo."));
         }
         m.lore(lore);
         it.setItemMeta(m);
@@ -491,7 +626,7 @@ public final class QuestModule implements Listener, CommandExecutor {
         }
         final Quest q = mine.get(index);
         if (!deliverable(q)) {
-            p.sendMessage("§7[Pregonero] Eso se cumple ahi fuera. Yo me entero solo, tranquilo.");
+            p.sendMessage("§7[Alguacil] Eso se cumple ahi fuera. Yo me entero solo, tranquilo.");
             return;
         }
         deliver(p, q, holder.vid);   // el tablon se queda abierto y se repinta al avanzar/cumplir
@@ -515,13 +650,13 @@ public final class QuestModule implements Listener, CommandExecutor {
             }
         }
         if (have <= 0) {
-            p.sendMessage("§7[Pregonero] No llevas " + nice(q.good) + " encima.");
+            p.sendMessage("§7[Alguacil] No llevas " + nice(q.good) + " encima.");
             return;
         }
         final int given = Math.min(have, need);
         p.getInventory().removeItem(new ItemStack(q.good, given));
         settlement.depositInGranary(vid, q.good, given);   // entra en el granero de esta aldea
-        p.sendMessage("§a[Pregonero] Entregas §f" + given + " " + nice(q.good) + "§a. Gracias.");
+        p.sendMessage("§a[Alguacil] Entregas §f" + given + " " + nice(q.good) + "§a. Gracias.");
         p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_YES, 1f, 1.1f);
         bump(p, q, given);
     }
@@ -771,7 +906,7 @@ public final class QuestModule implements Listener, CommandExecutor {
                 .whenComplete((arr, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
                     if (err != null || arr == null || arr.isEmpty()) {
                         p.sendMessage("§7Aun no tienes prestigio en ninguna aldea. Entra en un "
-                                + "pueblo y habla con su §epregonero§7.");
+                                + "pueblo y habla con su §ealguacil§7.");
                         return;
                     }
                     p.sendMessage("§6§lTu prestigio en Aetheria");
@@ -806,7 +941,7 @@ public final class QuestModule implements Listener, CommandExecutor {
                     r.score(), i == 0 ? " §6(alcalde)" : ""));
         }
         if (mine < 0) {
-            p.sendMessage("§7Tu aun no puntuas aqui: habla con el §epregonero§7 de la plaza o "
+            p.sendMessage("§7Tu aun no puntuas aqui: habla con el §ealguacil§7 de la plaza o "
                     + "aporta al §earca§7.");
         } else {
             p.sendMessage("§7Tu puesto: §f#" + (mine + 1) + " §7de §f" + rank.size()

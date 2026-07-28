@@ -68,10 +68,24 @@ public final class MarketModule implements Listener {
     /** Se asegura de que hay UN mercader en el punto (spawnea solo si falta; asi sobrevive a
      *  reinicios sin duplicarse). */
     public void ensureTrader(Location loc, String town) {
-        for (final org.bukkit.entity.Entity e : loc.getWorld().getNearbyEntities(loc, 3, 4, 3)) {
-            if (e.getScoreboardTags().contains(TRADER_TAG)) {
-                return;   // ya hay mercader
+        // Aldea DESCARGADA: no se toca. Si no, buscar entidades daria vacio y spawnearia un mercader
+        // de mas (y al cargar el chunk apareceria tambien el persistido) -> duplicado.
+        if (!loc.getWorld().isChunkLoaded(loc.getBlockX() >> 4, loc.getBlockZ() >> 4)) {
+            return;
+        }
+        org.bukkit.entity.Entity keep = null;
+        for (final org.bukkit.entity.Entity e : loc.getWorld().getNearbyEntities(loc, 4, 4, 4)) {
+            if (!e.getScoreboardTags().contains(TRADER_TAG)) {
+                continue;
             }
+            if (keep == null) {
+                keep = e;   // el mercader bueno
+            } else {
+                e.remove();   // duplicado: fuera
+            }
+        }
+        if (keep != null) {
+            return;   // ya hay (uno solo)
         }
         final Villager v = (Villager) loc.getWorld().spawnEntity(loc, EntityType.VILLAGER);
         v.customName(Component.text("§6Mercader de " + town));

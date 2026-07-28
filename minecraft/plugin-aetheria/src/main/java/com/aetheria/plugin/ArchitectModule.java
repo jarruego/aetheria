@@ -139,6 +139,7 @@ public final class ArchitectModule implements CommandExecutor, Listener {
             case "size" -> setSize(player, args.length > 1 ? args[1] : "");
             case "mat" -> setMat(player, args.length > 1 ? args[1] : "");
             case "estilo" -> setStyle(player, args.length > 1 ? args[1] : "");
+            case "aspecto" -> setAspecto(player, args.length > 1 ? args[1] : "");
             case "muebles" -> setFurniture(player, args.length > 1 ? args[1] : "");
             case "confirmar" -> confirm(player);
             // "ok" hace lo siguiente que toque: confirmar el presupuesto o, si ya esta
@@ -227,6 +228,19 @@ public final class ArchitectModule implements CommandExecutor, Listener {
         openMenu(player);
     }
 
+    /** UN SOLO paso: fija gama de materiales Y silueta a la vez (arg = "mat/estilo"). */
+    private void setAspecto(Player player, String arg) {
+        final Order o = orders.get(player.getUniqueId());
+        if (o == null || o.size == 0) { start(player); return; }
+        final String[] p = arg.split("/", 2);
+        final String mat = p[0].toLowerCase();
+        if (!TIERS.containsKey(mat)) { openMenu(player); return; }
+        o.mat = mat;
+        o.style = (p.length > 1 && "torre".equals(p[1])) ? "torre" : "casona";
+        o.styleSet = true;
+        openMenu(player);   // siguiente: muebles
+    }
+
     private void setFurniture(Player player, String f) {
         final Order o = orders.get(player.getUniqueId());
         if (o == null || o.size == 0 || o.mat == null) { start(player); return; }
@@ -284,7 +298,7 @@ public final class ArchitectModule implements CommandExecutor, Listener {
         if (o.kind == null) {
             menu(player, "Que clase de casa", new String[][] {
                 {"CRAFTING_TABLE", "§aCasa a medida", "tipo:gen",
-                 "§7La disena el arquitecto: eliges tamano,", "§7materiales, estilo y muebles."},
+                 "§7La disena el arquitecto: eliges tamano,", "§7aspecto y muebles."},
                 {"OAK_PLANKS", "§bCasa tipo Minecraft", "tipo:mc",
                  "§7Una casa de aldea REAL del juego.", "§7Solo eliges el tamano."},
             });
@@ -302,20 +316,18 @@ public final class ArchitectModule implements CommandExecutor, Listener {
             budgetMenu(player, o);   // la vanilla no tiene material, estilo ni muebles
             return;
         }
-        if (o.mat == null) {
-            menu(player, "Gama de materiales", new String[][] {
-                {"OAK_PLANKS", "§aRustica", "mat:madera", "§7Madera de toda la vida."},
-                {"STONE_BRICKS", "§aDe piedra", "mat:piedra", "§7Solida y sobria."},
-                {"BRICKS", "§aNoble", "mat:ladrillo", "§7Ladrillo y blackstone."},
-                {"QUARTZ_BLOCK", "§bDe lujo", "mat:lujo", "§7Cuarzo y prismarina."},
-            });
-            return;
-        }
-        if (!o.styleSet) {
-            menu(player, "Estilo de la casa", new String[][] {
-                {"BRICKS", "§aCasona", "estilo:casona", "§7Equilibrada, la de siempre."},
-                {"HAY_BLOCK", "§aAldeana", "estilo:aldeana", "§7Compacta, estilo pueblo."},
-                {"STONE_BRICK_WALL", "§aTorre", "estilo:torre", "§7Alta y estrecha."},
+        if (o.mat == null || !o.styleSet) {
+            // UN SOLO paso de ASPECTO: combina gama de materiales y silueta. (Antes eran dos pasos,
+            // y "aldeana" duplicaba la rama 'Tipo Minecraft' y anulaba la gama elegida.)
+            menu(player, "Aspecto de la casa", new String[][] {
+                {"OAK_PLANKS", "§aRustica", "aspecto:madera/casona", "§7Madera, planta ancha."},
+                {"STONE_BRICKS", "§aDe piedra", "aspecto:piedra/casona", "§7Piedra, solida y sobria."},
+                {"BRICKS", "§aNoble", "aspecto:ladrillo/casona", "§7Ladrillo y blackstone."},
+                {"QUARTZ_BLOCK", "§bDe lujo", "aspecto:lujo/casona", "§7Cuarzo y prismarina."},
+                {"STONE_BRICK_WALL", "§aTorre de piedra", "aspecto:piedra/torre",
+                 "§7Piedra, alta y estrecha."},
+                {"NETHER_BRICKS", "§aTorreon noble", "aspecto:ladrillo/torre",
+                 "§7Ladrillo, alta y estrecha."},
             });
             return;
         }
@@ -343,27 +355,33 @@ public final class ArchitectModule implements CommandExecutor, Listener {
         });
     }
 
-    /** Pinta una ventana con las opciones dadas: {material, nombre, accion, ...descripcion}. */
+    /** Pinta una ventana con las opciones dadas: {material, nombre, accion, ...descripcion}. La
+     *  ventana crece a 18 casillas (2 filas) si hay mas de 4 opciones. */
     private void menu(Player player, String title, String[][] options) {
         final WizHolder holder = new WizHolder();
-        final org.bukkit.inventory.Inventory inv = Bukkit.createInventory(holder, 9,
+        final int size = options.length <= 4 ? 9 : 18;
+        final org.bukkit.inventory.Inventory inv = Bukkit.createInventory(holder, size,
                 Component.text("§6" + title));
-        int slot = options.length <= 3 ? 2 : 1;
-        for (final String[] op : options) {
+        // Colocacion: 3 opciones centradas (2,4,6); si no, filas de 1,3,5,7 y 10,12,14,16.
+        final int[] spots = options.length <= 3
+                ? new int[] {2, 4, 6}
+                : new int[] {1, 3, 5, 7, 10, 12, 14, 16};
+        for (int i = 0; i < options.length && i < spots.length; i++) {
+            final int slot = spots[i];
+            final String[] op = options[i];
             final Material icon = Material.matchMaterial(op[0]);
             final org.bukkit.inventory.ItemStack it =
                     new org.bukkit.inventory.ItemStack(icon == null ? Material.PAPER : icon);
             final org.bukkit.inventory.meta.ItemMeta m = it.getItemMeta();
             m.displayName(Component.text(op[1]));
             final java.util.List<Component> lore = new java.util.ArrayList<>();
-            for (int i = 3; i < op.length; i++) {
-                lore.add(Component.text(op[i]));
+            for (int j = 3; j < op.length; j++) {
+                lore.add(Component.text(op[j]));
             }
             m.lore(lore);
             it.setItemMeta(m);
             inv.setItem(slot, it);
             holder.actions[slot] = op[2];
-            slot += options.length <= 3 ? 2 : 2;
         }
         player.openInventory(inv);
     }
@@ -391,6 +409,7 @@ public final class ArchitectModule implements CommandExecutor, Listener {
                 case "size" -> setSize(player, arg);
                 case "mat" -> setMat(player, arg);
                 case "estilo" -> setStyle(player, arg);
+                case "aspecto" -> setAspecto(player, arg);
                 case "muebles" -> setFurniture(player, arg);
                 case "confirmar" -> confirm(player);
                 case "cancelar" -> {

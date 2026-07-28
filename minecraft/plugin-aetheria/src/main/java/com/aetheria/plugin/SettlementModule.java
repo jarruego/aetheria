@@ -879,6 +879,7 @@ public final class SettlementModule implements Listener {
                     if (quests != null) {
                         quests.onDonated(p, townName(vid), DONATION);
                     }
+                    refreshRankingNow(vid);   // el tablon de la plaza lo refleja al momento
                     final Town t = towns.get(vid);
                     t.pool += DONATION;
                     saveTowns();
@@ -1797,29 +1798,45 @@ public final class SettlementModule implements Listener {
             final Town t = towns.get(vid);
             ensureCivics(vid, t);   // granero (siempre), taberna (>=4 hab), mercado (>=6 hab)
             ensureDonationChest(vid, t);   // arca del pueblo: donde el jugador puede aportar
-
-            // UN SOLO RANKING: los vecinos por su peculio, los jugadores por su prestigio.
-            final List<Rank> rk = computeRanking(vid);
-            ranking.put(vid, rk);
-            final String alcalde = rk.isEmpty() ? "" : rk.get(0).name();
-
-            infoPanel(vid, t, alcalde);
-            prestigeBoard(vid, t, rk);
-            final String prev = alcaldes.get(vid);
-            if (!alcalde.isEmpty() && !alcalde.equals(prev)) {
-                if (prev != null) {
-                    // Mismo camino de siempre: cambiar de alcalde queda en la cronica, tanto si
-                    // el relevo lo gana un vecino como si lo gana un jugador con prestigio.
-                    final boolean isPlayer = rk.get(0).player();
-                    gateway.postEvent("gobierno", alcalde + (isPlayer ? " (forastero)" : "")
-                            + " toma el cargo de alcalde de " + t.name + ".");
-                }
-                alcaldes.put(vid, alcalde);
-            }
-            refreshPlayerRep(vid);   // en 2o plano, para el proximo ciclo
+            applyRanking(vid);             // ranking, panel, tablon y alcalde
+            refreshPlayerRep(vid, null);   // en 2o plano, para el proximo ciclo
             // El granero ya NO se llena solo: lo llena el TRABAJO FISICO de los aldeanos
             // (LaborModule deposita cada cosecha, tala, lingote... segun se producen).
         }
+    }
+
+    /** Recalcula el ranking de una aldea y repinta lo que depende de el (panel, tablon, alcalde). */
+    private void applyRanking(int vid) {
+        if (vid < 0 || vid >= towns.size()) {
+            return;
+        }
+        final Town t = towns.get(vid);
+        // UN SOLO RANKING: los vecinos por su peculio, los jugadores por su prestigio.
+        final List<Rank> rk = computeRanking(vid);
+        ranking.put(vid, rk);
+        final String alcalde = rk.isEmpty() ? "" : rk.get(0).name();
+        infoPanel(vid, t, alcalde);
+        prestigeBoard(vid, t, rk);
+        final String prev = alcaldes.get(vid);
+        if (!alcalde.isEmpty() && !alcalde.equals(prev)) {
+            if (prev != null) {
+                // Mismo camino de siempre: cambiar de alcalde queda en la cronica, tanto si el
+                // relevo lo gana un vecino como si lo gana un jugador con prestigio.
+                final boolean isPlayer = rk.get(0).player();
+                gateway.postEvent("gobierno", alcalde + (isPlayer ? " (forastero)" : "")
+                        + " toma el cargo de alcalde de " + t.name + ".");
+            }
+            alcaldes.put(vid, alcalde);
+        }
+    }
+
+    /**
+     * Repinta el tablon de esa aldea AHORA con el prestigio recien ganado, sin esperar al ciclo
+     * de 60 s. Lo llaman el pregonero (al cobrar un encargo) y el arca (al aportar): si no, el
+     * jugador cumplia una mision y no se veia reflejado hasta un par de minutos despues.
+     */
+    public void refreshRankingNow(int vid) {
+        refreshPlayerRep(vid, () -> applyRanking(vid));
     }
 
     /**
@@ -1848,8 +1865,8 @@ public final class SettlementModule implements Listener {
         return out;
     }
 
-    /** Trae del backend el prestigio de los jugadores de esa aldea (para el proximo ciclo). */
-    private void refreshPlayerRep(int vid) {
+    /** Trae del backend el prestigio de los jugadores de esa aldea; {@code then} corre despues. */
+    private void refreshPlayerRep(int vid, Runnable then) {
         final String town = townName(vid);
         gateway.getVillageReputation(town).whenComplete((arr, err) -> {
             if (err != null || arr == null) {
@@ -1867,8 +1884,23 @@ public final class SettlementModule implements Listener {
                 list.add(new Rank(o.get("username").getAsString(), o.get("score").getAsDouble(),
                         true, id));
             }
-            Bukkit.getScheduler().runTask(plugin, () -> playerRep.put(vid, list));
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                playerRep.put(vid, list);
+                if (then != null) {
+                    then.run();
+                }
+            });
         });
+    }
+
+    /** La aldea que se llama asi, o -1. */
+    public int townIdByName(String name) {
+        for (int i = 0; i < towns.size(); i++) {
+            if (towns.get(i).name.equals(name)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /** El ranking vigente de una aldea (vacio si aun no se ha calculado). */
@@ -1927,13 +1959,27 @@ public final class SettlementModule implements Listener {
         if (rk.isEmpty()) {
             sb.append("§7(aun no hay nadie en el tablon)");
         }
-        for (int i = 0; i < Math.min(8, rk.size()); i++) {
+        final int top = Math.min(8, rk.size());
+        for (int i = 0; i < top; i++) {
             final Rank r = rk.get(i);
             sb.append(i == 0 ? "§6" : "§7").append(i + 1).append(". ")
               .append(r.player() ? "§b" : "§f").append(r.name())
               .append(" §8").append((int) Math.round(r.score()))
               .append(i == 0 ? " §6(alcalde)" : "")
               .append('\n');
+        }
+        // Los JUGADORES salen siempre, aunque aun no entren en los ocho primeros: es su carrera
+        // la que cuenta el tablon, y quedarse fuera del corte sin ver tu puesto desanima.
+        final StringBuilder rezagados = new StringBuilder();
+        for (int i = top; i < rk.size(); i++) {
+            final Rank r = rk.get(i);
+            if (r.player()) {
+                rezagados.append("§7").append(i + 1).append(". §b").append(r.name())
+                         .append(" §8").append((int) Math.round(r.score())).append('\n');
+            }
+        }
+        if (rezagados.length() > 0) {
+            sb.append(" \n§8· viajeros mas abajo ·\n").append(rezagados);
         }
         sb.append(" \n§8/prestigio para ver tu puesto");
         board.text(Component.text(sb.toString()));
@@ -2785,38 +2831,63 @@ public final class SettlementModule implements Listener {
         }, 1L, 1L).getTaskId();
     }
 
+    /** Y del bloque de AGUA mas alto que cubre la columna (x,z) por encima del suelo solido, o -1
+     *  si no esta cubierta de agua. Sirve para trazar el puente POR ENCIMA del agua en vez de
+     *  hundir la carretera hasta el lecho. */
+    private int waterSurfaceY(int x, int z, int groundY) {
+        int top = -1;
+        for (int y = groundY + 1; y <= groundY + 24; y++) {
+            final Block b = world.getBlockAt(x, y, z);
+            if (b.isLiquid()) {
+                top = y;
+            } else if (!b.getType().isAir()) {
+                break;   // algo solido tapa la columna: no es agua abierta
+            }
+        }
+        return top;
+    }
+
     /** Pavimenta UNA casilla de carretera (con sus dos arcenes) respetando la rasante. Devuelve
-     *  la nueva altura de la superficie medida en MEDIOS bloques. */
+     *  la nueva altura de la superficie medida en MEDIOS bloques. Sobre agua NO se hunde: traza un
+     *  PUENTE de madera un bloque por encima de la superficie, con pilones de piedra hasta el lecho. */
     private int paveTile(int x, int z, int prevH, int perpX, int perpZ, int index) {
-        final int gy = groundY(x, z);
-        final boolean water = world.getBlockAt(x, gy, z).isLiquid();
+        final int gy = groundY(x, z);                    // fondo solido (bajo el agua, si la hay)
+        final int waterTop = waterSurfaceY(x, z, gy);    // superficie del agua, o -1 si no hay
+        final boolean water = waterTop >= 0;
         if (!water && !natural(world.getBlockAt(x, gy, z).getType())) {
             return prevH;   // plaza o edificio: la carretera pasa de largo sin tocar ni elevarse
         }
-        final int wantH = 2 * (gy + 1);
+        // En tierra, la rasante sube/baja medio bloque por casilla hacia el suelo. Sobre agua, el
+        // tablero va UN bloque por encima de la superficie (plano a lo largo del lago), nunca dentro.
+        final int wantH = water ? 2 * (waterTop + 2) : 2 * (gy + 1);
         if (prevH < 0) {
-            prevH = wantH;   // arranca A RAS de la primera casilla de tierra firme
+            prevH = wantH;   // arranca A RAS de la primera casilla
         }
-        final int h = water ? prevH : Math.max(prevH - 1, Math.min(prevH + 1, wantH));
+        final int h = water ? wantH : Math.max(prevH - 1, Math.min(prevH + 1, wantH));
         final int ny = Math.floorDiv(h, 2) - 1;
         final boolean slab = Math.floorMod(h, 2) == 1;
         for (int w = -1; w <= 1; w++) {
             final int px = x + perpX * w;
             final int pz = z + perpZ * w;
             final Material at = world.getBlockAt(px, ny, pz).getType();
-            if (!at.isAir() && !natural(at)) {
+            if (!at.isAir() && !at.name().contains("WATER") && !natural(at)) {
                 continue;   // algo construido (una plaza, una casa): la carretera no lo pisa
             }
             for (int y = ny + 1; y <= ny + 4; y++) {
-                final Material m = world.getBlockAt(px, y, pz).getType();
-                if (!m.isAir() && natural(m)) {
-                    world.getBlockAt(px, y, pz).setType(Material.AIR, false);
+                final Block b = world.getBlockAt(px, y, pz);
+                if (!b.getType().isAir() && (natural(b.getType()) || b.isLiquid())) {
+                    b.setType(Material.AIR, false);
                 }
             }
-            if (water) {   // PUENTE: tablero de madera y barandilla en los arcenes
+            if (water) {   // PUENTE: tablero de madera, barandilla en los arcenes y pilones de piedra
                 world.getBlockAt(px, ny, pz).setType(Material.OAK_PLANKS, false);
                 if (w != 0) {
                     world.getBlockAt(px, ny + 1, pz).setType(Material.OAK_FENCE, false);
+                }
+                if (index % 5 == 0 && w != 0) {   // pilon cada pocos tramos: del tablero al lecho
+                    for (int y = ny - 1; y > gy; y--) {
+                        world.getBlockAt(px, y, pz).setType(Material.STONE_BRICKS, false);
+                    }
                 }
                 continue;
             }
@@ -2834,7 +2905,7 @@ public final class SettlementModule implements Listener {
                 world.getBlockAt(px, ny + 1, pz).setType(Material.COBBLESTONE_SLAB, false);
             }
         }
-        if (index % 24 == 12 && !water) {   // farol de camino cada tramo, en el arcen
+        if (index % 24 == 12) {   // farol de camino cada tramo (en tierra, en el arcen; en el puente,
             world.getBlockAt(x + perpX, ny + 1, z + perpZ).setType(Material.OAK_FENCE, false);
             world.getBlockAt(x + perpX, ny + 2, z + perpZ).setType(Material.LANTERN, false);
         }

@@ -2137,6 +2137,7 @@ public final class SettlementModule implements Listener {
                 "El pueblo construye un granero en " + t.name + ".");
         if (civicBuilt.contains(vid + ":granero")) {
             reclaimStrayGranaryBarrels(vid);   // recoge barriles sueltos de versiones anteriores
+            refreshGranaryLabels(vid);         // etiqueta cada barril con su genero y cantidad
         }
         ensureCivic(vid, "taberna", t.cx + 9, t.cz, t.baseY, 5, 4,
                 "El pueblo abre una taberna en " + t.name + ".");
@@ -2457,6 +2458,71 @@ public final class SettlementModule implements Listener {
             }
         }
         return n;
+    }
+
+    // --- ETIQUETAS de los barriles del granero (para VER que hay dentro sin abrirlos) ---
+    private static final String GRANARY_LABEL_TAG = "aetheria_granary_label";
+    private final java.util.Map<String, org.bukkit.entity.TextDisplay> granaryLabels =
+            new java.util.HashMap<>();
+    private boolean granaryLabelsPurged = false;
+
+    /** Pone (o actualiza) sobre cada barril del granero una etiqueta flotante "Genero xN" con lo
+     *  que guarda, para que el jugador vea el contenido y la cantidad sin tener que abrirlo (el
+     *  barril no se abre: es la despensa del pueblo). Se refresca cada ciclo de vida de la aldea. */
+    private void refreshGranaryLabels(int vid) {
+        if (!granaryLabelsPurged) {   // limpia etiquetas huerfanas de un arranque anterior
+            for (final org.bukkit.entity.TextDisplay td
+                    : world.getEntitiesByClass(org.bukkit.entity.TextDisplay.class)) {
+                if (td.getScoreboardTags().contains(GRANARY_LABEL_TAG)) {
+                    td.remove();
+                }
+            }
+            granaryLabelsPurged = true;
+        }
+        if (vid < 0 || vid >= towns.size()) {
+            return;
+        }
+        final Town t = towns.get(vid);
+        for (final int[] o : GRANARY_BARRELS) {
+            final int bx = t.cx - 12 + o[0];
+            final int by = t.baseY + o[1];
+            final int bz = t.cz + o[2];
+            final String key = bx + "," + by + "," + bz;
+            final Block b = world.getBlockAt(bx, by, bz);
+            String text = null;
+            if (b.getType() == Material.BARREL && b.getState() instanceof org.bukkit.block.Container c) {
+                final Material good = granaryGoodOf(c);
+                final int amount = good == null ? 0 : count(c.getInventory(), good);
+                if (good != null && amount > 0) {
+                    text = "§e" + granaryLabel(good) + " §7x" + amount;
+                }
+            }
+            final org.bukkit.entity.TextDisplay existing = granaryLabels.get(key);
+            if (text == null) {   // barril vacio o sin genero: fuera su etiqueta
+                if (existing != null) {
+                    if (existing.isValid()) {
+                        existing.remove();
+                    }
+                    granaryLabels.remove(key);
+                }
+                continue;
+            }
+            if (existing != null && existing.isValid()) {
+                existing.text(net.kyori.adventure.text.Component.text(text));
+                continue;
+            }
+            final String txt = text;
+            // La etiqueta va en la cara SUR del barril (hacia el interior del granero), a su altura.
+            final Location loc = new Location(world, bx + 0.5, by + 0.1, bz + 0.62);
+            final org.bukkit.entity.TextDisplay td = world.spawn(loc,
+                    org.bukkit.entity.TextDisplay.class, d -> {
+                        d.text(net.kyori.adventure.text.Component.text(txt));
+                        d.setBillboard(org.bukkit.entity.Display.Billboard.CENTER);
+                        d.setSeeThrough(false);
+                        d.addScoreboardTag(GRANARY_LABEL_TAG);
+                    });
+            granaryLabels.put(key, td);
+        }
     }
 
     /** Cuantas unidades de ese genero le caben todavia al jugador encima. */

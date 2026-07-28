@@ -2179,6 +2179,9 @@ public final class SettlementModule implements Listener {
         }
         gateway.postEvent("edificio", msg);
         routines.pushGossip(msg);
+        // Hito del mundo: que se levante un granero/taberna/mercado se anuncia a TODOS (con el
+        // nombre del pueblo), no solo a quien pasa cerca. Son sucesos poco frecuentes.
+        Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage("§3[Aetheria] §7" + msg));
     }
 
     private String t(int vid) {

@@ -1908,6 +1908,9 @@ public final class SettlementModule implements Listener {
         // incluidos); antes esto miraba solo a los adultos y el mercado no aparecia con 6.
         ensureCivic(vid, "granero", t.cx - 12, t.cz, t.baseY, 4, 0,
                 "El pueblo construye un granero en " + t.name + ".");
+        if (civicBuilt.contains(vid + ":granero")) {
+            reclaimStrayGranaryBarrels(vid);   // recoge barriles sueltos de versiones anteriores
+        }
         ensureCivic(vid, "taberna", t.cx + 9, t.cz, t.baseY, 5, 4,
                 "El pueblo abre una taberna en " + t.name + ".");
         ensureCivic(vid, "mercado", t.cx - 3, t.cz + 12, t.baseY, 5, 6,
@@ -1980,16 +1983,27 @@ public final class SettlementModule implements Listener {
         }
     }
 
-    /** Cuantos barriles puede tener como maximo el granero (uno por genero). Fila al oeste de la
-     *  plaza, a cota FIJA (suelo), extendida hacia +Z. */
-    private static final int GRANARY_SLOTS = 24;
+    /** Clave PDC (invisible) con la que se marca cada barril del granero segun el genero que guarda,
+     *  para reencontrar el suyo tras un reinicio. */
+    private static final String GRANARY_KEY = "granary_good";
+
+    /** Posiciones de los barriles que el EDIFICIO del granero ya tiene, relativas a su origen
+     *  (t.cx-12, t.baseY, t.cz). Deben cuadrar con {@link VillageModule#buildGranary}: fila baja y
+     *  fila alta del fondo (norte, dz=-2) mas el barril central (0,1,0). Cada genero reutiliza uno
+     *  de estos; NO se plantan barriles nuevos. */
+    private static final int[][] GRANARY_BARRELS = {
+        {-2, 1, -2}, {-1, 1, -2}, {0, 1, -2}, {1, 1, -2}, {2, 1, -2},
+        {-2, 2, -2}, {-1, 2, -2}, {0, 2, -2}, {1, 2, -2}, {2, 2, -2},
+        {0, 1, 0},
+    };
 
     /**
-     * Barril DEDICADO a un genero dentro del granero de la aldea: cada tipo de recurso tiene el
-     * suyo, de modo que las pociones u otros objetos NO apilables ya no atascan el granero entero.
-     * Se marca cada barril con una clave PDC invisible ("granary_good") para reencontrar el suyo
-     * tras un reinicio. {@code createIfMissing=false} devuelve null si ese genero aun no tiene
-     * barril (sirve para {@code takeFromGranary}, que no debe crear ninguno).
+     * Barril DEDICADO a un genero DENTRO del granero, reutilizando los barriles que el edificio ya
+     * tiene en la pared del fondo (no se apilan barriles nuevos). Cada tipo de recurso ocupa uno,
+     * asi las pociones u otros objetos NO apilables ya no atascan el granero entero. El barril se
+     * marca con PDC ({@link #GRANARY_KEY}) y se ROTULA con el nombre del genero (se ve al abrirlo).
+     * {@code createIfMissing=false} devuelve null si ese genero aun no tiene barril (para
+     * {@code takeFromGranary}, que no debe asignar ninguno).
      */
     private org.bukkit.inventory.Inventory granaryBarrel(int vid, Material good,
             boolean createIfMissing) {
@@ -1997,40 +2011,83 @@ public final class SettlementModule implements Listener {
             return null;
         }
         final Town t = towns.get(vid);
-        final org.bukkit.NamespacedKey key = new org.bukkit.NamespacedKey(plugin, "granary_good");
+        final int gx = t.cx - 12;
+        final int gz = t.cz;
+        final org.bukkit.NamespacedKey key = new org.bukkit.NamespacedKey(plugin, GRANARY_KEY);
         final String tag = good.name();
         int firstFree = -1;
-        for (int i = 0; i < GRANARY_SLOTS; i++) {
-            final org.bukkit.block.Block b = world.getBlockAt(t.cx - 12, t.baseY + 1, t.cz + i);
-            if (b.getType() == Material.BARREL) {
-                if (b.getState() instanceof org.bukkit.block.Container c) {
-                    final String owner = c.getPersistentDataContainer()
-                            .get(key, org.bukkit.persistence.PersistentDataType.STRING);
-                    if (tag.equals(owner)) {
-                        return c.getInventory();               // el barril de este genero
-                    }
-                    if (owner == null && firstFree < 0 && c.getInventory().isEmpty()) {
-                        firstFree = i;                          // barril libre sin dueno asignado
-                    }
+        for (int i = 0; i < GRANARY_BARRELS.length; i++) {
+            final int[] o = GRANARY_BARRELS[i];
+            final org.bukkit.block.Block b = world.getBlockAt(gx + o[0], t.baseY + o[1], gz + o[2]);
+            if (b.getType() != Material.BARREL) {
+                continue;   // hueco de la pared sin barril (griefeado): no plantamos fuera de sitio
+            }
+            if (b.getState() instanceof org.bukkit.block.Container c) {
+                final String owner = c.getPersistentDataContainer()
+                        .get(key, org.bukkit.persistence.PersistentDataType.STRING);
+                if (tag.equals(owner)) {
+                    return c.getInventory();               // el barril de este genero
                 }
-            } else if (firstFree < 0 && (b.getType().isAir() || natural(b.getType()))) {
-                firstFree = i;                                  // hueco donde plantar un barril
+                if (owner == null && firstFree < 0 && c.getInventory().isEmpty()) {
+                    firstFree = i;                          // barril de la pared libre, aun sin dueno
+                }
             }
         }
         if (!createIfMissing || firstFree < 0) {
-            return null;   // el granero esta lleno de barriles o el sitio esta ocupado
+            return null;   // todos los barriles del granero ya tienen dueno: el resto se vende fuera
         }
-        final org.bukkit.block.Block b = world.getBlockAt(t.cx - 12, t.baseY + 1, t.cz + firstFree);
-        if (b.getType() != Material.BARREL) {
-            b.setType(Material.BARREL, false);
-        }
+        final int[] o = GRANARY_BARRELS[firstFree];
+        final org.bukkit.block.Block b = world.getBlockAt(gx + o[0], t.baseY + o[1], gz + o[2]);
         if (b.getState() instanceof org.bukkit.block.Container c) {
             c.getPersistentDataContainer()
                     .set(key, org.bukkit.persistence.PersistentDataType.STRING, tag);
+            c.customName(net.kyori.adventure.text.Component.text("§6" + granaryLabel(good)));
             c.update();
         }
-        return world.getBlockAt(t.cx - 12, t.baseY + 1, t.cz + firstFree)
+        return world.getBlockAt(gx + o[0], t.baseY + o[1], gz + o[2])
                 .getState() instanceof org.bukkit.block.Container c2 ? c2.getInventory() : null;
+    }
+
+    /** Nombre legible del genero para rotular su barril ("IRON_INGOT" -> "Iron ingot"). */
+    private static String granaryLabel(Material m) {
+        final String s = m.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
+        return s.isEmpty() ? "?" : Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    /** Recoge los barriles SUELTOS que una version anterior dejo apilados hacia el sur del granero
+     *  (fuera de la pared): vuelca su contenido en el barril de pared que le toca a cada genero y
+     *  retira el barril sobrante. Se llama en el mantenimiento del granero; una vez limpio, no hace
+     *  nada. */
+    private void reclaimStrayGranaryBarrels(int vid) {
+        if (vid < 0 || vid >= towns.size()) {
+            return;
+        }
+        final Town t = towns.get(vid);
+        final int gx = t.cx - 12;
+        final org.bukkit.NamespacedKey key = new org.bukkit.NamespacedKey(plugin, GRANARY_KEY);
+        for (int dz = 1; dz <= 24; dz++) {   // la fila vieja crecia hacia +Z desde el central
+            final org.bukkit.block.Block b = world.getBlockAt(gx, t.baseY + 1, t.cz + dz);
+            if (b.getType() != Material.BARREL
+                    || !(b.getState() instanceof org.bukkit.block.Container c)) {
+                continue;
+            }
+            final String owner = c.getPersistentDataContainer()
+                    .get(key, org.bukkit.persistence.PersistentDataType.STRING);
+            if (owner == null) {
+                continue;   // no es un barril nuestro: no se toca
+            }
+            for (final org.bukkit.inventory.ItemStack st : c.getInventory().getContents()) {
+                if (st == null) {
+                    continue;
+                }
+                final org.bukkit.inventory.Inventory dest = granaryBarrel(vid, st.getType(), true);
+                if (dest != null) {
+                    dest.addItem(st);   // lo que no quepa se pierde (era excedente ya de por si)
+                }
+            }
+            c.getInventory().clear();
+            b.setType(Material.AIR, false);   // fuera el barril suelto
+        }
     }
 
     /**

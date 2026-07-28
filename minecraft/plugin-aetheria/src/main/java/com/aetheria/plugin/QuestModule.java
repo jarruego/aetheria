@@ -62,17 +62,19 @@ public final class QuestModule implements Listener, CommandExecutor {
     /** Misiones activas por jugador (se refrescan al entrar en una aldea y al abrir el tablon). */
     private final Map<UUID, List<Quest>> cache = new HashMap<>();
 
-    /** Enfriamiento por TIPO de encargo y aldea (playerUUID -> "aldea::tipo" -> instante en que se
-     *  cumplio): un tipo recien cumplido NO se vuelve a ofrecer hasta pasado {@link #TYPE_COOLDOWN_MS},
-     *  para que no se pueda farmear (sobre todo charla/mercado/parcela, que no dependen del estado
-     *  de la aldea y volvian a salir al momento). */
-    private final Map<UUID, Map<String, Long>> cooldown = new HashMap<>();
-    private static final long TYPE_COOLDOWN_MS = 60 * 60 * 1000L;   // 1 hora real por tipo y aldea
+    /** NIVEL de cada tipo de encargo por jugador y aldea = cuantas veces ya lo ha cumplido (clave
+     *  "uuid;aldea;tipo" -> nº). Persistido en quest-tiers.txt. Sube el objetivo de la SIGUIENTE
+     *  mision de ese tipo (mas pan, un vecino mas, mas donacion, top mas alto...), asi una mision
+     *  NUNCA se repite igual; cuando un tipo llega a su techo, deja de ofrecerse. */
+    private final Map<String, Integer> tiers = new HashMap<>();
+    private final java.io.File tierFile;
 
     public QuestModule(AetheriaPlugin plugin, GatewayClient gateway, SettlementModule settlement) {
         this.plugin = plugin;
         this.gateway = gateway;
         this.settlement = settlement;
+        this.tierFile = new java.io.File(plugin.getDataFolder(), "quest-tiers.txt");
+        loadTiers();
     }
 
     /** Una mision viva del jugador (espejo en memoria de la fila de `quests`). */
@@ -80,9 +82,10 @@ public final class QuestModule implements Listener, CommandExecutor {
         String id;
         String town;        // aldea que hace el encargo
         String kind;        // economica | social | construccion | mantenimiento | exploracion
-        String type;        // granero | arca | mercado | charla | parcela | paquete
+        String type;        // granero | arca | mercado | charla | parcela | paquete | alcaldia
         Material good;      // genero pedido (si el encargo va de genero)
         String destTown;    // aldea de destino (encargos de tipo paquete)
+        int rankTarget;     // puesto a alcanzar (encargos de tipo alcaldia: top 5,4,3,2,1)
         int progress;
         int target;
         int aet;
@@ -238,6 +241,7 @@ public final class QuestModule implements Listener, CommandExecutor {
                     } else if (err != null) {
                         p.sendMessage("§7(el pregonero no encuentra sus notas ahora mismo)");
                     }
+                    checkLadder(p, vid);   // escalera de prestigio: ¿ya has llegado al puesto pedido?
                     // Autocobra las que YA llegaron al objetivo pero quedaron sin cobrar (p.ej. un
                     // fallo de red en su momento): asi una mision cumplida no se queda pegada a tope
                     // en el tablon. El backend vuelve a validar; si no procede, no paga.
@@ -267,30 +271,76 @@ public final class QuestModule implements Listener, CommandExecutor {
                 ? o.getAsJsonObject("objective") : new JsonObject();
         q.type = obj.has("type") ? obj.get("type").getAsString() : "";
         q.destTown = obj.has("town") ? obj.get("town").getAsString() : null;
+        q.rankTarget = obj.has("rank") ? obj.get("rank").getAsInt() : 0;
         if (obj.has("good")) {
             q.good = Material.matchMaterial(obj.get("good").getAsString());
         }
         return q;
     }
 
-    /** Apunta que este TIPO de encargo se acaba de cumplir en esta aldea (para no reofrecerlo ya). */
-    private void markCooldown(Player p, Quest q) {
-        cooldown.computeIfAbsent(p.getUniqueId(), k -> new HashMap<>())
-                .put(q.town + "::" + q.type, System.currentTimeMillis());
+    private static String tierKey(java.util.UUID id, String town, String type) {
+        return id + ";" + town + ";" + type;
     }
 
-    /** Tipos de encargo que ESA aldea tiene en enfriamiento para este jugador (cumplidos hace poco). */
-    private Set<String> coolingTypes(Player p, String town) {
-        final Set<String> out = new HashSet<>();
-        final long now = System.currentTimeMillis();
-        final String prefix = town + "::";
-        for (final Map.Entry<String, Long> e
-                : cooldown.getOrDefault(p.getUniqueId(), Map.of()).entrySet()) {
-            if (e.getKey().startsWith(prefix) && now - e.getValue() < TYPE_COOLDOWN_MS) {
-                out.add(e.getKey().substring(prefix.length()));
+    /** Cuantas veces ha cumplido ya este jugador un tipo de encargo en esta aldea (su NIVEL). */
+    private int tier(Player p, String town, String type) {
+        return tiers.getOrDefault(tierKey(p.getUniqueId(), town, type), 0);
+    }
+
+    /** Sube el nivel de ese tipo al cumplirlo (el proximo encargo de ese tipo sera mas dificil). */
+    private void bumpTier(Player p, Quest q) {
+        final String key = tierKey(p.getUniqueId(), q.town, q.type);
+        tiers.merge(key, 1, Integer::sum);
+        saveTiers();
+    }
+
+    /** Puesto (1 = alcalde) del jugador en el ranking de la aldea, o MAX_VALUE si aun no figura. */
+    private int playerRank(Player p, int vid) {
+        final List<SettlementModule.Rank> rk = settlement.ranking(vid);
+        for (int i = 0; i < rk.size(); i++) {
+            if (rk.get(i).player() && p.getUniqueId().equals(rk.get(i).uuid())) {
+                return i + 1;
             }
         }
-        return out;
+        return Integer.MAX_VALUE;
+    }
+
+    /** Comprueba las misiones de ESCALERA (alcaldia): si el jugador ya ha alcanzado el puesto
+     *  pedido, la da por cumplida. Se llama al refrescar (abrir tablon / entrar en la aldea). */
+    private void checkLadder(Player p, int vid) {
+        for (final Quest q : new ArrayList<>(questsFor(p, vid))) {
+            if ("alcaldia".equals(q.type) && q.progress < q.target && q.rankTarget >= 1
+                    && playerRank(p, vid) <= q.rankTarget) {
+                bump(p, q, q.target - q.progress);
+            }
+        }
+    }
+
+    private void loadTiers() {
+        if (!tierFile.exists()) {
+            return;
+        }
+        try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(tierFile))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                final String[] f = line.split(";", -1);
+                if (f.length >= 4) {
+                    tiers.put(f[0] + ";" + f[1] + ";" + f[2], Integer.parseInt(f[3]));
+                }
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Aetheria] no pude cargar niveles de misiones: " + e.getMessage());
+        }
+    }
+
+    private void saveTiers() {
+        try (java.io.FileWriter w = new java.io.FileWriter(tierFile, false)) {
+            for (final Map.Entry<String, Integer> e : tiers.entrySet()) {
+                w.write(e.getKey() + ";" + e.getValue() + "\n");
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Aetheria] no pude guardar niveles de misiones: " + e.getMessage());
+        }
     }
 
     /** Misiones que se pueden ver/entregar en esta aldea: las suyas y los paquetes destinados a ella. */
@@ -374,6 +424,7 @@ public final class QuestModule implements Listener, CommandExecutor {
             case "charla" -> Material.WRITABLE_BOOK;
             case "parcela" -> Material.OAK_DOOR;
             case "paquete" -> Material.MAP;
+            case "alcaldia" -> Material.GOLDEN_HELMET;
             default -> Material.PAPER;
         };
     }
@@ -392,6 +443,8 @@ public final class QuestModule implements Listener, CommandExecutor {
             case "charla" -> "Hablar con " + q.target + " vecinos";
             case "parcela" -> "Reclamar una parcela en el pueblo";
             case "paquete" -> "Llevar " + q.target + " de " + nice(q.good) + " a " + q.destTown;
+            case "alcaldia" -> q.rankTarget <= 1 ? "Ser el ALCALDE de " + q.town
+                    : "Llegar al top " + q.rankTarget + " de " + q.town;
             default -> "Encargo del pueblo";
         };
     }
@@ -410,6 +463,8 @@ public final class QuestModule implements Listener, CommandExecutor {
             case "charla" -> "Conoce a la gente de " + q.town + ": preguntales por su vida.";
             case "parcela" -> "El pueblo quiere echar raices: hazte con un solar.";
             case "paquete" -> "Un envio de " + q.town + " para " + q.destTown + ".";
+            case "alcaldia" -> q.rankTarget <= 1 ? "Encabeza el tablon de prestigio de " + q.town + "."
+                    : "Gánate un puesto entre los notables de " + q.town + ".";
             default -> "El pueblo necesita una mano.";
         };
     }
@@ -559,7 +614,7 @@ public final class QuestModule implements Listener, CommandExecutor {
                         return;   // el backend dice que aun no esta (o ya se cobro): no se paga
                     }
                     cache.getOrDefault(p.getUniqueId(), new ArrayList<>()).remove(q);
-                    markCooldown(p, q);   // ese TIPO no se vuelve a ofrecer en esta aldea un rato
+                    bumpTier(p, q);   // sube el nivel: el proximo de ese tipo sera mas dificil
                     final int aet = data.get("reward_aet").getAsInt();
                     final int pres = data.get("reward_prestige").getAsInt();
                     p.sendMessage("§6§lEncargo cumplido §r§7— " + title(q));
@@ -613,46 +668,67 @@ public final class QuestModule implements Listener, CommandExecutor {
      * paquete. Se descartan los tipos que el jugador ya tiene activos.
      */
     private List<Draft> draft(Player p, int vid, int n) {
+        final String town = settlement.townName(vid);
         final Set<String> already = new HashSet<>();
         for (final Quest q : questsFor(p, vid)) {
             already.add(q.type);
         }
-        already.addAll(coolingTypes(p, settlement.townName(vid)));   // no reofrecer lo recien cumplido
         final List<Draft> out = new ArrayList<>();
         final var rng = ThreadLocalRandom.current();
+        // Cada tipo ESCALA con el nivel (cuantas veces ya lo cumpliste): asi una mision NUNCA se
+        // repite igual. Cuando un tipo llega a su techo, deja de ofrecerse (la aldea puede quedarse
+        // sin misiones de ese tipo, a proposito).
 
-        // 1. El pueblo lo esta pasando mal: comida y materiales, con mejor paga.
+        // 1. Reparto cuando el pueblo esta en apuros: cada vez, mas pan.
         if (!already.contains("reparto") && "en apuros".equals(settlement.townLevelOf(vid))) {
-            out.add(new Draft("mantenimiento", obj("reparto", Material.BREAD, null), 12, 60, 15));
+            out.add(new Draft("mantenimiento", obj("reparto", Material.BREAD, null),
+                    12 + 6 * tier(p, town, "reparto"), 60, 15));
         }
-        // 2. Lo que de verdad escasea en su granero.
+        // 2. Lo que de verdad escasea en su granero (el material cambia con la necesidad); mas cada vez.
         final Material shortage = settlement.granaryShortage(vid);
         if (!already.contains("granero") && shortage != null) {
-            final int amount = 12 + rng.nextInt(3) * 4;   // 12, 16 o 20
-            out.add(new Draft("economica", obj("granero", shortage, null), amount, 80, 15));
+            out.add(new Draft("economica", obj("granero", shortage, null),
+                    12 + 4 * tier(p, town, "granero"), 80, 15));
         }
-        // 3. Lo que le falta a la hucha para el proximo vecino.
+        // 3. Aportar a la hucha: cada vez, mas; se agota al pasar de 500.
         final int falta = (int) Math.max(0, settlement.townNeed(vid) - settlement.townPool(vid));
         if (!already.contains("arca") && falta >= 25) {
-            out.add(new Draft("economica", obj("arca", null, null), Math.min(300, falta), 0, 15));
+            final int target = 25 + 50 * tier(p, town, "arca");
+            if (target <= 500) {
+                out.add(new Draft("economica", obj("arca", null, null), target, 0, 15));
+            }
         }
-        // 4. Conocer al vecindario (social: vale tanto prestigio como el dinero).
+        // 4. Hablar con vecinos: cada vez con UNO mas; se agota cuando habria que hablar con todos.
         final int vecinos = settlement.villagerNames(vid).size();
         if (!already.contains("charla") && vecinos >= 2) {
-            out.add(new Draft("social", obj("charla", null, null), Math.min(3, vecinos), 40, 16));
+            final int count = 3 + tier(p, town, "charla");
+            if (count <= vecinos) {
+                out.add(new Draft("social", obj("charla", null, null), count, 40, 16));
+            }
         }
-        // 5. Un paquete a la aldea vecina (solo si hay otra).
+        // 5. Escalera de PRESTIGIO: llegar a top 5, luego 4, 3, 2, 1; se agota tras la alcaldia.
+        if (!already.contains("alcaldia") && vecinos >= 3) {
+            final int rankGoal = 5 - tier(p, town, "alcaldia");
+            if (rankGoal >= 1 && playerRank(p, vid) > rankGoal) {   // solo si aun no lo has alcanzado
+                final JsonObject o = obj("alcaldia", null, null);
+                o.addProperty("rank", rankGoal);
+                out.add(new Draft("social", o, 1, 40, 16));
+            }
+        }
+        // 6. Un paquete a la aldea vecina: cada vez, mas; se agota al 6o.
         final String otra = settlement.otherTownName(vid);
-        if (!already.contains("paquete") && otra != null) {
+        if (!already.contains("paquete") && otra != null && tier(p, town, "paquete") < 6) {
             final Material good = PACKAGE_GOODS[rng.nextInt(PACKAGE_GOODS.length)];
-            out.add(new Draft("exploracion", obj("paquete", good, otra), 12, 90, 18));
+            out.add(new Draft("exploracion", obj("paquete", good, otra),
+                    12 + 4 * tier(p, town, "paquete"), 90, 18));
         }
-        // 6. Mover el mercado.
-        if (!already.contains("mercado")) {
-            out.add(new Draft("economica", obj("mercado", null, null), 24, 40, 10));
+        // 7. Mover el mercado: cada vez, mas unidades; se agota al 6o.
+        if (!already.contains("mercado") && tier(p, town, "mercado") < 6) {
+            out.add(new Draft("economica", obj("mercado", null, null),
+                    24 + 12 * tier(p, town, "mercado"), 40, 10));
         }
-        // 7. Echar raices en el pueblo.
-        if (!already.contains("parcela")) {
+        // 8. Echar raices: una sola vez.
+        if (!already.contains("parcela") && tier(p, town, "parcela") == 0) {
             out.add(new Draft("construccion", obj("parcela", null, null), 1, 60, 16));
         }
         return out.size() > n ? out.subList(0, n) : out;

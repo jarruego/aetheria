@@ -3028,6 +3028,36 @@ public final class SettlementModule implements Listener {
      * <p>Sin esto, un puente largo entre dos ciudades se partia en trozos: cada bajio hacia bajar
      * la carretera al lecho con una escalera de losas y volver a subir.
      */
+    /** Hasta donde se mira por delante al fijar la cota del tablero de un cruce. */
+    private static final int CROSSING_SCAN = 140;
+    /** Cuanto puede rellenar la calzada hacia abajo para cruzar un barranco (terraplen/viaducto). */
+    private static final int ROAD_FILL = 40;
+
+    /**
+     * Cota UNICA del tablero para todo el cruce que empieza aqui: recorre el agua que queda por
+     * delante (saltando islotes y bajios) y se queda con la superficie mas alta, mas <b>un bloque
+     * de margen</b>. Asi los maderos van todos a la misma altura aunque el agua tenga matices, y
+     * el puente queda holgado sobre la lamina en vez de a ras.
+     */
+    private int crossingDeck(List<int[]> tiles, int index, int firstWaterTop) {
+        int top = firstWaterTop;
+        int gap = 0;
+        for (int i = index + 1; i < Math.min(tiles.size(), index + CROSSING_SCAN); i++) {
+            final int[] t = tiles.get(i);
+            final int gy = groundY(t[0], t[1]);
+            final int w = waterSurfaceY(t[0], t[1], gy);
+            if (w >= 0) {
+                top = Math.max(top, w);
+                gap = 0;
+            } else if (gy < top && ++gap <= BRIDGE_GAP) {
+                continue;   // islote/bajio: el cruce sigue
+            } else {
+                break;      // orilla: aqui acaba el cruce
+            }
+        }
+        return top + 2;
+    }
+
     private boolean bridgeContinues(List<int[]> tiles, int index, int deckY) {
         final int end = Math.min(tiles.size(), index + 1 + BRIDGE_GAP);
         for (int i = index + 1; i < end; i++) {
@@ -3057,8 +3087,15 @@ public final class SettlementModule implements Listener {
         boolean water = waterTop >= 0;
         if (water) {
             // El tablero NO baja nunca a mitad de cruce: se queda a la cota mas alta que haya
-            // pedido el agua, asi el puente sale plano de orilla a orilla.
-            deck[0] = Math.max(deck[0], waterTop + 1);
+            // Al EMPEZAR el cruce se mide TODO el tramo de agua que queda por delante y se fija
+            // una unica cota de tablero (la mas alta que pida el agua, MAS un bloque de margen).
+            // Antes se decidia casilla a casilla y el puente iba escalonandose con cada matiz del
+            // agua; ahora sale plano de orilla a orilla, que es como se ve un puente de verdad.
+            if (deck[0] < 0) {
+                deck[0] = crossingDeck(tiles, index, waterTop);
+            } else {
+                deck[0] = Math.max(deck[0], waterTop + 2);   // seguro: nunca por debajo del agua
+            }
         } else if (deck[0] >= 0) {
             if (gy < deck[0] && bridgeContinues(tiles, index, deck[0])) {
                 water = true;    // islote o bajio en mitad del cruce: el puente pasa por encima
@@ -3103,10 +3140,17 @@ public final class SettlementModule implements Listener {
                 }
                 continue;
             }
-            for (int y = ny; y >= ny - 5; y--) {
+            // VIADUCTO: la calzada nunca se queda colgando sobre el vacio. Se rellena hacia abajo
+            // hasta encontrar suelo firme, hasta MUY hondo: antes solo bajaba 5 bloques y al cruzar
+            // un barranco el camino "seguia al fondo del precipicio", con un salto mortal en medio.
+            // Los tres primeros bloques son tierra (el camino) y por debajo, piedra: se ve como un
+            // terraplen/viaducto, no como una columna de barro.
+            int filled = 0;
+            for (int y = ny; y >= ny - ROAD_FILL; y--) {
                 final Block b = world.getBlockAt(px, y, pz);
                 if (b.getType().isAir() || b.isLiquid()) {
-                    b.setType(Material.DIRT, false);
+                    b.setType(ny - y < 3 ? Material.DIRT : Material.STONE_BRICKS, false);
+                    filled++;
                 } else {
                     break;
                 }
@@ -3116,8 +3160,21 @@ public final class SettlementModule implements Listener {
             if (slab && w == 0) {
                 world.getBlockAt(px, ny + 1, pz).setType(Material.COBBLESTONE_SLAB, false);
             }
+            // Si el terraplen es alto, el arcen lleva BARANDILLA: se cruza el barranco sin caerse.
+            if (filled >= 3 && w != 0) {
+                world.getBlockAt(px, ny + 1, pz).setType(Material.OAK_FENCE, false);
+            }
         }
-        if (index % 24 == 12) {   // farol de camino cada tramo (en tierra, en el arcen; en el puente,
+        // TUNEL: si sobre la calzada sigue habiendo montaña, es que la carretera la atraviesa (la
+        // rasante nunca trepa mas de medio bloque por casilla, asi que ante un monte se mete por
+        // dentro). Se ilumina cada pocos pasos para que no sea una boca de lobo.
+        final boolean tunnel = !water
+                && !world.getBlockAt(x, ny + 5, z).getType().isAir()
+                && world.getBlockAt(x, ny + 5, z).getType().isSolid();
+        if (tunnel && index % 6 == 0) {
+            world.getBlockAt(x + perpX, ny + 3, z + perpZ).setType(Material.LANTERN, false);
+        }
+        if (index % 24 == 12 && !tunnel) {   // farol de camino cada tramo (en el arcen)
             world.getBlockAt(x + perpX, ny + 1, z + perpZ).setType(Material.OAK_FENCE, false);
             world.getBlockAt(x + perpX, ny + 2, z + perpZ).setType(Material.LANTERN, false);
         }
@@ -3331,6 +3388,11 @@ public final class SettlementModule implements Listener {
         if (townPopulation(vid) < splitThreshold(towns.get(vid))) {
             return;
         }
+        // El pueblo ha alcanzado su tamano de escision: PRIMERO levanta lo que su poblacion ya
+        // justifica (taberna >=4, mercado >=6...) y solo DESPUES se van los fundadores. Si no, la
+        // escision (que corre antes que townLife) bajaba la poblacion y el mercado no se construia
+        // nunca al llegar justo a 6.
+        ensureCivics(vid, towns.get(vid));
         final Colono[] pair = findFounders(vid);
         if (pair == null) {
             return;   // no hay una pareja sin hijos ni dos solteros: la escision espera

@@ -284,6 +284,14 @@ public final class SettlementModule implements Listener {
     private QuestModule quests;
     /** Comercio con vecinos y BOTICA (opcional): pone al boticario cuando se construye. */
     private NpcTradeModule trade;
+    /**
+     * Parcelas de jugador (opcional). El pueblo las consulta ANTES de plantar cualquier cosa:
+     * casas, edificios civicos, puestos de oficio y carreteras. Lo que es de un jugador no se
+     * toca — un colono llego a levantar su casa encima de la de alguien.
+     */
+    private ClaimModule claims;
+    /** Margen alrededor del solar que tampoco puede pisar una parcela (el terreno se allana). */
+    private static final int CLAIM_MARGIN = 10;
 
     /** Un EDIFICIO de oficio del pueblo (mercado, biblioteca, herreria...). Es PERMANENTE: no
      *  se derriba al morir su aldeano; lo hereda otro del mismo oficio o espera a que llegue uno. */
@@ -406,6 +414,13 @@ public final class SettlementModule implements Listener {
      *  cueva, cuesta). Escanea ±6: como la huella de una casa es ±3, deja al menos 3 bloques de
      *  HUECO respecto a cualquier otra construccion (nada de casas pegadas). */
     private int[] evaluateSpot(int cx, int cz) {
+        // PARCELA DE JUGADOR: intocable. Se mira con MARGEN (el solar se allana mas alla de la
+        // huella de la casa), porque una casa del pueblo llego a comerse parte de la de un
+        // jugador. Ante la duda, el pueblo construye en otro sitio.
+        if (claims != null && claims.anyClaimIn(cx - CLAIM_MARGIN, cz - CLAIM_MARGIN,
+                cx + CLAIM_MARGIN, cz + CLAIM_MARGIN)) {
+            return null;
+        }
         int min = Integer.MAX_VALUE;
         int max = Integer.MIN_VALUE;
         for (int dx = -6; dx <= 6; dx++) {
@@ -931,6 +946,23 @@ public final class SettlementModule implements Listener {
 
     public String townName(int vid) {
         return vid >= 0 && vid < towns.size() ? towns.get(vid).name : "";
+    }
+
+    /** Si el bloque esta dentro de una BOTICA ya construida, devuelve el nombre de su aldea (para
+     *  que el caldero/alambique de la botica abra la cura); si no, null. La botica se levanta en
+     *  (t.cx+3, t.cz-13) con medio lado 4 (ver ensureCivics). */
+    public String boticaTownAt(Block b) {
+        for (int vid = 0; vid < towns.size(); vid++) {
+            if (!civicBuilt.contains(vid + ":botica")) {
+                continue;
+            }
+            final Town t = towns.get(vid);
+            if (Math.abs(b.getX() - (t.cx + 3)) <= 5 && Math.abs(b.getZ() - (t.cz - 13)) <= 5
+                    && Math.abs(b.getY() - t.baseY) <= 8) {
+                return t.name;
+            }
+        }
+        return null;
     }
 
     /** Lo que la aldea lleva ahorrado para su proximo vecino. */
@@ -2150,6 +2182,11 @@ public final class SettlementModule implements Listener {
         this.trade = trade;
     }
 
+    /** Engancha las parcelas de jugador, para no construir NUNCA sobre lo que es de alguien. */
+    public void setClaims(ClaimModule claims) {
+        this.claims = claims;
+    }
+
     private void ensureCivic(int vid, String type, int cx, int cz, int baseY, int half, int minPop,
             String msg) {
         final String key = vid + ":" + type;
@@ -2159,6 +2196,13 @@ public final class SettlementModule implements Listener {
         }
         if (townPopulation(vid) < minPop) {
             return;   // el pueblo aun no da para este edificio
+        }
+        // Los civicos van en un punto FIJO junto a la plaza, asi que no pasan por evaluateSpot:
+        // aqui se comprueba a mano que ese solar no sea de un jugador. Si lo es, el pueblo se
+        // queda sin ese edificio antes que invadir una parcela.
+        if (claims != null && claims.anyClaimIn(cx - half - 2, cz - half - 2,
+                cx + half + 2, cz + half + 2)) {
+            return;
         }
         // Los carteles llevan el nombre de LA ALDEA (Aetheria es el mundo, no el pueblo).
         final String town = t(vid);
@@ -2979,19 +3023,101 @@ public final class SettlementModule implements Listener {
                 tiles.add(new int[] {x, z, 1, 0});   // avanza en Z -> el ancho va en X
             }
         }
-        final int[] state = {0, -1};   // {indice, altura en medios bloques (-1 = aun sin sembrar)}
-        // Cota del TABLERO del puente en curso (-1 = vamos por tierra). Es lo que da continuidad
-        // al cruce: mientras valga >= 0, el puente sigue aunque asome un islote.
-        final int[] deck = {-1};
+        // DOS FASES, las dos por lotes para no congelar el servidor:
+        //   1) SE MIDE el terreno de punta a punta (y el agua, si la hay).
+        //   2) SE PROYECTA la rasante entre la cota de UNA aldea y la de la OTRA, con pendiente
+        //      acotada, y solo entonces se pavimenta.
+        // Antes se decidia la altura casilla a casilla mirando solo el suelo de debajo: la
+        // carretera no sabia a que altura estaba el pueblo de destino y aparecian saltos.
+        final int n = tiles.size();
+        final int[] terr = new int[n];        // cota "deseable" de cada casilla (medios bloques)
+        final boolean[] wet = new boolean[n]; // ¿esa casilla es agua? (ahi va tablero de puente)
+        final int[] prof = new int[n];        // la rasante ya proyectada
+        final int startH = 2 * (groundY(x0, z0) + 1);
+        final int endH = 2 * (groundY(x1, z1) + 1);
+        final int[] state = {0, 0};   // {fase, indice}
         final int[] task = new int[1];
         task[0] = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            for (int n = 0; n < 6 && state[0] < tiles.size(); n++, state[0]++) {
-                state[1] = paveTile(tiles, state[0], state[1], deck);
+            if (state[0] == 0) {   // --- fase 1: medir ---
+                for (int k = 0; k < 12 && state[1] < n; k++, state[1]++) {
+                    final int[] t = tiles.get(state[1]);
+                    final int gy = groundY(t[0], t[1]);
+                    final int wt = waterSurfaceY(t[0], t[1], gy);
+                    wet[state[1]] = wt >= 0;
+                    // Sobre agua, la cota deseable es el tablero (un bloque de aire sobre la
+                    // lamina); en tierra, el propio suelo.
+                    terr[state[1]] = wt >= 0 ? 2 * (wt + 2) : 2 * (gy + 1);
+                }
+                if (state[1] >= n) {
+                    planProfile(terr, wet, prof, startH, endH);
+                    state[0] = 1;
+                    state[1] = 0;
+                }
+                return;
             }
-            if (state[0] >= tiles.size()) {
+            for (int k = 0; k < 6 && state[1] < n; k++, state[1]++) {   // --- fase 2: pavimentar ---
+                paveTile(tiles, state[1], prof[state[1]], wet[state[1]]);
+            }
+            if (state[1] >= n) {
                 Bukkit.getScheduler().cancelTask(task[0]);
             }
         }, 1L, 1L).getTaskId();
+    }
+
+    /**
+     * Proyecta la RASANTE de la carretera entre las dos aldeas: sale de la cota de una y llega a
+     * la de la otra <b>sin un solo salto</b>, con medio bloque de desnivel por casilla como
+     * maximo. Lo que no cabe en esa pendiente lo resuelve el terreno:
+     *
+     * <ul>
+     *   <li>si la rasante queda <b>por debajo</b> del monte, la carretera lo atraviesa: <b>tunel</b>;</li>
+     *   <li>si queda <b>por encima</b> del suelo (barranco, vaguada), se levanta <b>terraplen</b>
+     *       o <b>puente</b> segun haya agua debajo.</li>
+     * </ul>
+     *
+     * <p>Se hace con dos pasadas (ida y vuelta) sobre la cota deseable: la de ida limita cuanto
+     * puede SUBIR y la de vuelta cuanto puede BAJAR, asi que el resultado cumple la pendiente en
+     * los dos sentidos. Los cruces de agua se allanan antes, para que un islote no hunda el puente.
+     */
+    private void planProfile(int[] terr, boolean[] wet, int[] prof, int startH, int endH) {
+        final int n = terr.length;
+        if (n == 0) {
+            return;
+        }
+        // Un islote o un bajio corto en mitad de un cruce no baja el tablero: se allana al nivel
+        // del agua de alrededor, y asi el puente sale plano de orilla a orilla.
+        for (int i = 0; i < n; i++) {
+            if (wet[i]) {
+                continue;
+            }
+            int j = i;
+            while (j < n && !wet[j]) {
+                j++;
+            }
+            final boolean shortGap = (j - i) <= BRIDGE_GAP;
+            if (shortGap && i > 0 && j < n) {   // agua a los dos lados y hueco corto: es un islote
+                final int deck = Math.max(terr[i - 1], terr[j]);
+                for (int k = i; k < j; k++) {
+                    if (terr[k] < deck) {
+                        terr[k] = deck;
+                        wet[k] = true;   // se trata como cruce: tablero, no camino de tierra
+                    }
+                }
+            }
+            i = j;
+        }
+        prof[0] = startH;
+        for (int i = 1; i < n; i++) {           // ida: limita la SUBIDA
+            prof[i] = Math.min(terr[i], prof[i - 1] + 1);
+        }
+        prof[n - 1] = endH;
+        for (int i = n - 2; i >= 0; i--) {      // vuelta: limita la BAJADA y ata el final a la aldea
+            prof[i] = Math.min(prof[i], prof[i + 1] + 1);
+        }
+        prof[0] = startH;
+        for (int i = 1; i < n; i++) {           // remate: ni un solo escalon de mas de medio bloque
+            prof[i] = Math.max(prof[i - 1] - 1, Math.min(prof[i - 1] + 1, prof[i]));
+        }
     }
 
     /** Y del bloque de AGUA mas alto que cubre la columna (x,z) por encima del suelo solido, o -1
@@ -3022,105 +3148,43 @@ public final class SettlementModule implements Listener {
     /** Hasta cuantas casillas de bajio/islote se puentean de largo sin cortar el tablero. */
     private static final int BRIDGE_GAP = 14;
 
-    /**
-     * ¿El puente CONTINUA despues de esta casilla sin agua? Mira unas casillas por delante: si el
-     * agua vuelve antes de {@link #BRIDGE_GAP} y el terreno intermedio queda por debajo del
-     * tablero, es un islote o un bajio en mitad del cruce y el puente pasa de largo. Solo se
-     * considera orilla de verdad cuando aparece tierra a la altura del tablero o el agua no vuelve.
-     *
-     * <p>Sin esto, un puente largo entre dos ciudades se partia en trozos: cada bajio hacia bajar
-     * la carretera al lecho con una escalera de losas y volver a subir.
-     */
-    /** Hasta donde se mira por delante al fijar la cota del tablero de un cruce. */
-    private static final int CROSSING_SCAN = 140;
     /** Cuanto puede rellenar la calzada hacia abajo para cruzar un barranco (terraplen/viaducto). */
     private static final int ROAD_FILL = 40;
 
     /**
-     * Cota UNICA del tablero para todo el cruce que empieza aqui: recorre el agua que queda por
-     * delante (saltando islotes y bajios) y se queda con la superficie mas alta, mas <b>un bloque
-     * de margen</b>. Asi los maderos van todos a la misma altura aunque el agua tenga matices, y
-     * el puente queda holgado sobre la lamina en vez de a ras.
+     * Pavimenta UNA casilla de carretera (con sus dos arcenes) a la cota que le toca segun la
+     * RASANTE ya proyectada entre las dos aldeas ({@link #planProfile}). Aqui ya no se decide
+     * altura: solo se ejecuta. Segun donde caiga la rasante respecto al terreno sale una cosa u
+     * otra sin codigo especial — tablero de puente sobre el agua, terraplen sobre un barranco,
+     * o tunel si el monte queda por encima.
      */
-    private int crossingDeck(List<int[]> tiles, int index, int firstWaterTop) {
-        int top = firstWaterTop;
-        int gap = 0;
-        for (int i = index + 1; i < Math.min(tiles.size(), index + CROSSING_SCAN); i++) {
-            final int[] t = tiles.get(i);
-            final int gy = groundY(t[0], t[1]);
-            final int w = waterSurfaceY(t[0], t[1], gy);
-            if (w >= 0) {
-                top = Math.max(top, w);
-                gap = 0;
-            } else if (gy < top && ++gap <= BRIDGE_GAP) {
-                continue;   // islote/bajio: el cruce sigue
-            } else {
-                break;      // orilla: aqui acaba el cruce
-            }
-        }
-        return top + 2;
-    }
-
-    private boolean bridgeContinues(List<int[]> tiles, int index, int deckY) {
-        final int end = Math.min(tiles.size(), index + 1 + BRIDGE_GAP);
-        for (int i = index + 1; i < end; i++) {
-            final int[] t = tiles.get(i);
-            final int gy = groundY(t[0], t[1]);
-            if (gy >= deckY) {
-                return false;   // tierra a la altura del tablero: aqui esta la orilla
-            }
-            if (waterSurfaceY(t[0], t[1], gy) >= 0) {
-                return true;    // vuelve el agua: seguimos cruzando
-            }
-        }
-        return false;
-    }
-
-    /** Pavimenta UNA casilla de carretera (con sus dos arcenes) respetando la rasante. Devuelve
-     *  la nueva altura de la superficie medida en MEDIOS bloques. Sobre agua NO se hunde: traza un
-     *  PUENTE de madera un bloque por encima de la superficie, con pilones de piedra hasta el lecho. */
-    private int paveTile(List<int[]> tiles, int index, int prevH, int[] deck) {
+    private void paveTile(List<int[]> tiles, int index, int h, boolean water) {
         final int[] tile = tiles.get(index);
         final int x = tile[0];
         final int z = tile[1];
         final int perpX = tile[2];
         final int perpZ = tile[3];
-        final int gy = groundY(x, z);                    // fondo solido (bajo el agua, si la hay)
-        final int waterTop = waterSurfaceY(x, z, gy);    // superficie del agua, o -1 si no hay
-        boolean water = waterTop >= 0;
-        if (water) {
-            // El tablero NO baja nunca a mitad de cruce: se queda a la cota mas alta que haya
-            // Al EMPEZAR el cruce se mide TODO el tramo de agua que queda por delante y se fija
-            // una unica cota de tablero (la mas alta que pida el agua, MAS un bloque de margen).
-            // Antes se decidia casilla a casilla y el puente iba escalonandose con cada matiz del
-            // agua; ahora sale plano de orilla a orilla, que es como se ve un puente de verdad.
-            if (deck[0] < 0) {
-                deck[0] = crossingDeck(tiles, index, waterTop);
-            } else {
-                deck[0] = Math.max(deck[0], waterTop + 2);   // seguro: nunca por debajo del agua
-            }
-        } else if (deck[0] >= 0) {
-            if (gy < deck[0] && bridgeContinues(tiles, index, deck[0])) {
-                water = true;    // islote o bajio en mitad del cruce: el puente pasa por encima
-            } else {
-                deck[0] = -1;    // orilla de verdad: a partir de aqui, carretera de tierra
-            }
-        }
+        final int gy = groundY(x, z);   // fondo solido (bajo el agua, si la hay)
         if (!water && !natural(world.getBlockAt(x, gy, z).getType())) {
-            return prevH;   // plaza o edificio: la carretera pasa de largo sin tocar ni elevarse
+            return;   // plaza o edificio: la carretera pasa de largo sin tocar nada
         }
-        // En tierra, la rasante sube/baja medio bloque por casilla hacia el suelo. Sobre agua, el
-        // tablero va UN bloque por encima de la superficie (plano a lo largo del lago), nunca dentro.
-        final int wantH = water ? 2 * (deck[0] + 1) : 2 * (gy + 1);
-        if (prevH < 0) {
-            prevH = wantH;   // arranca A RAS de la primera casilla
+        if (claims != null && claims.isClaimed(x, z)) {
+            return;   // parcela de un jugador: la carretera no la atraviesa a la brava
         }
-        final int h = water ? wantH : Math.max(prevH - 1, Math.min(prevH + 1, wantH));
         final int ny = Math.floorDiv(h, 2) - 1;
         final boolean slab = Math.floorMod(h, 2) == 1;
-        for (int w = -1; w <= 1; w++) {
-            final int px = x + perpX * w;
-            final int pz = z + perpZ * w;
+        // ANCHO 3 DE VERDAD. Antes se pavimentaba solo la franja perpendicular al avance y, en los
+        // tramos en diagonal (donde el avance alterna entre X y Z), las franjas no se solapaban:
+        // la calzada salia a trozos de uno o dos bloques. Ahora se pavimenta el CUADRO 3x3 de cada
+        // casilla, asi que la carretera mide tres bloques de ancho vaya en la direccion que vaya.
+        for (int ox = -1; ox <= 1; ox++) {
+            for (int oz = -1; oz <= 1; oz++) {
+            final int px = x + ox;
+            final int pz = z + oz;
+            final int w = (perpX != 0 ? ox : oz);   // 0 = eje de la calzada; ±1 = arcen
+            if (claims != null && claims.isClaimed(px, pz)) {
+                continue;   // ni un bloque dentro de la parcela de alguien
+            }
             final Material at = world.getBlockAt(px, ny, pz).getType();
             if (!at.isAir() && !at.name().contains("WATER") && !natural(at)) {
                 continue;   // algo construido (una plaza, una casa): la carretera no lo pisa
@@ -3167,6 +3231,7 @@ public final class SettlementModule implements Listener {
             if (filled >= 3 && w != 0) {
                 world.getBlockAt(px, ny + 1, pz).setType(Material.OAK_FENCE, false);
             }
+            }
         }
         // TUNEL: si sobre la calzada sigue habiendo montaña, es que la carretera la atraviesa (la
         // rasante nunca trepa mas de medio bloque por casilla, asi que ante un monte se mete por
@@ -3181,7 +3246,6 @@ public final class SettlementModule implements Listener {
             world.getBlockAt(x + perpX, ny + 1, z + perpZ).setType(Material.OAK_FENCE, false);
             world.getBlockAt(x + perpX, ny + 2, z + perpZ).setType(Material.LANTERN, false);
         }
-        return h;
     }
 
 

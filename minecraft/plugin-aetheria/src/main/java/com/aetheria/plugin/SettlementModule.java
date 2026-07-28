@@ -280,7 +280,7 @@ public final class SettlementModule implements Listener {
     private final java.util.Map<Integer, List<Rank>> ranking = new java.util.HashMap<>();
     /** Ultimo prestigio conocido de los JUGADORES por aldea (se refresca en 2o plano). */
     private final java.util.Map<Integer, List<Rank>> playerRep = new java.util.HashMap<>();
-    /** Misiones (opcional): el pregonero de cada aldea y los avances del jugador. */
+    /** Misiones (opcional): el alguacil de cada aldea y los avances del jugador. */
     private QuestModule quests;
 
     /** Un EDIFICIO de oficio del pueblo (mercado, biblioteca, herreria...). Es PERMANENTE: no
@@ -865,67 +865,10 @@ public final class SettlementModule implements Listener {
     /** Lo que aporta el jugador cada vez que dona a una aldea. */
     private static final double DONATION = 25;
 
-    /**
-     * DONACION a una aldea concreta: <b>agachado + clic derecho sobre su ALCALDE</b>. El dinero
-     * sale de la cuenta del jugador y entra en la <b>hucha</b> del pueblo, asi que adelanta de
-     * verdad la llegada del proximo vecino: el jugador puede empujar el crecimiento de LA aldea
-     * que le interese.
-     *
-     * <p>Va agachado a proposito: el clic normal sobre el alcalde sigue siendo hablar con el, y
-     * asi nadie dona sin querer. No compra ventajas: lo adelantado vuelve como excedente del
-     * granero del pueblo, que el jugador puede recoger.
-     */
-    @EventHandler(priority = org.bukkit.event.EventPriority.LOW)
-    public void onDonate(org.bukkit.event.player.PlayerInteractEntityEvent e) {
-        if (e.getHand() != org.bukkit.inventory.EquipmentSlot.HAND || !e.getPlayer().isSneaking()) {
-            return;   // solo mano principal y AGACHADO (de pie, el clic es para conversar)
-        }
-        final org.bukkit.entity.Entity ent = e.getRightClicked();
-        if (!(ent instanceof Villager) || ent.customName() == null) {
-            return;
-        }
-        final String name = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
-                .plainText().serialize(ent.customName());
-        int found = -1;
-        for (final var entry : alcaldes.entrySet()) {
-            if (name.startsWith(entry.getValue())) {
-                found = entry.getKey();
-                break;
-            }
-        }
-        if (found < 0 || found >= towns.size()) {
-            return;   // no es un alcalde: que siga el flujo normal
-        }
-        final int vid = found;
-        final Player p = e.getPlayer();
-        e.setCancelled(true);   // esta donando, no conversando
-        // Va por /v1/donation (no por /v1/pay): mover el dinero y ganar PRESTIGIO en esta aldea
-        // son la misma transaccion, en un solo viaje de red.
-        gateway.donateToVillage(p.getUniqueId().toString(), p.getName(), townName(vid), DONATION)
-                .whenComplete((json, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
-                    final String alcalde = alcaldes.getOrDefault(vid, "El alcalde");
-                    if (err != null || json == null || !json.get("ok").getAsBoolean()) {
-                        p.sendMessage("§c[" + alcalde + "] No llevas esos " + (int) DONATION
-                                + " AET encima, amigo.");
-                        return;
-                    }
-                    if (quests != null) {
-                        quests.onDonated(p, townName(vid), DONATION);
-                    }
-                    refreshRankingNow(vid);   // el tablon de la plaza lo refleja al momento
-                    final Town t = towns.get(vid);
-                    t.pool += DONATION;
-                    saveTowns();
-                    final int falta = (int) Math.max(0, growthCost(townPopulation(vid)) - t.pool);
-                    p.sendMessage("§a[" + alcalde + "] §f¡Gracias! " + t.name + " lo aprovechara "
-                            + "bien. §7(faltan " + falta + " AET para el proximo vecino)");
-                    gateway.postEvent("donacion",
-                            p.getName() + " ha donado " + (int) DONATION + " AET a " + t.name + ".");
-                    routines.pushGossip(p.getName() + " ha ayudado a " + t.name + " con su dinero.");
-                    world.spawnParticle(org.bukkit.Particle.HAPPY_VILLAGER,
-                            ent.getLocation().add(0, 1.5, 0), 14, 0.4, 0.4, 0.4, 0.02);
-                }));
-    }
+    // NOTA: aqui vivia la DONACION AL ALCALDE (agachado + clic derecho sobre el). Se ha quitado:
+    // para aportar al pueblo ya esta el ARCA de la plaza (visible, con su ventana de importes) y
+    // /donar. Sobre el alcalde, el clic derecho no hace nada especial: es un vecino mas con el que
+    // se habla. Y el gesto de agacharse queda libre para COMERCIAR con los vecinos (NpcTradeModule).
 
 
     /** El ALCALDE se acerca de vez en cuando a un jugador cercano y le explica que puede
@@ -955,9 +898,8 @@ public final class SettlementModule implements Listener {
                 p.sendMessage("§6[" + entry.getValue() + "] §f" + p.getName() + ", soy el alcalde de "
                         + towns.get(vid).name + ". Nos faltan §e" + falta + " AET§f para que se "
                         + "instale otro vecino.");
-                p.sendMessage("§7Si quieres echar una mano, ponte §fagachado y haz clic derecho "
-                        + "sobre mi§7: donas " + (int) DONATION + " AET a la aldea. Lo que adelantes "
-                        + "vuelve al granero del pueblo.");
+                p.sendMessage("§7Si quieres echar una mano, usa el §fARCA de la plaza§7 (o /donar). "
+                        + "Lo que adelantes vuelve al granero del pueblo.");
                 return;
             }
         }
@@ -1865,7 +1807,7 @@ public final class SettlementModule implements Listener {
 
     /**
      * Repinta el tablon de esa aldea AHORA con el prestigio recien ganado, sin esperar al ciclo
-     * de 60 s. Lo llaman el pregonero (al cobrar un encargo) y el arca (al aportar): si no, el
+     * de 60 s. Lo llaman el alguacil (al cobrar un encargo) y el arca (al aportar): si no, el
      * jugador cumplia una mision y no se veia reflejado hasta un par de minutos despues.
      */
     public void refreshRankingNow(int vid) {
@@ -2405,7 +2347,7 @@ public final class SettlementModule implements Listener {
         if (!granaryAccess(vid, p.getUniqueId())) {
             p.sendMessage("§c[Granero de " + town + "] §7Esto es la despensa del pueblo. Solo los "
                     + "tres primeros del tablon de prestigio tienen llave.");
-            p.sendMessage("§8Cumple encargos del pregonero o aporta al arca: /prestigio");
+            p.sendMessage("§8Cumple encargos del alguacil o aporta al arca: /prestigio");
             return;
         }
         if (!(b.getState() instanceof org.bukkit.block.Container c)) {
@@ -2498,7 +2440,10 @@ public final class SettlementModule implements Listener {
                 final Material good = granaryGoodOf(c);
                 final int amount = good == null ? 0 : count(c.getInventory(), good);
                 if (good != null && amount > 0) {
-                    text = "§e" + granaryLabel(good) + " §7x" + amount;
+                    // Se marca el EXCEDENTE: es justo lo que los tres primeros del tablon de
+                    // prestigio pueden llevarse (lo que pasa de la reserva del pueblo).
+                    text = "§e" + granaryLabel(good) + " §7x" + amount
+                            + (amount > SURPLUS_THRESHOLD ? "\n§a excedente disponible" : "");
                 }
             }
             final org.bukkit.entity.TextDisplay existing = granaryLabels.get(key);
@@ -2516,13 +2461,22 @@ public final class SettlementModule implements Listener {
                 continue;
             }
             final String txt = text;
-            // La etiqueta va en la cara SUR del barril (hacia el interior del granero), a su altura.
-            final Location loc = new Location(world, bx + 0.5, by + 0.1, bz + 0.62);
+            // DELANTE de la cara sur del barril (hacia el interior del granero), a media altura.
+            // Ojo con el 1.08: el bloque del barril ocupa de bz a bz+1, asi que cualquier valor
+            // por debajo de bz+1 deja la etiqueta DENTRO del barril y el modelo la tapa (era el
+            // motivo de que "no se vieran"). Y a escala 0.4 para que quepa una por barril: a
+            // tamano natural, "Ladrillo de piedra x128" invade a los barriles vecinos.
+            final Location loc = new Location(world, bx + 0.5, by + 0.45, bz + 1.08);
             final org.bukkit.entity.TextDisplay td = world.spawn(loc,
                     org.bukkit.entity.TextDisplay.class, d -> {
                         d.text(net.kyori.adventure.text.Component.text(txt));
                         d.setBillboard(org.bukkit.entity.Display.Billboard.CENTER);
                         d.setSeeThrough(false);
+                        d.setBackgroundColor(Color.fromARGB(190, 20, 15, 5));
+                        d.setViewRange(0.35f);   // se leen dentro del granero, no desde el pueblo
+                        d.setTransformation(new org.bukkit.util.Transformation(
+                                new org.joml.Vector3f(), new org.joml.Quaternionf(),
+                                new org.joml.Vector3f(0.4f, 0.4f, 0.4f), new org.joml.Quaternionf()));
                         d.addScoreboardTag(GRANARY_LABEL_TAG);
                     });
             granaryLabels.put(key, td);
@@ -2542,7 +2496,7 @@ public final class SettlementModule implements Listener {
         return space;
     }
 
-    // --- Datos que necesitan las MISIONES (el pregonero pide lo que de verdad hace falta) ---
+    // --- Datos que necesitan las MISIONES (el alguacil pide lo que de verdad hace falta) ---
 
     /** Cuanto hay de ese genero en el granero de la aldea. */
     public int granaryCount(int vid, Material good) {
@@ -2627,6 +2581,34 @@ public final class SettlementModule implements Listener {
         }
     }
 
+    // --- API para el COMERCIO con vecinos (NpcTradeModule): quien es cada uno y que tiene ---
+
+    /** Oficio (clave inglesa) de un vecino, o null si ese nombre no es de un colono. */
+    public String professionOf(String name) {
+        final Colono c = findColono(name);
+        return c == null ? null : c.profKey;
+    }
+
+    /** Aldea a la que pertenece un vecino, o -1. */
+    public int townOfColono(String name) {
+        final Colono c = findColono(name);
+        return c == null ? -1 : c.vid;
+    }
+
+    /** Peculio de un vecino (lo que puede pagarte de su bolsillo). */
+    public double wealthOf(String name) {
+        final Colono c = findColono(name);
+        return c == null ? 0 : c.wealth;
+    }
+
+    /** Le saca de su peculio lo que acaba de gastar (comprandote genero). No baja de cero. */
+    public void spendWealth(String name, double amount) {
+        final Colono c = findColono(name);
+        if (c != null && amount > 0) {
+            c.wealth = Math.max(0, c.wealth - amount);
+        }
+    }
+
     // --- #15: datos por ALDEA y de toda la COMARCA (para el marcador) ---
 
     /** Ficha de la aldea en cuyo radio esta el jugador: nombre, vecinos, riqueza, prosperidad y
@@ -2689,6 +2671,11 @@ public final class SettlementModule implements Listener {
             return "estable";
         }
         return per < TOWN_STEPS[2] ? "prospera" : "floreciente";
+    }
+
+    /** Centro de la plaza de una aldea (lo usa el alguacil para no salirse de su ronda). */
+    public Location plazaCenter(int vid) {
+        return vid < 0 || vid >= towns.size() ? null : townCenter(vid);
     }
 
     /** Numero de aldeas del mundo. */
@@ -2763,6 +2750,20 @@ public final class SettlementModule implements Listener {
                         .append(towns.get(c.vid).name).append(", viniste desde ").append(c.origin)
                         .append("; todos en la aldea saben que la fundaste tu y lo cuentas con orgullo.");
             }
+            // VECINOS REALES de su aldea (hasta 5): asi habla de gente que existe DE VERDAD, no de
+            // personajes fantasma de mundos antiguos (Nara/Pol ya no existen).
+            final StringBuilder veci = new StringBuilder();
+            int shown = 0;
+            for (final Colono o : colonos) {
+                if (o.vid != c.vid || o.name.equals(c.name) || o.name.equals(c.spouse) || shown >= 5) {
+                    continue;
+                }
+                veci.append(shown == 0 ? " Otros vecinos de tu aldea: " : ", ").append(o.name);
+                shown++;
+            }
+            if (shown > 0) {
+                veci.append(". No te inventes vecinos ni nombres: si no lo tienes aqui, no existe.");
+            }
             // Su PECULIO (lo que ha ahorrado trabajando): que hable de si le va bien o mal.
             final String bolsa = c.wealth < 10 ? " Apenas tienes ahorros; vives al dia."
                     : c.wealth < 60 ? String.format(" Tienes unos %.0f AET ahorrados de tu trabajo.",
@@ -2770,7 +2771,7 @@ public final class SettlementModule implements Listener {
                     : String.format(" Has ahorrado %.0f AET: te va bien y se te nota.", c.wealth);
             final String bio = "Eres " + c.name + ", " + (fem ? "vecina" : "vecino")
                     + " del pueblo de Aetheria. Tienes " + age
-                    + " anos y tu oficio es " + job + "." + fam + bolsa
+                    + " anos y tu oficio es " + job + "." + fam + bolsa + veci
                     + " Si te preguntan, habla con naturalidad de tu edad, tu trabajo y tu familia.";
             convo.setBio(c.name, bio);
         }
@@ -2922,11 +2923,13 @@ public final class SettlementModule implements Listener {
             }
         }
         final int[] state = {0, -1};   // {indice, altura en medios bloques (-1 = aun sin sembrar)}
+        // Cota del TABLERO del puente en curso (-1 = vamos por tierra). Es lo que da continuidad
+        // al cruce: mientras valga >= 0, el puente sigue aunque asome un islote.
+        final int[] deck = {-1};
         final int[] task = new int[1];
         task[0] = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             for (int n = 0; n < 6 && state[0] < tiles.size(); n++, state[0]++) {
-                final int[] t = tiles.get(state[0]);
-                state[1] = paveTile(t[0], t[1], state[1], t[2], t[3], state[0]);
+                state[1] = paveTile(tiles, state[0], state[1], deck);
             }
             if (state[0] >= tiles.size()) {
                 Bukkit.getScheduler().cancelTask(task[0]);
@@ -2941,28 +2944,80 @@ public final class SettlementModule implements Listener {
         int top = -1;
         for (int y = groundY + 1; y <= groundY + 24; y++) {
             final Block b = world.getBlockAt(x, y, z);
-            if (b.isLiquid()) {
-                top = y;
-            } else if (!b.getType().isAir()) {
-                break;   // algo solido tapa la columna: no es agua abierta
+            final Material m = b.getType();
+            if (b.isLiquid() || m == Material.ICE || m == Material.PACKED_ICE
+                    || m == Material.BLUE_ICE || m == Material.FROSTED_ICE) {
+                top = y;   // agua (o su superficie helada): por aqui pasa el tablero
+            } else if (m == Material.KELP || m == Material.KELP_PLANT || m == Material.SEAGRASS
+                    || m == Material.TALL_SEAGRASS || m == Material.SEA_PICKLE
+                    || m == Material.BUBBLE_COLUMN || Tag.CORALS.isTagged(m)
+                    || Tag.CORAL_PLANTS.isTagged(m)) {
+                continue;   // VEGETACION del fondo: no tapa la columna, el agua sigue por encima
+                // (esto cortaba los puentes: un alga bastaba para que la casilla no fuera "agua"
+                //  y la carretera se hundia hasta el lecho con su escalera de piedra)
+            } else if (!m.isAir()) {
+                break;   // algo solido de verdad tapa la columna: no es agua abierta
             }
         }
         return top;
     }
 
+    /** Hasta cuantas casillas de bajio/islote se puentean de largo sin cortar el tablero. */
+    private static final int BRIDGE_GAP = 14;
+
+    /**
+     * ¿El puente CONTINUA despues de esta casilla sin agua? Mira unas casillas por delante: si el
+     * agua vuelve antes de {@link #BRIDGE_GAP} y el terreno intermedio queda por debajo del
+     * tablero, es un islote o un bajio en mitad del cruce y el puente pasa de largo. Solo se
+     * considera orilla de verdad cuando aparece tierra a la altura del tablero o el agua no vuelve.
+     *
+     * <p>Sin esto, un puente largo entre dos ciudades se partia en trozos: cada bajio hacia bajar
+     * la carretera al lecho con una escalera de losas y volver a subir.
+     */
+    private boolean bridgeContinues(List<int[]> tiles, int index, int deckY) {
+        final int end = Math.min(tiles.size(), index + 1 + BRIDGE_GAP);
+        for (int i = index + 1; i < end; i++) {
+            final int[] t = tiles.get(i);
+            final int gy = groundY(t[0], t[1]);
+            if (gy >= deckY) {
+                return false;   // tierra a la altura del tablero: aqui esta la orilla
+            }
+            if (waterSurfaceY(t[0], t[1], gy) >= 0) {
+                return true;    // vuelve el agua: seguimos cruzando
+            }
+        }
+        return false;
+    }
+
     /** Pavimenta UNA casilla de carretera (con sus dos arcenes) respetando la rasante. Devuelve
      *  la nueva altura de la superficie medida en MEDIOS bloques. Sobre agua NO se hunde: traza un
      *  PUENTE de madera un bloque por encima de la superficie, con pilones de piedra hasta el lecho. */
-    private int paveTile(int x, int z, int prevH, int perpX, int perpZ, int index) {
+    private int paveTile(List<int[]> tiles, int index, int prevH, int[] deck) {
+        final int[] tile = tiles.get(index);
+        final int x = tile[0];
+        final int z = tile[1];
+        final int perpX = tile[2];
+        final int perpZ = tile[3];
         final int gy = groundY(x, z);                    // fondo solido (bajo el agua, si la hay)
         final int waterTop = waterSurfaceY(x, z, gy);    // superficie del agua, o -1 si no hay
-        final boolean water = waterTop >= 0;
+        boolean water = waterTop >= 0;
+        if (water) {
+            // El tablero NO baja nunca a mitad de cruce: se queda a la cota mas alta que haya
+            // pedido el agua, asi el puente sale plano de orilla a orilla.
+            deck[0] = Math.max(deck[0], waterTop + 1);
+        } else if (deck[0] >= 0) {
+            if (gy < deck[0] && bridgeContinues(tiles, index, deck[0])) {
+                water = true;    // islote o bajio en mitad del cruce: el puente pasa por encima
+            } else {
+                deck[0] = -1;    // orilla de verdad: a partir de aqui, carretera de tierra
+            }
+        }
         if (!water && !natural(world.getBlockAt(x, gy, z).getType())) {
             return prevH;   // plaza o edificio: la carretera pasa de largo sin tocar ni elevarse
         }
         // En tierra, la rasante sube/baja medio bloque por casilla hacia el suelo. Sobre agua, el
         // tablero va UN bloque por encima de la superficie (plano a lo largo del lago), nunca dentro.
-        final int wantH = water ? 2 * (waterTop + 2) : 2 * (gy + 1);
+        final int wantH = water ? 2 * (deck[0] + 1) : 2 * (gy + 1);
         if (prevH < 0) {
             prevH = wantH;   // arranca A RAS de la primera casilla
         }
@@ -3402,9 +3457,75 @@ public final class SettlementModule implements Listener {
             if (world.getBlockAt(cx, gy, cz).isLiquid() || world.getBlockAt(cx, gy + 1, cz).isLiquid()) {
                 continue;   // agua: no fundar ahi
             }
+            if (!coreIsDry(cx, cz) || contiguousLand(cx, cz) < SITE_MIN_LAND) {
+                continue;   // un islote no da para un pueblo: hace falta tierra de verdad
+            }
             return new int[] {cx, cz};
         }
         return null;
+    }
+
+    // --- ¿Da este sitio para un PUEBLO? (no fundar en un islote de cuatro bloques) ---
+
+    private static final int SITE_RADIUS = 20;      // cuanto se mira alrededor del futuro centro
+    private static final int SITE_MIN_LAND = 450;   // columnas de tierra SEGUIDA que hacen falta
+    private static final int SITE_CORE = 5;         // el solar de la plaza, seco entero
+
+    /** True si la columna es tierra (su bloque mas alto no es agua ni hielo). Una lectura por
+     *  columna: no baja escaneando como {@link #groundY}. */
+    private boolean dryColumn(int x, int z) {
+        final int y = world.getHighestBlockYAt(x, z);
+        final Block b = world.getBlockAt(x, y, z);
+        final Material m = b.getType();
+        return !b.isLiquid() && m != Material.ICE && m != Material.PACKED_ICE
+                && m != Material.BLUE_ICE && m != Material.FROSTED_ICE;
+    }
+
+    /** El solar de la plaza (11x11) tiene que estar seco entero: ahi va el pozo, el arca y el panel. */
+    private boolean coreIsDry(int cx, int cz) {
+        for (int dx = -SITE_CORE; dx <= SITE_CORE; dx++) {
+            for (int dz = -SITE_CORE; dz <= SITE_CORE; dz++) {
+                if (!dryColumn(cx + dx, cz + dz)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Cuantas columnas de TIERRA SEGUIDA hay alrededor del punto, con el agua cortando de verdad
+     * (relleno por inundacion en 4 direcciones dentro de {@link #SITE_RADIUS}). Se corta al llegar
+     * al minimo: si el sitio es un islote, se queda corto en cuatro pasos y no cuesta nada.
+     *
+     * <p>Antes solo se miraba <b>una columna</b> y por eso una aldea acabo fundada sobre un islote
+     * diminuto rodeado de mar.
+     */
+    private int contiguousLand(int cx, int cz) {
+        final java.util.Set<Long> seen = new java.util.HashSet<>();
+        final java.util.ArrayDeque<int[]> pend = new java.util.ArrayDeque<>();
+        pend.add(new int[] {cx, cz});
+        seen.add((((long) cx) << 32) ^ (cz & 0xffffffffL));
+        int land = 0;
+        while (!pend.isEmpty() && land < SITE_MIN_LAND) {
+            final int[] p = pend.poll();
+            if (!dryColumn(p[0], p[1])) {
+                continue;   // aqui corta el agua: por este lado no sigue la tierra
+            }
+            land++;
+            for (final int[] d : new int[][] {{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+                final int nx = p[0] + d[0];
+                final int nz = p[1] + d[1];
+                if (Math.abs(nx - cx) > SITE_RADIUS || Math.abs(nz - cz) > SITE_RADIUS) {
+                    continue;
+                }
+                final long key = (((long) nx) << 32) ^ (nz & 0xffffffffL);
+                if (seen.add(key)) {
+                    pend.add(new int[] {nx, nz});
+                }
+            }
+        }
+        return land;
     }
 
     /** El primer nombre de aldea libre de la lista curada; si se agotan, "Aldea N". */

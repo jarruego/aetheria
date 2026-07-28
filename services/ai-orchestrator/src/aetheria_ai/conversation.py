@@ -126,8 +126,10 @@ _WORLD = (
     "economia) y un MUNDO CREATIVO (para construir libremente). Entre ellos se viaja por PORTALES."
 )
 _ROSTER = (
-    "Conoces a los demas: Aeon (el conserje del lobby, orienta a los recien llegados), "
-    "Nara (granjera del pueblo) y Pol (vigilante del pueblo)."
+    "Tambien esta Aeon, el conserje del lobby, que orienta a los recien llegados. Al resto de "
+    "vecinos del pueblo los conoces por su nombre: son la gente que vive contigo (te los dicen mas "
+    "abajo, en 'Sobre ti' y 'Vecinos tuyos'). NO te inventes vecinos ni nombres: si no conoces a "
+    "alguien por su nombre, no lo menciones."
 )
 
 # Todo lo que un jugador puede hacer en el server (para que el conserje oriente de verdad).

@@ -231,6 +231,16 @@ public final class QuestModule implements Listener, CommandExecutor {
                     } else if (err != null) {
                         p.sendMessage("§7(el pregonero no encuentra sus notas ahora mismo)");
                     }
+                    // Autocobra las que YA llegaron al objetivo pero quedaron sin cobrar (p.ej. un
+                    // fallo de red en su momento): asi una mision cumplida no se queda pegada a tope
+                    // en el tablon. El backend vuelve a validar; si no procede, no paga.
+                    for (final Quest q : new ArrayList<>(cache.getOrDefault(p.getUniqueId(),
+                            List.of()))) {
+                        if ((q.town.equals(town) || town.equals(q.destTown))
+                                && q.progress >= q.target) {
+                            claim(p, q);
+                        }
+                    }
                     if (then != null) {
                         then.run();
                     }
@@ -402,8 +412,15 @@ public final class QuestModule implements Listener, CommandExecutor {
             p.sendMessage("§7[Pregonero] Eso se cumple ahi fuera. Yo me entero solo, tranquilo.");
             return;
         }
-        p.closeInventory();
-        deliver(p, q, holder.vid);
+        deliver(p, q, holder.vid);   // el tablon se queda abierto y se repinta al avanzar/cumplir
+    }
+
+    /** Si el jugador tiene abierto un tablon de encargos, lo repinta desde la cache: asi una mision
+     *  que avanza o se cumple se actualiza (o desaparece) al momento, sin tener que reabrirlo. */
+    private void reshowOpenBoard(Player p) {
+        if (p.getOpenInventory().getTopInventory().getHolder() instanceof BoardHolder bh) {
+            show(p, bh.vid);
+        }
     }
 
     /** Entrega al granero lo que el jugador lleve encima de ese genero (lo que falte, no mas). */
@@ -495,6 +512,7 @@ public final class QuestModule implements Listener, CommandExecutor {
                     if (!data.has("ready") || !data.get("ready").getAsBoolean()) {
                         p.sendActionBar(Component.text("§e" + title(q) + " §7(" + q.progress + "/"
                                 + q.target + ")"));
+                        reshowOpenBoard(p);   // repinta la barra de progreso si el tablon esta abierto
                         return;
                     }
                     claim(p, q);
@@ -520,8 +538,11 @@ public final class QuestModule implements Listener, CommandExecutor {
                     p.sendMessage("§7Cobras §e" + aet + " AET§7 y §b" + pres + " de prestigio §7en "
                             + q.town + ". §8(total: " + data.get("score").getAsInt() + ")");
                     p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.7f, 1.3f);
+                    // El tablon de la plaza se repinta YA con el prestigio recien ganado.
+                    settlement.refreshRankingNow(settlement.townIdByName(q.town));
                     gateway.postEvent("mision", p.getName() + " cumplio un encargo de " + q.town
                             + ": " + title(q).toLowerCase(java.util.Locale.ROOT) + ".");
+                    reshowOpenBoard(p);   // la mision cumplida desaparece del tablon al momento
                 }));
     }
 
@@ -614,8 +635,9 @@ public final class QuestModule implements Listener, CommandExecutor {
         Material.COBBLESTONE, Material.LEATHER, Material.PAPER,
     };
 
+    /** El nombre del genero SIEMPRE en castellano: el pueblo no habla ingles. */
     private static String nice(Material m) {
-        return m == null ? "genero" : m.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
+        return Goods.es(m);
     }
 
     // ------------------------------------------------------------------

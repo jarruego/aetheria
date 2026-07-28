@@ -62,6 +62,13 @@ public final class QuestModule implements Listener, CommandExecutor {
     /** Misiones activas por jugador (se refrescan al entrar en una aldea y al abrir el tablon). */
     private final Map<UUID, List<Quest>> cache = new HashMap<>();
 
+    /** Enfriamiento por TIPO de encargo y aldea (playerUUID -> "aldea::tipo" -> instante en que se
+     *  cumplio): un tipo recien cumplido NO se vuelve a ofrecer hasta pasado {@link #TYPE_COOLDOWN_MS},
+     *  para que no se pueda farmear (sobre todo charla/mercado/parcela, que no dependen del estado
+     *  de la aldea y volvian a salir al momento). */
+    private final Map<UUID, Map<String, Long>> cooldown = new HashMap<>();
+    private static final long TYPE_COOLDOWN_MS = 60 * 60 * 1000L;   // 1 hora real por tipo y aldea
+
     public QuestModule(AetheriaPlugin plugin, GatewayClient gateway, SettlementModule settlement) {
         this.plugin = plugin;
         this.gateway = gateway;
@@ -264,6 +271,26 @@ public final class QuestModule implements Listener, CommandExecutor {
             q.good = Material.matchMaterial(obj.get("good").getAsString());
         }
         return q;
+    }
+
+    /** Apunta que este TIPO de encargo se acaba de cumplir en esta aldea (para no reofrecerlo ya). */
+    private void markCooldown(Player p, Quest q) {
+        cooldown.computeIfAbsent(p.getUniqueId(), k -> new HashMap<>())
+                .put(q.town + "::" + q.type, System.currentTimeMillis());
+    }
+
+    /** Tipos de encargo que ESA aldea tiene en enfriamiento para este jugador (cumplidos hace poco). */
+    private Set<String> coolingTypes(Player p, String town) {
+        final Set<String> out = new HashSet<>();
+        final long now = System.currentTimeMillis();
+        final String prefix = town + "::";
+        for (final Map.Entry<String, Long> e
+                : cooldown.getOrDefault(p.getUniqueId(), Map.of()).entrySet()) {
+            if (e.getKey().startsWith(prefix) && now - e.getValue() < TYPE_COOLDOWN_MS) {
+                out.add(e.getKey().substring(prefix.length()));
+            }
+        }
+        return out;
     }
 
     /** Misiones que se pueden ver/entregar en esta aldea: las suyas y los paquetes destinados a ella. */
@@ -532,6 +559,7 @@ public final class QuestModule implements Listener, CommandExecutor {
                         return;   // el backend dice que aun no esta (o ya se cobro): no se paga
                     }
                     cache.getOrDefault(p.getUniqueId(), new ArrayList<>()).remove(q);
+                    markCooldown(p, q);   // ese TIPO no se vuelve a ofrecer en esta aldea un rato
                     final int aet = data.get("reward_aet").getAsInt();
                     final int pres = data.get("reward_prestige").getAsInt();
                     p.sendMessage("§6§lEncargo cumplido §r§7— " + title(q));
@@ -589,6 +617,7 @@ public final class QuestModule implements Listener, CommandExecutor {
         for (final Quest q : questsFor(p, vid)) {
             already.add(q.type);
         }
+        already.addAll(coolingTypes(p, settlement.townName(vid)));   // no reofrecer lo recien cumplido
         final List<Draft> out = new ArrayList<>();
         final var rng = ThreadLocalRandom.current();
 

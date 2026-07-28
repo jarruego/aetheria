@@ -196,7 +196,18 @@ def _system_prompt(npc_id: str, profile: str, npc_name: str | None = None,
         # Ficha de identidad (edad, oficio, familia). Es contexto sobre TI MISMO, no una orden.
         base += f"\n\nSobre ti: {npc_bio}"
     if profile:
-        base += f"\n\nLo que recuerdas de este jugador (puede ser difuso): {profile}"
+        base += f"\n\nLo que recuerdas de esta persona (puede ser difuso): {profile}"
+    else:
+        # Sin ficha: el jugador NO se ha presentado. Hay que decirlo explicito o el modelo tiende
+        # a rellenar el hueco atribuyendole al jugador los datos del propio NPC (nombre, oficio...).
+        base += ("\n\nAun NO conoces a la persona con la que hablas: es la primera vez, no sabes su "
+                 "nombre ni a que se dedica. No te lo inventes; si te da curiosidad, preguntaselo.")
+    # Frontera de identidad (la causa de que a veces el NPC se mezcle con el jugador): dejar claro
+    # que los datos de "Sobre ti" son del NPC y que el jugador es OTRA persona.
+    base += ("\n\nIMPORTANTE: tu nombre, tu edad, tu oficio y tu familia son SOLO TUYOS. La persona "
+             "con la que hablas es alguien DISTINTO: no le atribuyas tus datos, no supongas que se "
+             "llama como tu ni que hace tu mismo trabajo. Lo que ella cuente de si misma es suyo; "
+             "habla siempre como tu, nunca como si fueras ella.")
     return base
 
 
@@ -269,10 +280,13 @@ async def _consolidate(npc_id: str, player_id: str) -> None:
         f"{'Jugador' if t.get('role') == 'player' else 'Yo'}: {t.get('content', '')}" for t in older
     )
     system = (
-        "Mantienes una FICHA breve de un jugador, vista por un aldeano. Actualiza la ficha "
-        "combinando la anterior con la conversacion nueva: quedate con lo importante y estable "
-        "(nombre, gustos, oficio, temas recurrentes, tono) y descarta lo trivial y puntual. "
-        "Escribela en 2-3 frases, en tercera persona. Devuelve SOLO la ficha."
+        "Mantienes una FICHA breve de un JUGADOR, vista por un aldeano. En la conversacion, las "
+        "lineas 'Jugador:' son de ESA persona y las 'Yo:' son del aldeano que recuerda. La ficha "
+        "describe SOLO al jugador: usa unicamente lo que el jugador dijo de si mismo; NUNCA metas "
+        "en ella el nombre, el oficio ni la familia del aldeano. Si el jugador no dijo su nombre "
+        "ni a que se dedica, no te lo inventes: deja la ficha vaga. Actualiza la anterior con lo "
+        "nuevo, quedate con lo importante y estable (nombre, gustos, oficio, temas, tono) y "
+        "descarta lo trivial. Escribela en 2-3 frases, en tercera persona. Devuelve SOLO la ficha."
     )
     user = f"Ficha anterior: {previous or '(vacia)'}\n\nConversacion reciente:\n{lines}\n\nFicha actualizada:"
 

@@ -197,18 +197,26 @@ public final class ConversationManager implements Listener {
         }
 
         runSync(() -> player.sendMessage("§7Tu: §f" + msg));
-        // FRASE INTERMEDIA si el LLM tarda: para que no parezca que el NPC se ha colgado. Solo se
-        // muestra si a los ~0.8 s aun no ha contestado; si responde rapido, no aparece.
+        // FRASES INTERMEDIAS mientras el LLM tarda: van saliendo CADA 2 s ("mmm...", "a ver...")
+        // para entretener la espera, hasta que llegue la respuesta (o te alejes). La primera sale a
+        // los 2 s: si contesta antes, no aparece ninguna.
         final java.util.concurrent.atomic.AtomicBoolean answered =
                 new java.util.concurrent.atomic.AtomicBoolean(false);
-        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-            if (!answered.get() && player.isOnline()
-                    && npcUuid.equals(talking.get(player.getUniqueId()))) {
-                player.sendMessage("§a[" + info.name() + "] §7§o"
-                        + THINKING[java.util.concurrent.ThreadLocalRandom.current()
-                                .nextInt(THINKING.length)]);
+        final int[] fillerTask = {-1};
+        final int[] lastFiller = {-1};
+        fillerTask[0] = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
+            if (answered.get() || !player.isOnline()
+                    || !npcUuid.equals(talking.get(player.getUniqueId()))) {
+                plugin.getServer().getScheduler().cancelTask(fillerTask[0]);
+                return;
             }
-        }, 16L);   // ~0.8 s
+            int i = java.util.concurrent.ThreadLocalRandom.current().nextInt(THINKING.length);
+            if (i == lastFiller[0]) {
+                i = (i + 1) % THINKING.length;   // no repetir la misma dos veces seguidas
+            }
+            lastFiller[0] = i;
+            player.sendMessage("§a[" + info.name() + "] §7§o" + THINKING[i]);
+        }, 40L, 40L).getTaskId();   // primera a los 2 s, luego cada 2 s
         // Memoria POR INDIVIDUO: los colonos/ninos comparten npc_id generico ("colono"/"nino"),
         // asi que se les da un id de memoria unico por nombre (si no, un aldeano "recordaria" lo
         // que le contaste a otro). El orquestador resuelve la persona por el prefijo antes de ":".
@@ -218,7 +226,8 @@ public final class ConversationManager implements Listener {
         gateway.conversation(memId, player.getUniqueId().toString(), msg, info.name(),
                         bios.get(info.name()))
                 .whenComplete((json, err) -> runSync(() -> {
-                    answered.set(true);   // corta la frase intermedia si aun no ha saltado
+                    answered.set(true);   // corta las frases intermedias
+                    plugin.getServer().getScheduler().cancelTask(fillerTask[0]);
                     if (!player.isOnline()) {
                         return;
                     }

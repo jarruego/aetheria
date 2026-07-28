@@ -28,15 +28,20 @@ El servidor corre en **Java 25** (lo exige FAWE 2.15.3). **ProtocolLib peta en J
    ("Francisco Ramos" → "Francisco_Ramos").
 2. **La skin solo carga si el jugador está `listed=true`** en el tab (muchos clientes ignoran la
    skin de los no-listados). En el `PlayerInfo` va `listed=true`.
-3. **Firma de la textura**: si la skin NO está firmada, la firma se pasa como **`null`**, NUNCA
-   como `""` (cadena vacía = firma inválida → el cliente muestra la skin por defecto). En modo
-   offline una textura sin firmar (null) sí renderiza.
+3. **La textura DEBE ir FIRMADA** (esto costó): los clientes modernos exigen `value`+`signature`
+   válidos para renderizar la skin de OTRO jugador; con firma `null`/`""` muestran la skin por
+   defecto (da igual el modo offline). Se firma con **MineSkin** (sin cuenta): `POST
+   https://api.mineskin.org/generate/url` con `{"url":"<url .png de la textura>","visibility":1}`
+   → devuelve `data.texture.value` + `data.texture.signature` (rate limit ~6 s entre peticiones).
+   La firma valida el `profileId` embebido en el `value`, NO el UUID del NPC, así que la misma
+   textura firmada vale para cualquier UUID. El listener pasa la firma tal cual si no está vacía.
 
 ## Añadir skins de oficio
-El dueño pasa una skin como `/give player_head[...]` (o URL de NameMC). Se saca el `value` base64
-de `profile.properties[textures]` y se añade en `SkinCache.loadProfSkins()`:
-`putProfSkin("<oficio_en_ingles>", "<value>", "");` (firma vacía = sin firmar → el listener la pasa
-como null). El oficio del tabernero es `leatherworker` (TAVERN_KEEPER = Villager.Profession.LEATHERWORKER).
+El dueño pasa una skin como `/give player_head[...]` (o URL de NameMC): se saca el `value` base64
+de `profile.properties[textures]`, se decodifica para leer la **url .png** de la textura y se
+**firma con MineSkin** (ver gotcha #3). En `SkinCache.loadProfSkins()`:
+`putProfSkin("<oficio_en_ingles>", "<value_firmado>", "<signature>");`. El oficio del tabernero es
+`leatherworker` (TAVERN_KEEPER = Villager.Profession.LEATHERWORKER).
 
 ## Verificación
 Solo se puede **ver en el juego** (los disfraces son visuales, cliente). Hay que **reconectar** para

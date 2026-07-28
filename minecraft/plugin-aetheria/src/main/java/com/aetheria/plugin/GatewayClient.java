@@ -208,6 +208,12 @@ public final class GatewayClient {
         return getJson("/v1/village");
     }
 
+    /** Un chisme sobre un jugador, sacado de lo que los aldeanos recuerdan de el: {line}. Vacio si
+     *  aun no saben nada. Lo usa el cotilleo del pueblo para hablar de los jugadores. */
+    public CompletableFuture<JsonObject> playerGossip(String playerUuid) {
+        return getJson("/v1/player-gossip?player_uuid=" + playerUuid);
+    }
+
     /**
      * #11 - Reporta la PRODUCCION FISICA de los aldeanos (por lotes, un apunte por sector).
      * El backend la convierte en ingresos del pueblo: la economia vive del trabajo real.
@@ -298,6 +304,77 @@ public final class GatewayClient {
                     }
                     return JsonParser.parseString(resp.body()).getAsJsonArray();
                 });
+    }
+
+    // --- Misiones y PRESTIGIO (0009): el jugador se gana su sitio en el pueblo ---
+
+    /** Registra una mision compuesta por el plugin. El backend TASA la recompensa (baremo). */
+    public CompletableFuture<JsonObject> createQuest(String uuid, String name, String village,
+            String kind, JsonObject objective, int target, int rewardAet, int rewardPrestige) {
+        final JsonObject body = new JsonObject();
+        body.addProperty("player_uuid", uuid);
+        body.addProperty("username", name);
+        body.addProperty("village_name", village);
+        body.addProperty("kind", kind);
+        body.add("objective", objective);
+        body.addProperty("target", target);
+        body.addProperty("reward_aet", rewardAet);
+        body.addProperty("reward_prestige", rewardPrestige);
+        return sendCapturing("/v1/quests", gson.toJson(body));
+    }
+
+    /** Misiones activas del jugador en esa aldea. */
+    public CompletableFuture<com.google.gson.JsonArray> getQuests(String uuid, String village) {
+        return getJson("/v1/quests?player=" + enc(uuid) + "&village=" + enc(village))
+                .thenApply(json -> json.has("quests") ? json.getAsJsonArray("quests")
+                        : new com.google.gson.JsonArray());
+    }
+
+    /** Suma avance a una mision. Devuelve {progress, target, ready}. */
+    public CompletableFuture<JsonObject> questProgress(String uuid, String questId, int delta) {
+        final JsonObject body = new JsonObject();
+        body.addProperty("player_uuid", uuid);
+        body.addProperty("quest_id", questId);
+        body.addProperty("delta", delta);
+        return sendCapturing("/v1/quests/progress", gson.toJson(body));
+    }
+
+    /** Pide cobrar una mision. Solo paga si el BACKEND ve el progreso completo. */
+    public CompletableFuture<JsonObject> questComplete(String uuid, String questId) {
+        final JsonObject body = new JsonObject();
+        body.addProperty("player_uuid", uuid);
+        body.addProperty("quest_id", questId);
+        return sendCapturing("/v1/quest/complete", gson.toJson(body));
+    }
+
+    /** Aporta al arca de una aldea: cobra el AET y suma prestigio en la MISMA transaccion. */
+    public CompletableFuture<JsonObject> donateToVillage(String uuid, String name, String village,
+            double amount) {
+        final JsonObject body = new JsonObject();
+        body.addProperty("player_uuid", uuid);
+        body.addProperty("username", name);
+        body.addProperty("village_name", village);
+        body.addProperty("amount", amount);
+        return sendCapturing("/v1/donation", gson.toJson(body));
+    }
+
+    /** Prestigio de los JUGADORES en una aldea (el plugin lo fusiona con el de sus aldeanos). */
+    public CompletableFuture<com.google.gson.JsonArray> getVillageReputation(String village) {
+        return getJson("/v1/village/" + enc(village) + "/reputation")
+                .thenApply(json -> json.has("players") ? json.getAsJsonArray("players")
+                        : new com.google.gson.JsonArray());
+    }
+
+    /** Prestigio de un jugador en todas las aldeas (para /prestigio fuera de una aldea). */
+    public CompletableFuture<com.google.gson.JsonArray> getPlayerReputation(String uuid) {
+        return getJson("/v1/players/" + enc(uuid) + "/reputation")
+                .thenApply(json -> json.has("villages") ? json.getAsJsonArray("villages")
+                        : new com.google.gson.JsonArray());
+    }
+
+    /** Los nombres de aldea llevan espacios ("Puebla Nueva"): hay que escaparlos en la URL. */
+    private static String enc(String s) {
+        return java.net.URLEncoder.encode(s, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     /** POST que NO lanza en 4xx: devuelve {ok:bool, error?:string} para mensajes limpios. */

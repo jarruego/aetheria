@@ -73,3 +73,9 @@ async def set_population(body: dict):
 async def village():
     """Estado del pueblo vivo (poblacion, prosperidad) para que el plugin reconcilie."""
     return await _ws("GET", "/internal/village")
+
+
+@router.get("/player-gossip", dependencies=[Depends(require_internal_token)])
+async def player_gossip(player_uuid: str):
+    """Un chisme sobre un jugador, sacado de lo que los aldeanos recuerdan de el (su ficha)."""
+    return await _ws("GET", f"/internal/player-gossip?player_uuid={player_uuid}")

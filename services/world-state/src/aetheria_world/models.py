@@ -156,3 +156,42 @@ class ProductionEntry(BaseModel):
 class ProductionIn(BaseModel):
     world: str = "main"
     entries: list[ProductionEntry] = []
+
+
+# --- Misiones y prestigio (0009): el jugador se gana su sitio en el pueblo ---
+
+class QuestCreateIn(BaseModel):
+    """El plugin propone una mision compuesta con el estado REAL de la aldea.
+
+    La recompensa que llegue aqui se recorta al baremo del backend: el plugin
+    propone, el backend tasa.
+    """
+
+    player_uuid: str
+    username: str | None = None
+    village_name: str
+    kind: str                      # economica | social | construccion | mantenimiento | exploracion
+    objective: dict = {}
+    target: int = 1
+    reward_aet: int = 0
+    reward_prestige: int = 0
+
+
+class QuestProgressIn(BaseModel):
+    player_uuid: str
+    quest_id: str
+    delta: int = 1
+
+
+class QuestCompleteIn(BaseModel):
+    player_uuid: str
+    quest_id: str
+
+
+class DonationIn(BaseModel):
+    """Aportacion al arca de una aldea: mueve el dinero Y suma prestigio, de una vez."""
+
+    player_uuid: str
+    username: str | None = None
+    village_name: str
+    amount: float

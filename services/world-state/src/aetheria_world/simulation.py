@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 
 from aetheria_world.config import settings
 from aetheria_world.db import is_ready, pool
+from aetheria_world.quests import decay_reputation
 
 logger = logging.getLogger("aetheria_world.simulation")
 
@@ -356,6 +357,9 @@ async def simulation_loop() -> None:
                     summary = await run_tick(conn)
                     rent = await collect_rent(conn)       # cobra alquileres vencidos
                     village = await evolve_population(conn)  # el pueblo crece o mengua
-            logger.info("Tick: %s | renta: %s | pueblo: %s", summary, rent, village)
+                    # El prestigio de quien abandona una aldea se desinfla solo (0009).
+                    decay = await decay_reputation(conn)
+            logger.info("Tick: %s | renta: %s | pueblo: %s | prestigio: %s",
+                        summary, rent, village, decay)
         except Exception:  # noqa: BLE001 - la simulacion nunca debe tumbar el servicio
             logger.exception("Fallo un tick de simulacion (se continua).")

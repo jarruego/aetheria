@@ -10,6 +10,7 @@ from aetheria_api.routers import (
     economy,
     plans,
     players,
+    quests,
     social,
     system,
     world,
@@ -28,3 +29,4 @@ app.include_router(world.router)
 app.include_router(players.router)
 app.include_router(economy.router)
 app.include_router(social.router)
+app.include_router(quests.router)

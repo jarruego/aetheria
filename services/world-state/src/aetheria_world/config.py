@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     # Techo = 8 aldeas x 8 vecinos (ver PER_TOWN/MAX_TOWNS en el plugin): el mundo lleno.
     sim_max_population: int = 64
 
+    # Misiones y prestigio (0009): el prestigio por misiones se desinfla si abandonas
+    # la aldea. Lo donado no decae (la raiz cuadrada ya lo amortigua).
+    reputation_idle_days: int = 14     # dias sin misiones ni donaciones antes de empezar a decaer
+    reputation_decay_pct: float = 0.10  # cuanto pierde por cada semana de ausencia
+
     # Fase 9: reclamar una parcela (un chunk).
     claim_price: float = 50.0            # compra fija (para siempre)
     claim_rent_deposit: float = 10.0     # deposito al alquilar

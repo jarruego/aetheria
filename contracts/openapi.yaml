@@ -17,6 +17,8 @@ tags:
     description: Conversación con NPC (enrutado en 3 niveles)
   - name: planning
     description: Solicitud y validación de planes de acción
+  - name: quests
+    description: Misiones del pueblo y prestigio del jugador (de ahí sale el alcalde)
 
 paths:
   /health:
@@ -324,6 +326,197 @@ paths:
         "404": { description: No tienes una parcela ahí }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /v1/quests:
+    get:
+      tags: [quests]
+      summary: Misiones activas de un jugador en una aldea
+      parameters:
+        - name: player
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: village
+          in: query
+          required: true
+          schema: { type: string, example: Rocavieja }
+      responses:
+        "200":
+          description: Lista de misiones activas (las caducadas se marcan por el camino)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quests:
+                    type: array
+                    items: { $ref: "#/components/schemas/Quest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [quests]
+      summary: Registrar una misión que el plugin compuso con el estado real de la aldea
+      description: >-
+        El objetivo lo genera CÓDIGO (qué falta en el granero, cuánto le falta a la hucha,
+        qué vecinos hay), nunca el LLM. La recompensa que llega aquí se **recorta al baremo**
+        del backend por tipo de misión: el plugin propone, el backend tasa.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QuestCreate" }
+      responses:
+        "200":
+          description: Misión creada, rechazada (tipo desconocido) o cupo lleno
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok, full, rejected] }
+                  quest: { $ref: "#/components/schemas/Quest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/quests/progress:
+    post:
+      tags: [quests]
+      summary: Sumar avance a una misión (entrega, venta, charla, aportación)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [player_uuid, quest_id]
+              properties:
+                player_uuid: { type: string, format: uuid }
+                quest_id: { type: string, format: uuid }
+                delta: { type: integer, minimum: 0, example: 8 }
+      responses:
+        "200":
+          description: Progreso apuntado (no paga; solo apunta)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  progress: { type: integer, example: 12 }
+                  target: { type: integer, example: 20 }
+                  ready: { type: boolean, example: false }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/quest/complete:
+    post:
+      tags: [quests]
+      summary: Cobrar una misión cumplida (lo decide el backend, no el plugin)
+      description: >-
+        Comprueba contra la fila persistida que `progress >= target`. Solo entonces paga los
+        AET (transacción atómica, como /v1/reward) y suma el prestigio en esa aldea.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [player_uuid, quest_id]
+              properties:
+                player_uuid: { type: string, format: uuid }
+                quest_id: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Resultado del cobro
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok, incomplete, already, not_found] }
+                  reward_aet: { type: integer, example: 40 }
+                  reward_prestige: { type: integer, example: 12 }
+                  score: { type: integer, example: 57 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/donation:
+    post:
+      tags: [quests]
+      summary: Aportar al arca de una aldea (cobra y suma prestigio en un solo viaje)
+      description: >-
+        Sustituye al `/v1/pay` que usaba el arca: mover el dinero y ganar prestigio son la
+        misma transacción (o pasan las dos, o no pasa ninguna). El prestigio por donación
+        crece por **raíz cuadrada**: donar 4x más no da 4x más prestigio.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [player_uuid, village_name, amount]
+              properties:
+                player_uuid: { type: string, format: uuid }
+                username: { type: string }
+                village_name: { type: string, example: Rocavieja }
+                amount: { type: number, minimum: 0.01, example: 100 }
+      responses:
+        "200":
+          description: Aportación registrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  donated_total: { type: number, example: 625 }
+                  score: { type: integer, example: 37 }
+        "400": { description: Fondos insuficientes o cantidad inválida }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/village/{village_name}/reputation:
+    get:
+      tags: [quests]
+      summary: Prestigio de los JUGADORES en una aldea (ya calculado en el backend)
+      description: >-
+        `score = mission_points + floor(sqrt(donated_total))`. La fórmula vive aquí, no en el
+        plugin, para no tenerla en dos sitios. El plugin fusiona esta lista con el peculio de
+        sus aldeanos y de ahí sale el alcalde.
+      parameters:
+        - name: village_name
+          in: path
+          required: true
+          schema: { type: string, example: Rocavieja }
+      responses:
+        "200":
+          description: Jugadores con prestigio en esa aldea, de mayor a menor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  players:
+                    type: array
+                    items: { $ref: "#/components/schemas/PlayerReputation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/players/{player_uuid}/reputation:
+    get:
+      tags: [quests]
+      summary: Prestigio de un jugador en todas las aldeas (para /prestigio)
+      parameters:
+        - name: player_uuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Una entrada por aldea donde ha dejado huella
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  villages:
+                    type: array
+                    items: { $ref: "#/components/schemas/PlayerReputation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
 components:
   securitySchemes:
     internalToken:
@@ -560,6 +753,54 @@ components:
         min_z: { type: integer }
         max_x: { type: integer }
         max_z: { type: integer }
+
+    QuestCreate:
+      type: object
+      required: [player_uuid, village_name, kind, target]
+      properties:
+        player_uuid: { type: string, format: uuid }
+        username: { type: string }
+        village_name: { type: string, example: Rocavieja }
+        kind:
+          type: string
+          enum: [economica, social, construccion, mantenimiento, exploracion]
+        objective:
+          type: object
+          description: >-
+            Qué se pide, en datos (no en prosa): tipo de encargo, género, cantidad, aldea
+            destino... Lo compone el plugin con el estado real; el LLM como mucho lo redacta.
+          example: { type: granero, good: WHEAT, amount: 20, label: trigo }
+        target: { type: integer, minimum: 1, example: 20 }
+        reward_aet: { type: integer, minimum: 0, example: 40 }
+        reward_prestige: { type: integer, minimum: 0, example: 12 }
+
+    Quest:
+      type: object
+      required: [id, village_name, kind, progress, target]
+      properties:
+        id: { type: string, format: uuid }
+        village_name: { type: string }
+        kind: { type: string }
+        objective: { type: object }
+        progress: { type: integer, example: 12 }
+        target: { type: integer, example: 20 }
+        reward_aet: { type: integer, example: 40 }
+        reward_prestige: { type: integer, example: 12 }
+        status: { type: string, enum: [active, completed, expired] }
+
+    PlayerReputation:
+      type: object
+      required: [score]
+      properties:
+        player_uuid: { type: string, format: uuid }
+        username: { type: string }
+        village_name: { type: string }
+        mission_points: { type: integer, example: 45 }
+        donated_total: { type: number, example: 625 }
+        score:
+          type: integer
+          description: "mission_points + floor(sqrt(donated_total))"
+          example: 70
 
 security:
   - internalToken: []

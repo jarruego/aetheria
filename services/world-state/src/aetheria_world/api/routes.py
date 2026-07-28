@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
 
+from aetheria_world import quests as q
 from aetheria_world.config import settings
 from aetheria_world.db import is_ready, pool
 from aetheria_world.models import (
@@ -19,6 +20,7 @@ from aetheria_world.models import (
     ChargeIn,
     ConversationAppend,
     ConversationTurn,
+    DonationIn,
     HomeOut,
     HomeUpsert,
     PlanAudit,
@@ -27,6 +29,9 @@ from aetheria_world.models import (
     PlotOut,
     PlotUnclaimIn,
     ProductionIn,
+    QuestCompleteIn,
+    QuestCreateIn,
+    QuestProgressIn,
     SummaryOut,
     SummaryUpsert,
     TransferIn,
@@ -221,6 +226,29 @@ async def get_summary(npc_key: str, player_uuid: str) -> SummaryOut:
             npc_key, player_uuid,
         )
     return SummaryOut(summary=row["summary"] if row else "")
+
+
+@router.get("/player-gossip")
+async def player_gossip(player_uuid: str) -> dict:
+    """Un CHISME sobre un jugador: una frase corta sacada de lo que ALGUN aldeano recuerda de el
+    (npc_player_memory, elegido al azar). Asi las noticias del pueblo tambien hablan de los
+    jugadores. Devuelve {'line': ''} si todavia nadie sabe nada de el."""
+    _require_db()
+    async with pool().acquire() as conn:
+        row = await conn.fetchrow(
+            "select summary from npc_player_memory "
+            "where player_uuid = $1 and summary <> '' "
+            "order by random() limit 1",
+            player_uuid,
+        )
+    if row is None:
+        return {"line": ""}
+    summary = (row["summary"] or "").strip()
+    # Un retazo (la primera frase), no la ficha entera: el cotilleo es un rumor suelto.
+    snippet = summary.split(". ")[0].strip().rstrip(".")
+    if len(snippet) > 110:
+        snippet = snippet[:108].rstrip() + "..."
+    return {"line": snippet}
 
 
 @router.put("/npc-summary")
@@ -575,3 +603,89 @@ async def collect_rent_endpoint() -> dict:
     async with pool().acquire() as conn:
         async with conn.transaction():
             return await sim_collect_rent(conn)
+
+
+# --- Misiones y prestigio (0009): el jugador se gana su sitio (y puede llegar a alcalde) ---
+
+@router.post("/quests")
+async def create_quest(body: QuestCreateIn) -> dict:
+    """Registra una mision que el plugin ha compuesto con el estado real de la aldea.
+
+    Aqui se TASA: el tipo tiene que existir y la recompensa se recorta al baremo.
+    """
+    _require_db()
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            pid = await _player_id(conn, body.player_uuid, body.username)
+            return await q.create_quest(conn, pid, body.village_name[:60], body.kind,
+                                        body.objective, body.target, body.reward_aet,
+                                        body.reward_prestige)
+
+
+@router.get("/quests")
+async def list_quests(player_uuid: str, village_name: str) -> dict:
+    """Misiones activas de un jugador en una aldea (caduca por el camino las viejas)."""
+    _require_db()
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            pid = await _player_id(conn, player_uuid, None)
+            return {"quests": await q.list_quests(conn, pid, village_name[:60])}
+
+
+@router.post("/quests/progress")
+async def quest_progress(body: QuestProgressIn) -> dict:
+    """Suma avance (entregas, ventas, charlas...). No paga: solo apunta."""
+    _require_db()
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            pid = await _player_id(conn, body.player_uuid, None)
+            return await q.add_progress(conn, body.quest_id, pid, body.delta)
+
+
+@router.post("/quests/complete")
+async def quest_complete(body: QuestCompleteIn) -> dict:
+    """Cobra una mision SI el progreso persistido llega al objetivo (lo decide el backend)."""
+    _require_db()
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            pid = await _player_id(conn, body.player_uuid, None)
+            return await q.complete_quest(conn, body.quest_id, pid, body.player_uuid)
+
+
+@router.post("/donation")
+async def donation(body: DonationIn) -> dict:
+    """Aportacion al arca: mueve el AET y suma prestigio en la MISMA transaccion."""
+    _require_db()
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            pid = await _player_id(conn, body.player_uuid, body.username)
+            out = await q.register_donation(conn, pid, body.player_uuid,
+                                            body.village_name[:60], body.amount)
+    if out.get("status") != "ok":
+        raise HTTPException(status_code=400, detail=out.get("detail", "no se pudo aportar"))
+    return out
+
+
+@router.get("/village/{village_name}/reputation")
+async def village_reputation(village_name: str) -> dict:
+    """Ranking de JUGADORES de una aldea, con el prestigio ya calculado aqui."""
+    _require_db()
+    async with pool().acquire() as conn:
+        return {"players": await q.village_reputation(conn, village_name[:60])}
+
+
+@router.get("/players/{player_uuid}/reputation")
+async def player_reputation(player_uuid: str) -> dict:
+    """Prestigio de un jugador en todas las aldeas donde ha dejado huella."""
+    _require_db()
+    async with pool().acquire() as conn:
+        return {"villages": await q.player_reputation(conn, player_uuid)}
+
+
+@router.post("/reputation/decay")
+async def reputation_decay() -> dict:
+    """Aplica la decadencia por abandono (el bucle de simulacion ya lo hace solo)."""
+    _require_db()
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            return await q.decay_reputation(conn)

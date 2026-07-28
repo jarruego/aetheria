@@ -207,8 +207,12 @@ public final class NpcRoutineModule {
 
     // --- COTILLEO: las noticias del pueblo corren de boca en boca ---
 
-    private static final int GOSSIP_MAX = 10;
-    private static final long GOSSIP_COOLDOWN_MS = 60_000L;
+    private static final int GOSSIP_MAX = 8;
+    private static final long GOSSIP_COOLDOWN_MS = 90_000L;        // por vecino
+    private static final long GOSSIP_GLOBAL_MS = 25_000L;          // entre cualquier cotilleo del pueblo
+    private static final long GOSSIP_TTL_MS = 20 * 60_000L;        // una noticia caduca a los 20 min reales
+    private static final int GOSSIP_MAX_TELLS = 3;                 // no se repite mas de 3 veces
+    private static final long PLAYER_GOSSIP_TTL_MS = 5 * 60_000L;  // cache del chisme de cada jugador
     private static final String[] GOSSIP_OPEN = {
         "¿Te has enterado?", "Dicen por ahi que", "Me ha contado un vecino:", "Lo comentan en la plaza:",
         "No se lo cuentes a nadie, pero", "Se dice en la taberna:",
@@ -217,15 +221,48 @@ public final class NpcRoutineModule {
         "Vaya, no tenia ni idea.", "Algo habia oido yo tambien.", "¡No me digas!",
         "Cosas del pueblo...", "Pues mira tu por donde.", "Ya somos dos que lo sabemos.",
     };
-    private final java.util.ArrayDeque<String> gossip = new java.util.ArrayDeque<>();
+    // Formatos para chismorrear SOBRE un jugador (%s = nombre, %s = lo que se sabe de el).
+    private static final String[] PLAYER_OPEN = {
+        "¿Sabes lo del forastero %s? Dicen que %s",
+        "Ese tal %s... cuentan que %s",
+        "Del viajero %s se comenta que %s",
+        "He oido cosas de %s: %s",
+    };
 
-    /** Anota una NOTICIA del pueblo (boda, nacimiento, muerte, obra, cosecha). Los vecinos la
-     *  repetiran entre ellos cuando coincidan, si hay algun jugador cerca para oirlo. */
+    /** Una noticia del pueblo con su hora y cuantas veces se ha contado (para no repetir ni sacar
+     *  cosas viejas). */
+    private static final class News {
+        final String text;
+        final long at;
+        int tells;
+        News(String text, long at) {
+            this.text = text;
+            this.at = at;
+        }
+    }
+
+    private final java.util.ArrayDeque<News> gossip = new java.util.ArrayDeque<>();
+    private long lastGossipGlobal;
+    // Chisme sobre jugadores, cacheado por uuid (linea ya montada + cuando se pidio al backend).
+    private final java.util.Map<java.util.UUID, String> playerGossip =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<java.util.UUID, Long> playerGossipAt =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Anota una NOTICIA del pueblo (boda, nacimiento, muerte, obra...). Los vecinos la repetiran
+     *  entre ellos cuando coincidan, si hay algun jugador cerca. Sin duplicados: una misma noticia
+     *  no se apila (era una fuente de repeticion). */
     public void pushGossip(String news) {
         if (news == null || news.isBlank()) {
             return;
         }
-        gossip.addFirst(news.length() > 90 ? news.substring(0, 88) + "..." : news);
+        final String text = news.length() > 90 ? news.substring(0, 88) + "..." : news;
+        for (final News n : gossip) {
+            if (n.text.equals(text)) {
+                return;   // ya esta esa noticia: no se duplica
+            }
+        }
+        gossip.addFirst(new News(text, System.currentTimeMillis()));
         while (gossip.size() > GOSSIP_MAX) {
             gossip.removeLast();
         }
@@ -252,24 +289,28 @@ public final class NpcRoutineModule {
      * y el otro responde: se ve como dos bocadillos encadenados.
      */
     private void maybeGossip(Worker w) {
-        if (gossip.isEmpty() || w.entity == null) {
+        if (w.entity == null) {
             return;
         }
         final long now = System.currentTimeMillis();
         if (now - w.lastGossip < GOSSIP_COOLDOWN_MS
-                || java.util.concurrent.ThreadLocalRandom.current().nextInt(100) >= 4) {
+                || now - lastGossipGlobal < GOSSIP_GLOBAL_MS
+                || java.util.concurrent.ThreadLocalRandom.current().nextInt(100) >= 3) {
             return;
         }
         final Location at = w.entity.getLocation();
-        boolean audience = false;
+        // Jugador a la escucha (y el mas cercano, por si el chisme va SOBRE el).
+        Player near = null;
+        double bestSq = 576;   // 24 bloques
         for (final Player p : world.getPlayers()) {
-            if (p.getLocation().distanceSquared(at) <= 576) {   // 24 bloques: hay quien lo oiga
-                audience = true;
-                break;
+            final double d = p.getLocation().distanceSquared(at);
+            if (d <= bestSq) {
+                bestSq = d;
+                near = p;
             }
         }
-        if (!audience) {
-            return;
+        if (near == null) {
+            return;   // sin publico, no se gasta nada
         }
         Worker other = null;
         for (final Worker o : workers) {
@@ -284,13 +325,20 @@ public final class NpcRoutineModule {
             return;
         }
         final var rng = java.util.concurrent.ThreadLocalRandom.current();
+        // ~40% del tiempo el chisme es SOBRE el jugador cercano, si los vecinos saben algo de el;
+        // el resto, una noticia FRESCA del pueblo (nunca una vieja o ya muy contada).
+        String line = rng.nextInt(100) < 40 ? playerGossipLine(near) : null;
+        if (line == null) {
+            final News n = pickTownNews(now);
+            if (n == null) {
+                return;   // no hay noticias frescas: mejor callar que repetir lo de siempre
+            }
+            n.tells++;
+            line = GOSSIP_OPEN[rng.nextInt(GOSSIP_OPEN.length)] + " " + n.text;
+        }
         w.lastGossip = now;
         other.lastGossip = now;
-        final String news = gossip.stream().skip(rng.nextInt(gossip.size())).findFirst().orElse(null);
-        if (news == null) {
-            return;
-        }
-        final String line = GOSSIP_OPEN[rng.nextInt(GOSSIP_OPEN.length)] + " " + news;
+        lastGossipGlobal = now;
         bubble(at.clone().add(0, 2.3, 0), "§f" + line, 100L);
         final Worker listener = other;
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
@@ -299,11 +347,59 @@ public final class NpcRoutineModule {
                         "§7" + GOSSIP_REPLY[rng.nextInt(GOSSIP_REPLY.length)], 70L);
             }
         }, 45L);
+        final String chat = line;
         for (final Player p : world.getPlayers()) {
             if (p.getLocation().distanceSquared(at) <= 576) {
-                p.sendMessage("§e[" + w.name + "] §7" + line);
+                p.sendMessage("§e[" + w.name + "] §7" + chat);
             }
         }
+    }
+
+    /** Elige una noticia del pueblo FRESCA (no caducada ni ya contada 3 veces), con sesgo hacia lo
+     *  mas reciente. De paso purga las viejas. Devuelve null si no queda nada que valga la pena. */
+    private News pickTownNews(long now) {
+        gossip.removeIf(n -> now - n.at > GOSSIP_TTL_MS || n.tells >= GOSSIP_MAX_TELLS);
+        if (gossip.isEmpty()) {
+            return null;
+        }
+        final List<News> fresh = new ArrayList<>(gossip);   // ya ordenadas de nueva a vieja
+        final var rng = java.util.concurrent.ThreadLocalRandom.current();
+        // El menor de dos indices al azar => favorece las noticias mas nuevas.
+        final int i = Math.min(rng.nextInt(fresh.size()), rng.nextInt(fresh.size()));
+        return fresh.get(i);
+    }
+
+    /** Chisme sobre un jugador sacado de lo que los aldeanos recuerdan de el (su ficha en el
+     *  backend). Cachea la linea unos minutos y refresca en segundo plano (no bloquea el tick).
+     *  Devuelve la linea cacheada, o null si aun no saben nada de el. */
+    private String playerGossipLine(Player p) {
+        final java.util.UUID id = p.getUniqueId();
+        final long now = System.currentTimeMillis();
+        final Long fetched = playerGossipAt.get(id);
+        if (fetched == null || now - fetched > PLAYER_GOSSIP_TTL_MS) {
+            playerGossipAt.put(id, now);   // marca ya, para no lanzar varias peticiones a la vez
+            final String name = p.getName();
+            plugin.gateway().playerGossip(id.toString()).whenComplete((json, err) -> {
+                if (err != null || json == null || !json.has("line") || json.get("line").isJsonNull()) {
+                    playerGossip.remove(id);
+                    return;
+                }
+                final String snippet = json.get("line").getAsString().trim();
+                if (snippet.isEmpty()) {
+                    playerGossip.remove(id);
+                    return;
+                }
+                final String s = Character.toLowerCase(snippet.charAt(0)) + snippet.substring(1);
+                final String tmpl = PLAYER_OPEN[java.util.concurrent.ThreadLocalRandom.current()
+                        .nextInt(PLAYER_OPEN.length)];
+                String built = String.format(tmpl, name, s);
+                if (built.length() > 92) {
+                    built = built.substring(0, 90) + "...";
+                }
+                playerGossip.put(id, built);
+            });
+        }
+        return playerGossip.get(id);   // puede ser null la primera vez (aun cargando)
     }
 
     /** Si el vecino esta DENTRO de la taberna (al atardecer), de vez en cuando "canta": aparece un

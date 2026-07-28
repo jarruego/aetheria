@@ -282,6 +282,8 @@ public final class SettlementModule implements Listener {
     private final java.util.Map<Integer, List<Rank>> playerRep = new java.util.HashMap<>();
     /** Misiones (opcional): el alguacil de cada aldea y los avances del jugador. */
     private QuestModule quests;
+    /** Comercio con vecinos y BOTICA (opcional): pone al boticario cuando se construye. */
+    private NpcTradeModule trade;
 
     /** Un EDIFICIO de oficio del pueblo (mercado, biblioteca, herreria...). Es PERMANENTE: no
      *  se derriba al morir su aldeano; lo hereda otro del mismo oficio o espera a que llegue uno. */
@@ -1770,11 +1772,14 @@ public final class SettlementModule implements Listener {
      */
     private void townLife() {
         for (int vid = 0; vid < towns.size(); vid++) {
+            final int v = vid;   // final para la lambda del refresco del ranking
             final Town t = towns.get(vid);
             ensureCivics(vid, t);   // granero (siempre), taberna (>=4 hab), mercado (>=6 hab)
             ensureDonationChest(vid, t);   // arca del pueblo: donde el jugador puede aportar
-            applyRanking(vid);             // ranking, panel, tablon y alcalde
-            refreshPlayerRep(vid, null);   // en 2o plano, para el proximo ciclo
+            applyRanking(vid);             // ranking, panel, tablon y alcalde (con lo ya sabido)
+            // Trae el prestigio de los jugadores y REPINTA el ranking en cuanto llega (antes se
+            // guardaba "para el proximo ciclo", asi que un nombre tardaba hasta 2 ciclos en salir).
+            refreshPlayerRep(v, () -> applyRanking(v));
             // El granero ya NO se llena solo: lo llena el TRABAJO FISICO de los aldeanos
             // (LaborModule deposita cada cosecha, tala, lingote... segun se producen).
         }
@@ -1868,6 +1873,33 @@ public final class SettlementModule implements Listener {
                 }
             });
         });
+    }
+
+    /** Repinta YA lo visual de una aldea (arca, panel, tablon, ranking) y pide el prestigio de sus
+     *  jugadores para que el nombre aparezca sin esperar al ciclo de 60 s. Se llama al entrar en la
+     *  aldea y al conectar. */
+    private void refreshTownVisuals(int vid) {
+        if (vid < 0 || vid >= towns.size()) {
+            return;
+        }
+        ensureDonationChest(vid, towns.get(vid));
+        applyRanking(vid);                                // inmediato, con lo ya sabido
+        refreshPlayerRep(vid, () -> applyRanking(vid));   // y re-pinta al llegar el prestigio real
+    }
+
+    /** Al conectar dentro de una aldea, repinta su cartel/arca/ranking en un par de segundos (a que
+     *  el mundo este cargado), para no esperar al ciclo de 60 s. */
+    @EventHandler
+    public void onJoin(org.bukkit.event.player.PlayerJoinEvent e) {
+        final Player p = e.getPlayer();
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (p.isOnline() && p.getWorld().equals(world)) {
+                final int vid = townAt(p);
+                if (vid >= 0) {
+                    refreshTownVisuals(vid);
+                }
+            }
+        }, 40L);
     }
 
     /** La aldea que se llama asi, o -1. */
@@ -2053,6 +2085,7 @@ public final class SettlementModule implements Listener {
             final Town t = towns.get(vid);
             civicReserved.add(civicRegion(t.cx + 9, t.cz, t.baseY, 4));        // taberna (futura)
             civicReserved.add(civicRegion(t.cx - 3, t.cz + 12, t.baseY, 3));   // mercado (futuro)
+            civicReserved.add(civicRegion(t.cx + 3, t.cz - 13, t.baseY, 4));   // botica (futura)
             ensureCivics(vid, t);   // el granero se levanta ya (permanente); taberna/mercado si toca
         }
     }
@@ -2089,6 +2122,13 @@ public final class SettlementModule implements Listener {
                 "El pueblo abre una taberna en " + t.name + ".");
         ensureCivic(vid, "mercado", t.cx - 3, t.cz + 12, t.baseY, 5, 6,
                 "El pueblo levanta un mercado en " + t.name + ".");
+        // BOTICA: cuando el pueblo llega a 8 vecinos ya da para tener quien cure.
+        ensureCivic(vid, "botica", t.cx + 3, t.cz - 13, t.baseY, 5, 8,
+                "El pueblo abre una botica en " + t.name + ": ya hay quien cure a los heridos.");
+        if (civicBuilt.contains(vid + ":botica") && trade != null) {
+            trade.ensureHealer(new Location(world, t.cx + 3 + 0.5, t.baseY + 1, t.cz - 13 - 1 + 0.5),
+                    t.name, vid);
+        }
         // El mercader (entidad) puede desaparecer entre reinicios: se re-asegura si hay mercado.
         if (civicBuilt.contains(vid + ":mercado")) {
             market.ensureTrader(new Location(world, t.cx - 3 + 0.5, t.baseY + 1, t.cz + 12 + 0.5),
@@ -2103,6 +2143,11 @@ public final class SettlementModule implements Listener {
     /** Engancha las misiones (dependencia opcional; se inyecta despues para evitar el ciclo). */
     public void setQuests(QuestModule quests) {
         this.quests = quests;
+    }
+
+    /** Engancha el comercio/botica (igual: se inyecta despues, es opcional). */
+    public void setTrade(NpcTradeModule trade) {
+        this.trade = trade;
     }
 
     private void ensureCivic(int vid, String type, int cx, int cz, int baseY, int half, int minPop,
@@ -2121,6 +2166,7 @@ public final class SettlementModule implements Listener {
             case "granero" -> village.buildGranary(cx, cz, baseY, town);
             case "taberna" -> village.buildTavern(cx, cz, baseY, town);
             case "mercado" -> village.buildMarket(cx, cz, baseY, town);
+            case "botica" -> village.buildApothecary(cx, cz, baseY, town);
             default -> { return; }
         }
         plugin.buildRegistry().add(new int[] {cx - half - 1, baseY - 2, cz - half - 1,
@@ -2437,6 +2483,14 @@ public final class SettlementModule implements Listener {
             final Block b = world.getBlockAt(bx, by, bz);
             String text = null;
             if (b.getType() == Material.BARREL && b.getState() instanceof org.bukkit.block.Container c) {
+                // Orienta el FRENTE del barril (la tapa con anillas) hacia el interior (SUR), donde
+                // esta el jugador: asi no se ve el "culo". La etiqueta es una entidad APARTE (no va
+                // vinculada al barril), asi que girar el barril no la afecta.
+                if (b.getBlockData() instanceof org.bukkit.block.data.Directional dir
+                        && dir.getFacing() != BlockFace.SOUTH) {
+                    dir.setFacing(BlockFace.SOUTH);
+                    b.setBlockData(dir, false);
+                }
                 final Material good = granaryGoodOf(c);
                 final int amount = good == null ? 0 : count(c.getInventory(), good);
                 if (good != null && amount > 0) {
@@ -3202,6 +3256,7 @@ public final class SettlementModule implements Listener {
         final Integer was = inTown.get(p.getUniqueId());
         if (near >= 0 && (was == null || was != near)) {
             inTown.put(p.getUniqueId(), near);
+            refreshTownVisuals(near);   // arca/panel/tablon/ranking AL MOMENTO, sin esperar 60 s
             if (quests != null) {
                 quests.onEnterTown(p, near);   // trae sus encargos de esta aldea (cuentan ya)
             }

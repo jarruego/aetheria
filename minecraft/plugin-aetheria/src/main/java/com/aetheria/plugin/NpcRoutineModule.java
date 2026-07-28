@@ -134,6 +134,10 @@ public final class NpcRoutineModule {
 
     public void addColono(String npcId, String name, Location home, Location work,
             Villager.Profession prof, Location townCenter, String gender) {
+        // Un nombre = UN vecino. Si ya estaba dado de alta (p.ej. al mudarse a fundar otra aldea),
+        // se retira la ficha vieja antes de crear la nueva: con dos fichas del mismo nombre habria
+        // dos entidades vivas y `dedupe` no las tocaria (las dos estarian "rastreadas").
+        removeColono(name);
         final Worker w = new Worker(npcId, name, home, work, plazaSpot(townCenter), townCenter);
         w.gender = gender;
         w.prof = profWord(prof);
@@ -541,8 +545,12 @@ public final class NpcRoutineModule {
     }
 
     private void clearOld() {
+        // Aldeanos viejos Y burbujas de canto/cotilleo huerfanas: si el server se reinicia mientras
+        // una frase esta "viva", su tarea de borrado se pierde y el TextDisplay se queda flotando
+        // (aparecia "al dia siguiente"). Al arrancar se limpian todas.
         world.getEntities().stream()
-                .filter(e -> e.getScoreboardTags().contains(WORKER_TAG))
+                .filter(e -> e.getScoreboardTags().contains(WORKER_TAG)
+                        || e.getScoreboardTags().contains(SONG_TAG))
                 .forEach(org.bukkit.entity.Entity::remove);
     }
 
@@ -613,6 +621,17 @@ public final class NpcRoutineModule {
         final long time = world.getTime();   // 0..24000 (0 = amanecer)
         for (final Worker w : workers) {
             if (w.entity == null || w.entity.isDead()) {
+                // NO se resucita a nadie cuyo trozo de mundo esta DESCARGADO. Este era el origen
+                // de los aldeanos duplicados en las aldeas lejanas: al descargarse el chunk, el
+                // aldeano deja de estar "vivo" para Bukkit, pero el mundo lo tiene guardado; si
+                // lo resucitabamos aqui, `spawnWorker` no podia encontrarlo (solo ve entidades
+                // cargadas) y generaba OTRO con el mismo nombre. Al volver el jugador aparecian
+                // los dos. Sin jugadores cerca no hace falta que exista: cuando el chunk vuelva
+                // a cargarse, `spawnWorker` reutilizara al original.
+                if (w.home != null && !w.home.getWorld().isChunkLoaded(
+                        w.home.getBlockX() >> 4, w.home.getBlockZ() >> 4)) {
+                    continue;
+                }
                 w.entity = spawnWorker(w);    // resucita si algo lo elimino
                 continue;
             }

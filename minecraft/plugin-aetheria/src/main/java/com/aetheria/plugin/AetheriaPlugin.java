@@ -113,6 +113,7 @@ public final class AetheriaPlugin extends JavaPlugin {
 
             // Fase 7: aldea fisica + vecinos con rutina diaria en el mundo principal (no en creativo).
             SettlementModule settlementRef = null;   // lo usa el HUD para los datos por aldea
+            QuestModule questsRef = null;            // lo usan las parcelas (encargo de reclamar)
             if (!role.equals("creative") && getConfig().getBoolean("npc-routines.enabled", true)) {
                 final org.bukkit.World gameWorld = getServer().getWorlds().get(0);
                 final VillageModule village = new VillageModule(this, gameWorld);
@@ -130,6 +131,18 @@ public final class AetheriaPlugin extends JavaPlugin {
                 final SettlementModule settlement =
                         new SettlementModule(this, gateway, village, routines, convo, gameWorld, market);
                 getServer().getPluginManager().registerEvents(settlement, this);   // protege sus casas
+
+                // MISIONES + PRESTIGIO: el pregonero de cada aldea reparte encargos generados por
+                // codigo; cumplirlos (y aportar al arca) da prestigio, y el primero del ranking de
+                // la aldea (vecinos y jugadores en la misma tabla) es su ALCALDE. Se engancha ANTES
+                // de arrancar el pueblo para que los pregoneros ya esten en la primera pasada.
+                final QuestModule questsMod = new QuestModule(this, gateway, settlement);
+                getServer().getPluginManager().registerEvents(questsMod, this);
+                Objects.requireNonNull(getCommand("prestigio")).setExecutor(questsMod);
+                settlement.setQuests(questsMod);
+                market.setQuests(questsMod);
+                questsRef = questsMod;
+
                 settlement.start();
                 settlementRef = settlement;
 
@@ -142,6 +155,7 @@ public final class AetheriaPlugin extends JavaPlugin {
                 final DonationModule donations = new DonationModule(this, gateway, settlement);
                 getServer().getPluginManager().registerEvents(donations, this);
                 Objects.requireNonNull(getCommand("donar")).setExecutor(donations);
+                donations.setQuests(questsMod);   // aportar al arca tambien puede ser un encargo
 
                 // Viaje rapido por los puntos de interes (plaza, mercado, taberna, spawn).
                 final WarpModule warps = new WarpModule(village, gameWorld);
@@ -151,6 +165,7 @@ public final class AetheriaPlugin extends JavaPlugin {
 
             // Fase 9: parcelas reclamables con propietario y proteccion.
             final ClaimModule claims = new ClaimModule(this, gateway, role);
+            claims.setQuests(questsRef, settlementRef);   // reclamar parcela puede ser un encargo
             if (getConfig().getBoolean("claims.enabled", true)) {
                 Objects.requireNonNull(getCommand("claim")).setExecutor(claims);
                 Objects.requireNonNull(getCommand("unclaim")).setExecutor(claims);

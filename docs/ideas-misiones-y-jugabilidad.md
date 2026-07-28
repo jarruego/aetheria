@@ -1,6 +1,15 @@
 # Misiones, prestigio y jugabilidad para jugadores reales (ideas de diseño)
 
-Ideas pendientes de estudio (aún **sin implementar**). Objetivo: que un jugador real que entra al
+> **La sección 1 (misiones + prestigio + alcaldía) ya está IMPLEMENTADA** (migración
+> `0009_prestige_quests.sql`, `services/world-state/.../quests.py`, `QuestModule.java` y el
+> ranking de `SettlementModule`). Lo que se hizo y con qué números está resumido en
+> `CLAUDE.md`; para jugarlo, `docs/guia-jugador.md`. Aquí se conserva el diseño original —
+> con dos matices sobre lo que se acabó construyendo: el prestigio del aldeano **reutiliza su
+> peculio** en vez de un stat nuevo, y el acceso al granero es para el **top 3** y **solo al
+> excedente** (no un escalón de rango). El resto del documento (sección 2 y los desbloqueos
+> 1.4/1.5 más allá de la alcaldía) sigue **sin implementar**.
+
+Ideas pendientes de estudio (el resto, **sin implementar**). Objetivo: que un jugador real que entra al
 server tenga **cosas que hacer**, una **progresión** (dinero → prestigio → poder) y que el mundo se
 sienta **más vivo**. Todo se apoya en lo que YA existe: economía AET, arca de aportaciones, granero,
 mercado, colonos con oficios, alcalde, parcelas (F9), sucesos (festivales/penurias), crónica.

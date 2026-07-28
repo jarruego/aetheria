@@ -39,6 +39,7 @@ Un servidor de Minecraft persistente donde la IA es el "sistema operativo del mu
 | `minecraft/plugin-aetheria/.../BuildRegistry.java` | Registro persistente de cajas 3D (`regions.txt`); ningún camino pisa lo ya construido |
 | `minecraft/plugin-aetheria/.../SettlementModule.java` | Pueblo vivo multi-aldea (colonos, oficios, gobierno, **edificios cívicos por población**: granero desde el inicio, taberna≥4, mercado≥6; bodas con cortejo; casas en venta; máx. 2 hijos/pareja) |
 | `minecraft/plugin-aetheria/.../MarketModule.java` | **Mercado con GUI de inventario** (mercader clicable: clic izq compra, clic der vende) |
+| `minecraft/plugin-aetheria/.../QuestModule.java` | **Misiones + prestigio**: pregonero clicable con menú, encargos generados por código desde el estado real de la aldea, `/prestigio` |
 | `minecraft/plugin-aetheria/.../DonationModule.java` | **Arca de aportaciones** en la plaza: el jugador invierte en la aldea (crece más rápido) |
 | `minecraft/plugin-aetheria/.../LaborModule.java` | **Producción física** de los colonos (cosechan/talan/minan…) que alimenta la economía |
 | `minecraft/plugin-aetheria/.../VanillaStructures.java` | Coloca casas de aldea **vanilla reales** (`/place template`); `/arquitecto` tiene 2 vías: a medida vs vanilla |
@@ -299,6 +300,32 @@ no lo copen los libros y el herrero se quede sin piedra). Lo que no cabe no se p
 apila en barriles sueltos: el pueblo lo vende con una pequena prima (x1.15) y ese dinero va al
 peculio del colono y a la hucha de la aldea, asi que un pueblo muy productivo sigue creciendo
 gracias a su excedente. Cada cierto tiempo queda constancia en la cronica.
+
+**MISIONES, PRESTIGIO y ALCALDIA COMPETIDA (migración 0009).** El jugador deja de ser un
+turista con dinero: en la plaza de cada aldea hay un **pregonero** (clicable, menú de
+inventario como el mercader) que reparte hasta **3 encargos** sacados del estado REAL de esa
+aldea — lo que escasea en su granero, lo que le falta a la hucha, hablar con sus vecinos,
+reclamar parcela, llevar un paquete a la aldea vecina, socorrerla si está en apuros. Piezas:
+- **Los objetivos los compone el plugin** (es quien conoce granero/colonos/hucha; el backend no)
+  y **el backend los TASA**: `quests.py::_KINDS` acota AET y prestigio por tipo, rechaza tipos
+  desconocidos y es **el único que da una misión por cumplida** (mira `progress >= target` en la
+  fila persistida). La IA no elige objetivo ni recompensa; solo podría redactar el sabor
+  (`QuestModule.flavor`, hoy plantillas deterministas = coste 0 con `stub`).
+- **Prestigio del jugador por aldea** = `puntos_mision + floor(sqrt(aet_donado))`. La **raíz es
+  deliberada**: donar 4x más da 2x prestigio, así la alcaldía no se compra. Decae un 10% por
+  semana tras 14 días sin pisar la aldea (`reputation_idle_days/_decay_pct`); **lo donado no
+  decae** (ya lo amortigua la raíz). El decaimiento va en el bucle de simulación (F8).
+- **Un solo ranking por aldea** (`SettlementModule.computeRanking`): los vecinos puntúan con su
+  **peculio** (ya existía, fluctúa solo) + veteranía acotada (`BONUS_VETERANIA=4/día`, tope 40),
+  los jugadores con su prestigio. **El primero es el ALCALDE**, sea aldeano o jugador — el
+  cambio reusa el cartel de la plaza y el evento *gobierno* de la crónica. Encima de la plaza,
+  **tablón grande** con el top 8; `/prestigio` (`/ranking`) da tu puesto.
+- **El granero deja de ser un cofre público**: `onGranaryBarrel` cancela el clic salvo a los
+  **3 primeros** del ranking, y aun así solo entrega el **excedente** (lo que pasa de 2 pilas,
+  `SURPLUS_THRESHOLD`), nunca la reserva con la que trabajan los oficios. Ojo: no se "abre" el
+  barril, se entrega el excedente en mano — así no hay forma de vaciar la despensa.
+- Las donaciones (arca, gesto al alcalde y `/donar`) ya no van por `/v1/pay` sino por
+  **`/v1/donation`**: cobrar y sumar prestigio son la misma transacción, un solo viaje de red.
 
 **Catalogo del creativo (#16).** Galeria rotulada con **todas** las combinaciones del arquitecto
 (3 tamanos x 4 gamas x 3 estilos) y **todas** las plantillas vanilla importadas, ademas de casas

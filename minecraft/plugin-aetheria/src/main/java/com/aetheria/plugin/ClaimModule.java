@@ -40,11 +40,19 @@ public final class ClaimModule implements CommandExecutor, Listener {
     private final String worldKey;
     // chunk (empaquetado) -> parcela (propietario + altura de referencia).
     private final Map<Long, Claim> owners = new ConcurrentHashMap<>();
+    private QuestModule quests;              // opcional: encargos de "reclama una parcela"
+    private SettlementModule settlement;     // para saber en que aldea se reclamo
 
     public ClaimModule(AetheriaPlugin plugin, GatewayClient gateway, String worldKey) {
         this.plugin = plugin;
         this.gateway = gateway;
         this.worldKey = worldKey;
+    }
+
+    /** Engancha las misiones y el pueblo (se inyectan despues; ambos son opcionales). */
+    public void setQuests(QuestModule quests, SettlementModule settlement) {
+        this.quests = quests;
+        this.settlement = settlement;
     }
 
     /** Carga las parcelas del mundo en la cache (asincrono; no bloquea el arranque). */
@@ -190,6 +198,13 @@ public final class ClaimModule implements CommandExecutor, Listener {
                     for (int chx = startX; chx <= endX; chx++) {
                         for (int chz = startZ; chz <= endZ; chz++) {
                             owners.put(key(chx, chz), c);
+                        }
+                    }
+                    // Hay encargos de "echa raices en el pueblo": reclamar cuenta como avance.
+                    if (quests != null && settlement != null) {
+                        final int vid = settlement.townAt(player);
+                        if (vid >= 0) {
+                            quests.onClaimed(player, settlement.townName(vid));
                         }
                     }
                     final var data = json.has("data") ? json.getAsJsonObject("data") : null;

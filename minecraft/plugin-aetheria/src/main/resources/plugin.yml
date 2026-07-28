@@ -81,6 +81,11 @@ commands:
     usage: /donar [cantidad]
     aliases: [don]
     permission: aetheria.use
+  prestigio:
+    description: Tu prestigio y el ranking de la aldea (el primero es el alcalde)
+    usage: /prestigio
+    aliases: [ranking]
+    permission: aetheria.use
 permissions:
   aetheria.use:
     description: Permite usar los comandos de Aetheria

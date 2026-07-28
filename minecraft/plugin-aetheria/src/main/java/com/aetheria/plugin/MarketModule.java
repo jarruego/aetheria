@@ -45,10 +45,16 @@ public final class MarketModule implements Listener {
 
     private final AetheriaPlugin plugin;
     private final GatewayClient gateway;
+    private QuestModule quests;   // opcional: hay encargos de "vende N generos en el mercado"
 
     public MarketModule(AetheriaPlugin plugin, GatewayClient gateway) {
         this.plugin = plugin;
         this.gateway = gateway;
+    }
+
+    /** Engancha las misiones (se inyecta despues, para evitar el ciclo de construccion). */
+    public void setQuests(QuestModule quests) {
+        this.quests = quests;
     }
 
     /** Marca nuestra ventana para reconocerla en los clics. */
@@ -163,6 +169,9 @@ public final class MarketModule implements Listener {
                     }
                     player.sendMessage(String.format("§aVendidos §f%d %s §apor §e%.2f AET§a.",
                             sold, nice(g), total));
+                    if (quests != null) {
+                        quests.onSold(player, sold);   // cuenta para los encargos del mercado
+                    }
                 }));
     }
 

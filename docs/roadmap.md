@@ -137,9 +137,16 @@ Cada fase deja algo funcionando y verificable.
       (ClaimModule con cache en memoria chunk->propietario; cero red por bloque).
 - [x] Validaciones en el backend: solape (409), fondos insuficientes (400, sin cobrar),
       propiedad al liberar (404 si no es tuya).
-- [x] Gobierno de aldea: cada pueblo tiene ALCALDE (el vecino mas veterano) con su cartel en
-      la plaza; se anuncia en la cronica al relevo (evento gobierno). Los recien llegados toman
-      el oficio que le falta a la aldea (equilibrio de oficios).
+- [x] Gobierno de aldea: cada pueblo tiene ALCALDE con su cartel en la plaza; se anuncia en la
+      cronica al relevo (evento gobierno). Los recien llegados toman el oficio que le falta a
+      la aldea (equilibrio de oficios).
+- [x] MISIONES + PRESTIGIO + ALCALDIA COMPETIDA (migracion 0009): pregonero con menu de
+      inventario en cada plaza; encargos generados POR CODIGO desde el estado real de la aldea
+      y TASADOS por el backend (baremo por tipo); prestigio del jugador = misiones +
+      raiz(donado), con decadencia por abandono; UN SOLO RANKING por aldea (peculio+veterania
+      de los vecinos vs prestigio de los jugadores) del que sale el alcalde, con tablon grande
+      en la plaza y /prestigio; el granero pasa a ser de acceso restringido (top 3, solo
+      excedente).
 - [ ] Ciudades y contratos formales entre jugadores (futuro; tablas cities/contracts ya
       existen para apoyarlo)
 
@@ -170,5 +177,9 @@ recuperarlo con creces mas adelante:
   excedente es sostenible; vaciar el granero, no.
 - Requiere: distinguir excedente vs. reservas del pueblo, y que el saqueo tenga efecto
   economico real (hoy el granero es solo un barril con items).
+- **Estado**: la parte de aportar (arca/alcalde//donar) y la de **no poder esquilmar el
+  granero** ya estan hechas (0009: solo el top 3 del prestigio saca, y solo el excedente por
+  encima de 2 pilas). Queda por hacer que el saqueo *permitido* tenga efecto economico
+  medible sobre la produccion de la aldea.
 - Cimientos ya puestos por #11: produccion FISICA real que alimenta la economia
   (`/v1/production`) y upkeep por habitante (el pueblo vive de lo que trabaja).

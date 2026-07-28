@@ -156,12 +156,53 @@ Ahí entras tú. Puedes **aportar dinero al fondo de la aldea que quieras**, de 
 No compra ventajas: es una **inversión**. El pueblo crece antes, más vecinos trabajan y su
 excedente acaba en el granero.
 
+## Encargos del pueblo y PRESTIGIO
+
+En la plaza de cada aldea hay un **pregonero**. Haz clic derecho sobre él y se abre su **tablón
+de encargos**: hasta **tres a la vez**, y no son genéricos — salen de lo que a *esa* aldea le
+pasa ahora mismo:
+
+- **Abastecer el granero** con lo que de verdad escasea allí.
+- **Aportar al arca** lo que le falte para el próximo vecino.
+- **Vender género** en el mercado.
+- **Hablar con los vecinos** (vale tanto prestigio como los encargos de dinero: no gana siempre
+  quien más AET mueve).
+- **Reclamar una parcela** y echar raíces.
+- **Llevar un paquete** a la aldea de al lado (se entrega al pregonero de destino).
+- **Echar una mano** cuando el pueblo está en apuros.
+
+Los que son de entregar género se cumplen **haciendo clic en el encargo** con el material
+encima; el resto el pregonero se entera solo. Cada encargo paga **AET** y, sobre todo,
+**prestigio en esa aldea**. Los encargos sin cumplir caducan a los **3 días** y entran otros.
+
+Tu prestigio en una aldea = **puntos de misión + raíz cuadrada de lo que hayas donado** a su
+arca. Lo de la raíz es a propósito: donar 4 veces más **no** da 4 veces más prestigio, así que
+la alcaldía **no se compra**. Y si desapareces de una aldea más de dos semanas, tus puntos de
+misión se desinflan un 10% por semana (lo donado no se toca).
+
+## El tablón de la plaza y la alcaldía
+
+Sobre la plaza flota un **tablón grande de prestigio** con los **ocho primeros** de esa aldea,
+**vecinos y jugadores en la misma tabla**: los vecinos puntúan por lo que han ahorrado
+trabajando (más un pellizco por veteranía) y tú por tu prestigio. **El primero de la lista es
+el alcalde**, sea aldeano o jugador, y su nombre aparece en el panel de la plaza y en la
+crónica cuando hay relevo.
+
+`/prestigio` (o `/ranking`) te dice tu puesto en la aldea donde estés, o en cuáles tienes
+prestigio si estás a campo abierto.
+
 ## El granero
 
-Cada aldea tiene un **granero** (un barril) donde sus vecinos van dejando lo que producen:
-trigo, pescado, lana, piedra, lingotes, libros, flechas, pan... Guarda como mucho **2 arcas de
-cada cosa**, para que un oficio muy rápido no lo copie entero y deje sin materia prima a los
-demás (el herrero necesita la piedra del cantero; el arquero, la madera).
+Cada aldea tiene un **granero** donde sus vecinos van dejando lo que producen: trigo, pescado,
+lana, piedra, lingotes, libros, flechas, pan... Cada género tiene su barril, para que un oficio
+muy rápido no lo copie entero y deje sin materia prima a los demás (el herrero necesita la
+piedra del cantero; el arquero, la madera).
+
+**El granero es la despensa del pueblo, no un cofre público.** Solo los **tres primeros del
+tablón de prestigio** de esa aldea pueden sacar de él, y aun así **solo el excedente**: lo que
+pase de **dos pilas** de ese género. Si no llega a eso, el pregonero te dirá que eso lo
+necesita el pueblo. Al hacer clic en un barril con excedente te lo llevas en mano y la reserva
+se queda intacta.
 
 Cuando algo **no cabe**, no se pierde: el pueblo **vende el excedente** con una pequeña prima
 y ese dinero va al fondo de la aldea. Un pueblo muy productivo crece más rápido justo por eso.
@@ -175,6 +216,7 @@ y ese dinero va al fondo de la aldea. Un pueblo muy productivo crece más rápid
 - `/aetheria schem <list|paste|save>` — catálogo de esquemáticos (si el servidor tiene FAWE):
   lista, pega uno donde estás o guarda tu selección de WorldEdit.
 - `/deshacer` — revierte la última construcción del arquitecto/decorador (con reembolso).
+- `/prestigio` (o `/ranking`) — tu puesto en el tablón de la aldea (el primero es el alcalde).
 - `/guia` — te da otra vez el libro-guía.
 
 ## Cómo funciona por dentro (resumen)

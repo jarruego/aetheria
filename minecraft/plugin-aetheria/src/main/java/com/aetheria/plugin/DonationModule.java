@@ -44,7 +44,6 @@ import net.kyori.adventure.text.Component;
  */
 public final class DonationModule implements Listener, CommandExecutor {
 
-    private static final String BANCO = "00000000-0000-0000-0000-000000000000";
     /** Importes de la ventana del arca, con el icono con el que se muestran. */
     private static final int[] AMOUNTS = {25, 100, 500};
     private static final Material[] ICONS = {Material.GOLD_NUGGET, Material.GOLD_INGOT,
@@ -53,11 +52,17 @@ public final class DonationModule implements Listener, CommandExecutor {
     private final AetheriaPlugin plugin;
     private final GatewayClient gateway;
     private final SettlementModule settlement;
+    private QuestModule quests;   // opcional: hay encargos de "aporta X al arca"
 
     public DonationModule(AetheriaPlugin plugin, GatewayClient gateway, SettlementModule settlement) {
         this.plugin = plugin;
         this.gateway = gateway;
         this.settlement = settlement;
+    }
+
+    /** Engancha las misiones (se inyecta despues, como en SettlementModule). */
+    public void setQuests(QuestModule quests) {
+        this.quests = quests;
     }
 
     /** Marca nuestra ventana (y de que aldea es) para reconocerla al hacer clic. */
@@ -179,10 +184,15 @@ public final class DonationModule implements Listener, CommandExecutor {
         return true;
     }
 
-    /** Cobra al jugador y mete lo aportado en la hucha de esa aldea. */
+    /**
+     * Cobra al jugador y mete lo aportado en la hucha de esa aldea. Va por
+     * <b>/v1/donation</b> (no por /v1/pay): el cobro y el <b>prestigio</b> que gana en esa aldea
+     * son la misma transaccion, en un solo viaje de red. El prestigio por donar crece por raiz
+     * cuadrada, asi que ayudar mucho suma... pero la alcaldia no se compra.
+     */
     void donate(Player p, int vid, double amount) {
         final String town = settlement.townName(vid);
-        gateway.pay(p.getUniqueId().toString(), BANCO, amount)
+        gateway.donateToVillage(p.getUniqueId().toString(), p.getName(), town, amount)
                 .whenComplete((json, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
                     if (err != null || json == null || !json.get("ok").getAsBoolean()) {
                         final String why = (err == null && json != null && json.has("error"))
@@ -191,6 +201,9 @@ public final class DonationModule implements Listener, CommandExecutor {
                         return;
                     }
                     settlement.donate(vid, amount);
+                    if (quests != null) {
+                        quests.onDonated(p, town, amount);   // hay encargos de aportar al arca
+                    }
                     final double falta = Math.max(0,
                             settlement.townNeed(vid) - settlement.townPool(vid));
                     p.sendMessage(String.format("§a[%s] §fGracias por tus §e%.0f AET§f. "

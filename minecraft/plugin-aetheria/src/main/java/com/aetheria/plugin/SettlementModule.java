@@ -28,6 +28,7 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 
 import net.kyori.adventure.text.Component;
@@ -228,6 +229,27 @@ public final class SettlementModule implements Listener {
 
     private final List<Town> towns = new ArrayList<>();
     private final java.util.Map<Integer, String> alcaldes = new java.util.HashMap<>();  // vid -> alcalde
+
+    // --- PRESTIGIO: un solo ranking por aldea donde compiten vecinos y jugadores (0009) ---
+
+    /** Una linea del ranking de una aldea. Puede ser un vecino o un jugador: el primero manda. */
+    public record Rank(String name, double score, boolean player, java.util.UUID uuid) { }
+
+    /**
+     * Prestigio de un ALDEANO = su peculio + un pellizco por veterania. El peculio ya fluctua
+     * solo (sube con su trabajo, baja con {@code spendUpkeep}), asi que no hace falta inventar
+     * un stat nuevo ni una decadencia aparte. La veterania suma poco y CON TOPE: es el matiz de
+     * "el veterano pesa", no una via para que el mas viejo gane siempre.
+     */
+    private static final double BONUS_VETERANIA = 4.0;   // por dia real vivido en el pueblo
+    private static final double VETERANIA_TOPE = 40.0;   // lo que como mucho aporta la veterania
+
+    /** Ranking vigente por aldea (vecinos + jugadores), recalculado en cada ciclo de townLife(). */
+    private final java.util.Map<Integer, List<Rank>> ranking = new java.util.HashMap<>();
+    /** Ultimo prestigio conocido de los JUGADORES por aldea (se refresca en 2o plano). */
+    private final java.util.Map<Integer, List<Rank>> playerRep = new java.util.HashMap<>();
+    /** Misiones (opcional): el pregonero de cada aldea y los avances del jugador. */
+    private QuestModule quests;
 
     /** Un EDIFICIO de oficio del pueblo (mercado, biblioteca, herreria...). Es PERMANENTE: no
      *  se derriba al morir su aldeano; lo hereda otro del mismo oficio o espera a que llegue uno. */
@@ -844,13 +866,18 @@ public final class SettlementModule implements Listener {
         final int vid = found;
         final Player p = e.getPlayer();
         e.setCancelled(true);   // esta donando, no conversando
-        gateway.pay(p.getUniqueId().toString(), "00000000-0000-0000-0000-000000000000", DONATION)
+        // Va por /v1/donation (no por /v1/pay): mover el dinero y ganar PRESTIGIO en esta aldea
+        // son la misma transaccion, en un solo viaje de red.
+        gateway.donateToVillage(p.getUniqueId().toString(), p.getName(), townName(vid), DONATION)
                 .whenComplete((json, err) -> Bukkit.getScheduler().runTask(plugin, () -> {
                     final String alcalde = alcaldes.getOrDefault(vid, "El alcalde");
                     if (err != null || json == null || !json.get("ok").getAsBoolean()) {
                         p.sendMessage("§c[" + alcalde + "] No llevas esos " + (int) DONATION
                                 + " AET encima, amigo.");
                         return;
+                    }
+                    if (quests != null) {
+                        quests.onDonated(p, townName(vid), DONATION);
                     }
                     final Town t = towns.get(vid);
                     t.pool += DONATION;
@@ -1760,34 +1787,157 @@ public final class SettlementModule implements Listener {
     }
 
     /**
-     * Vida civica de cada aldea: un ALCALDE (el vecino mas veterano) con su cartel en la plaza,
-     * y un GRANERO donde cada oficio deposita algo de su produccion (la economia se vuelve
-     * tangible: al abrir el barril ves trigo, lana, hierro... segun quien trabaje en el pueblo).
+     * Vida civica de cada aldea: el ALCALDE (ya no el mas veterano, sino <b>el primero del
+     * ranking de prestigio</b>, sea vecino o jugador) con su panel en la plaza, el tablon de
+     * prestigio, y un GRANERO donde cada oficio deposita algo de su produccion (la economia se
+     * vuelve tangible: al abrir el barril ves trigo, lana, hierro... segun quien trabaje aqui).
      */
     private void townLife() {
-        final long now = System.currentTimeMillis();
         for (int vid = 0; vid < towns.size(); vid++) {
             final Town t = towns.get(vid);
-            Colono alc = null;
-            for (final Colono c : colonos) {
-                if (c.vid == vid && !c.retired && (alc == null || c.age(now) > alc.age(now))) {
-                    alc = c;
-                }
-            }
-            final String alcalde = alc != null ? alc.name : "";
             ensureCivics(vid, t);   // granero (siempre), taberna (>=4 hab), mercado (>=6 hab)
             ensureDonationChest(vid, t);   // arca del pueblo: donde el jugador puede aportar
+
+            // UN SOLO RANKING: los vecinos por su peculio, los jugadores por su prestigio.
+            final List<Rank> rk = computeRanking(vid);
+            ranking.put(vid, rk);
+            final String alcalde = rk.isEmpty() ? "" : rk.get(0).name();
+
             infoPanel(vid, t, alcalde);
+            prestigeBoard(vid, t, rk);
             final String prev = alcaldes.get(vid);
             if (!alcalde.isEmpty() && !alcalde.equals(prev)) {
                 if (prev != null) {
-                    gateway.postEvent("gobierno", alcalde + " toma el cargo de alcalde de " + t.name + ".");
+                    // Mismo camino de siempre: cambiar de alcalde queda en la cronica, tanto si
+                    // el relevo lo gana un vecino como si lo gana un jugador con prestigio.
+                    final boolean isPlayer = rk.get(0).player();
+                    gateway.postEvent("gobierno", alcalde + (isPlayer ? " (forastero)" : "")
+                            + " toma el cargo de alcalde de " + t.name + ".");
                 }
                 alcaldes.put(vid, alcalde);
             }
+            refreshPlayerRep(vid);   // en 2o plano, para el proximo ciclo
             // El granero ya NO se llena solo: lo llena el TRABAJO FISICO de los aldeanos
             // (LaborModule deposita cada cosecha, tala, lingote... segun se producen).
         }
+    }
+
+    /**
+     * El ranking de una aldea, de mas a menos prestigio. Mezcla en la MISMA tabla:
+     * <ul>
+     *   <li><b>vecinos</b>: su peculio (lo que han ahorrado trabajando) + veterania acotada;</li>
+     *   <li><b>jugadores</b>: su prestigio en esa aldea, que ya calcula el backend
+     *       ({@code misiones + raiz(donado)}), asi que la formula vive en un solo sitio.</li>
+     * </ul>
+     * Un aldeano rico y veterano puede gobernar por delante de cualquier jugador; y un jugador
+     * que se vuelca con el pueblo puede desbancarlo.
+     */
+    private List<Rank> computeRanking(int vid) {
+        final long now = System.currentTimeMillis();
+        final List<Rank> out = new ArrayList<>();
+        for (final Colono c : colonos) {
+            if (c.vid != vid || c.retired) {
+                continue;
+            }
+            final double dias = Math.max(0, (now - c.bornMillis) / (double) DAY_MS);
+            final double veterania = Math.min(VETERANIA_TOPE, dias * BONUS_VETERANIA);
+            out.add(new Rank(c.name, c.wealth + veterania, false, null));
+        }
+        out.addAll(playerRep.getOrDefault(vid, List.of()));
+        out.sort((a, b) -> Double.compare(b.score(), a.score()));
+        return out;
+    }
+
+    /** Trae del backend el prestigio de los jugadores de esa aldea (para el proximo ciclo). */
+    private void refreshPlayerRep(int vid) {
+        final String town = townName(vid);
+        gateway.getVillageReputation(town).whenComplete((arr, err) -> {
+            if (err != null || arr == null) {
+                return;   // se conserva el ultimo conocido: un fallo de red no destituye a nadie
+            }
+            final List<Rank> list = new ArrayList<>();
+            for (final com.google.gson.JsonElement el : arr) {
+                final com.google.gson.JsonObject o = el.getAsJsonObject();
+                java.util.UUID id = null;
+                try {
+                    id = java.util.UUID.fromString(o.get("player_uuid").getAsString());
+                } catch (Exception ignored) {
+                    continue;
+                }
+                list.add(new Rank(o.get("username").getAsString(), o.get("score").getAsDouble(),
+                        true, id));
+            }
+            Bukkit.getScheduler().runTask(plugin, () -> playerRep.put(vid, list));
+        });
+    }
+
+    /** El ranking vigente de una aldea (vacio si aun no se ha calculado). */
+    public List<Rank> ranking(int vid) {
+        return ranking.getOrDefault(vid, List.of());
+    }
+
+    /**
+     * ¿Tiene este jugador llave del granero? Solo los TRES PRIMEROS del ranking de la aldea, y
+     * aun asi solo para el excedente (ver {@link #onGranaryBarrel}).
+     */
+    public boolean granaryAccess(int vid, java.util.UUID player) {
+        final List<Rank> rk = ranking(vid);
+        for (int i = 0; i < Math.min(3, rk.size()); i++) {
+            if (rk.get(i).player() && player.equals(rk.get(i).uuid())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static final String RANK_TAG = "aetheria_rank";
+
+    /**
+     * TABLON DE PRESTIGIO de la plaza: un panel grande, encima del de informacion, con los ocho
+     * primeros del ranking. Es la forma de que el jugador vea de un vistazo por donde va la
+     * carrera por la alcaldia sin escribir ningun comando.
+     */
+    private void prestigeBoard(int vid, Town t, List<Rank> rk) {
+        final Location loc = new Location(world, t.cx + 0.5, t.baseY + 6.0, t.cz + 0.5);
+        final String tag = RANK_TAG + "_" + vid;
+        TextDisplay board = null;
+        for (final org.bukkit.entity.Entity e : world.getNearbyEntities(loc, 10, 10, 10)) {
+            if (e instanceof TextDisplay td && e.getScoreboardTags().contains(tag)) {
+                board = td;
+                break;
+            }
+        }
+        if (board == null) {
+            board = (TextDisplay) world.spawnEntity(loc, EntityType.TEXT_DISPLAY);
+            board.addScoreboardTag(PANEL_TAG);
+            board.addScoreboardTag(tag);
+            board.setBillboard(Display.Billboard.CENTER);
+            board.setSeeThrough(false);
+            board.setPersistent(true);
+            board.setBackgroundColor(Color.fromARGB(200, 25, 18, 8));
+            board.setAlignment(TextDisplay.TextAlignment.LEFT);
+            board.setViewRange(1.4f);   // se lee desde lejos: es el cartel gordo de la plaza
+            // Mas GRANDE que el panel de informacion (es el tablon principal de la plaza).
+            board.setTransformation(new org.bukkit.util.Transformation(
+                    new org.joml.Vector3f(), new org.joml.Quaternionf(),
+                    new org.joml.Vector3f(1.5f, 1.5f, 1.5f), new org.joml.Quaternionf()));
+        }
+        final StringBuilder sb = new StringBuilder("§6§lPrestigio de " + t.name + "\n");
+        sb.append("§8vecinos y viajeros, en la misma tabla\n \n");
+        if (rk.isEmpty()) {
+            sb.append("§7(aun no hay nadie en el tablon)");
+        }
+        for (int i = 0; i < Math.min(8, rk.size()); i++) {
+            final Rank r = rk.get(i);
+            sb.append(i == 0 ? "§6" : "§7").append(i + 1).append(". ")
+              .append(r.player() ? "§b" : "§f").append(r.name())
+              .append(" §8").append((int) Math.round(r.score()))
+              .append(i == 0 ? " §6(alcalde)" : "")
+              .append('\n');
+        }
+        sb.append(" \n§8/prestigio para ver tu puesto");
+        board.text(Component.text(sb.toString()));
+        board.teleport(loc);
     }
 
     /** Posicion del ARCA del pueblo (fondo comun) en la plaza de una aldea. */
@@ -1920,6 +2070,15 @@ public final class SettlementModule implements Listener {
             market.ensureTrader(new Location(world, t.cx - 3 + 0.5, t.baseY + 1, t.cz + 12 + 0.5),
                     t.name);
         }
+        // El PREGONERO reparte los encargos del pueblo desde el primer dia (junto al arca).
+        if (quests != null) {
+            quests.ensureCrier(new Location(world, t.cx + 3.5, t.baseY + 1, t.cz + 2.5), t.name, vid);
+        }
+    }
+
+    /** Engancha las misiones (dependencia opcional; se inyecta despues para evitar el ciclo). */
+    public void setQuests(QuestModule quests) {
+        this.quests = quests;
     }
 
     private void ensureCivic(int vid, String type, int cx, int cz, int baseY, int half, int minPop,
@@ -2124,6 +2283,190 @@ public final class SettlementModule implements Listener {
             }
         }
         return null;
+    }
+
+    /**
+     * EXCEDENTE: lo que pasa de dos pilas de un genero. Por debajo de eso, lo del barril es la
+     * despensa de trabajo de los oficios (el herrero necesita la piedra del cantero, el carnicero
+     * la carne...) y no se toca. Por encima, es lo que hoy el pueblo vendria vendiendo fuera con
+     * prima: eso si se lo puede llevar quien se ha ganado la confianza del pueblo.
+     */
+    private static final int SURPLUS_THRESHOLD = 128;
+
+    /**
+     * GRANERO CERRADO. Hasta ahora cualquiera podia abrir los barriles del granero y vaciar la
+     * despensa del pueblo. Ahora:
+     * <ul>
+     *   <li>si no estas entre los <b>tres primeros</b> del ranking de esa aldea, ni lo abres;</li>
+     *   <li>si lo estas, te llevas <b>solo el excedente</b> (lo que pasa de dos pilas): la
+     *       reserva con la que trabajan los oficios se queda donde esta.</li>
+     * </ul>
+     * Por eso el barril no se abre "a lo normal": se entrega el excedente en mano. Asi no hay
+     * forma de vaciar la despensa aunque tengas llave.
+     */
+    @EventHandler(ignoreCancelled = true)
+    public void onGranaryBarrel(PlayerInteractEvent e) {
+        if (e.getAction() != org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK
+                || e.getHand() != org.bukkit.inventory.EquipmentSlot.HAND) {
+            return;
+        }
+        final Block b = e.getClickedBlock();
+        if (b == null || b.getType() != Material.BARREL || !b.getWorld().equals(world)) {
+            return;
+        }
+        final int vid = granaryTownOf(b);
+        if (vid < 0) {
+            return;   // un barril cualquiera del mundo: no es asunto nuestro
+        }
+        e.setCancelled(true);
+        final Player p = e.getPlayer();
+        final String town = townName(vid);
+        if (!granaryAccess(vid, p.getUniqueId())) {
+            p.sendMessage("§c[Granero de " + town + "] §7Esto es la despensa del pueblo. Solo los "
+                    + "tres primeros del tablon de prestigio tienen llave.");
+            p.sendMessage("§8Cumple encargos del pregonero o aporta al arca: /prestigio");
+            return;
+        }
+        if (!(b.getState() instanceof org.bukkit.block.Container c)) {
+            return;
+        }
+        final Material good = granaryGoodOf(c);
+        final int total = good == null ? 0 : count(c.getInventory(), good);
+        final int surplus = total - SURPLUS_THRESHOLD;
+        if (good == null || surplus <= 0) {
+            p.sendMessage("§e[Granero de " + town + "] §7Esto lo necesita el pueblo: vuelve cuando "
+                    + "haya excedente. §8(" + total + "/" + SURPLUS_THRESHOLD + " de reserva)");
+            return;
+        }
+        final int space = freeSpaceFor(p, good);
+        final int take = Math.min(surplus, space);
+        if (take <= 0) {
+            p.sendMessage("§7No te cabe mas " + good.name().toLowerCase(java.util.Locale.ROOT)
+                    + " encima.");
+            return;
+        }
+        c.getInventory().removeItem(new org.bukkit.inventory.ItemStack(good, take));
+        p.getInventory().addItem(new org.bukkit.inventory.ItemStack(good, take));
+        p.sendMessage("§a[Granero de " + town + "] §fTe llevas §e" + take + " "
+                + good.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ')
+                + "§f del excedente. §7(la reserva del pueblo se queda intacta)");
+        p.playSound(p.getLocation(), org.bukkit.Sound.BLOCK_BARREL_OPEN, 0.8f, 1.1f);
+    }
+
+    /** ¿Es este barril uno de los del granero de alguna aldea? Devuelve su aldea, o -1. */
+    private int granaryTownOf(Block b) {
+        for (int vid = 0; vid < towns.size(); vid++) {
+            final Town t = towns.get(vid);
+            for (final int[] o : GRANARY_BARRELS) {
+                if (b.getX() == t.cx - 12 + o[0] && b.getY() == t.baseY + o[1]
+                        && b.getZ() == t.cz + o[2]) {
+                    return vid;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /** El genero al que esta dedicado ese barril del granero (marca PDC), o null. */
+    private Material granaryGoodOf(org.bukkit.block.Container c) {
+        final String tag = c.getPersistentDataContainer().get(
+                new org.bukkit.NamespacedKey(plugin, GRANARY_KEY),
+                org.bukkit.persistence.PersistentDataType.STRING);
+        return tag == null ? null : Material.matchMaterial(tag);
+    }
+
+    private static int count(org.bukkit.inventory.Inventory inv, Material good) {
+        int n = 0;
+        for (final org.bukkit.inventory.ItemStack s : inv.getContents()) {
+            if (s != null && s.getType() == good) {
+                n += s.getAmount();
+            }
+        }
+        return n;
+    }
+
+    /** Cuantas unidades de ese genero le caben todavia al jugador encima. */
+    private static int freeSpaceFor(Player p, Material good) {
+        int space = 0;
+        for (final org.bukkit.inventory.ItemStack s : p.getInventory().getStorageContents()) {
+            if (s == null || s.getType().isAir()) {
+                space += good.getMaxStackSize();
+            } else if (s.getType() == good) {
+                space += Math.max(0, good.getMaxStackSize() - s.getAmount());
+            }
+        }
+        return space;
+    }
+
+    // --- Datos que necesitan las MISIONES (el pregonero pide lo que de verdad hace falta) ---
+
+    /** Cuanto hay de ese genero en el granero de la aldea. */
+    public int granaryCount(int vid, Material good) {
+        final org.bukkit.inventory.Inventory inv = granaryBarrel(vid, good, false);
+        return inv == null ? 0 : count(inv, good);
+    }
+
+    /** Generos basicos que un pueblo deberia tener siempre a mano. */
+    private static final Material[] STAPLES = {
+        Material.BREAD, Material.WHEAT, Material.COBBLESTONE, Material.OAK_LOG,
+        Material.IRON_INGOT, Material.COAL, Material.WHITE_WOOL, Material.LEATHER,
+        Material.PAPER, Material.COOKED_COD,
+    };
+
+    /** El genero que MAS falta en el granero de esa aldea (o null si va sobrado de todo). */
+    public Material granaryShortage(int vid) {
+        Material worst = null;
+        int least = Integer.MAX_VALUE;
+        for (final Material m : STAPLES) {
+            final int n = granaryCount(vid, m);
+            if (n < 32 && n < least) {
+                least = n;
+                worst = m;
+            }
+        }
+        return worst;
+    }
+
+    /**
+     * Los vecinos con los que se puede hablar en una aldea (para los encargos sociales). Se
+     * dejan fuera los JUBILADOS a proposito: su NPC lleva el "(jubilado)" pegado al nombre, no
+     * casaria con el encargo y el jugador se quedaria con una mision imposible de cerrar.
+     */
+    public java.util.List<String> villagerNames(int vid) {
+        final java.util.List<String> out = new ArrayList<>();
+        for (final Colono c : colonos) {
+            if (c.vid == vid && !c.retired) {
+                out.add(c.name);
+            }
+        }
+        return out;
+    }
+
+    /** Como le va a esa aldea ("en apuros", "estable", "prospera", "floreciente"). */
+    public String townLevelOf(int vid) {
+        return vid < 0 || vid >= towns.size() ? "estable"
+                : townLevel(townWealth(vid), townPopulation(vid));
+    }
+
+    /** El nombre de OTRA aldea (la mas cercana), o null si esta es la unica del mundo. */
+    public String otherTownName(int vid) {
+        if (vid < 0 || vid >= towns.size()) {
+            return null;
+        }
+        final Town from = towns.get(vid);
+        String best = null;
+        double bestD = Double.MAX_VALUE;
+        for (int i = 0; i < towns.size(); i++) {
+            if (i == vid) {
+                continue;
+            }
+            final double d = Math.hypot(towns.get(i).cx - from.cx, towns.get(i).cz - from.cz);
+            if (d < bestD) {
+                bestD = d;
+                best = towns.get(i).name;
+            }
+        }
+        return best;
     }
 
     /** True si el bloque es parte de lo CONSTRUIDO del pueblo (casa, edificio o nucleo de plaza):
@@ -2630,6 +2973,9 @@ public final class SettlementModule implements Listener {
         final Integer was = inTown.get(p.getUniqueId());
         if (near >= 0 && (was == null || was != near)) {
             inTown.put(p.getUniqueId(), near);
+            if (quests != null) {
+                quests.onEnterTown(p, near);   // trae sus encargos de esta aldea (cuentan ya)
+            }
             p.showTitle(Title.title(
                     Component.text("§6" + towns.get(near).name),
                     Component.text("§7Un pueblo de Aetheria"),

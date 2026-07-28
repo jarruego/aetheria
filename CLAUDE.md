@@ -205,9 +205,10 @@ valida solape (409), fondos (400, sin cobrar) y propiedad. Roadmap F0–F9 al d�
   individuo**: cada colono tiene su propio id de memoria (`colono:Nombre`), no comparten lo
   que les cuentas (`ConversationManager`).
 - **Multi-aldea por ESCISIÓN** (`trySplit`/`createTown`/`findFounders`/`relocateFounders`): las
-  aldeas crecen **sin tope**; cuando una alcanza el `splitThreshold()` (empieza en **6** y sube
-  **+2 por cada aldea** ya existente: 6, 8, 10… → escisiones cada vez más raras, mundo infinito
-  pero cada vez más lento), una **pareja sin hijos** (o dos solteros de distinto sexo) se marcha
+  aldeas crecen **sin tope**; cuando una alcanza su `splitThreshold(t)` (empieza en **6** y sube
+  **+2 por cada vez que ESA aldea ya se escindió** — contador propio `Town.splits`: cada linaje
+  coloniza según su madurez, así una aldea joven vuelve a partir de 6 → **colonización en cascada**,
+  ramificada hacia la frontera), una **pareja sin hijos** (o dos solteros de distinto sexo) se marcha
   empujada por una **desgracia** (mala cosecha, incendio, plaga…) y **funda una aldea nueva** a
   200-360 bloques (~24 nombres curados y luego "Aldea N"). Los que parten **pierden todo su
   peculio** (su prestigio de aldeano: empiezan de cero) y constan como **FUNDADORES venidos de la

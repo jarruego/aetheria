@@ -209,6 +209,9 @@ public final class SettlementModule implements Listener {
         /** HUCHA de la aldea: lo que lleva ahorrado para traer al siguiente vecino. Sube con el
          *  trabajo de sus habitantes y baja con lo que cuesta mantenerlos. */
         double pool;
+        /** Cuantas veces ESTA aldea ya se ha escindido (fundo una colonia). Sube su umbral de
+         *  escision: cada linaje coloniza segun su propia madurez. */
+        int splits;
         Town(String name, int cx, int cz, int baseY) {
             this.name = name;
             this.cx = cx;
@@ -232,10 +235,11 @@ public final class SettlementModule implements Listener {
     }
 
     /** Poblacion a la que una aldea se ESCINDE (una pareja parte a fundar otra). Empieza en 6 y
-     *  sube 2 por cada aldea que ya exista, asi las escisiones son cada vez a mayor tamano y el
-     *  mundo se expande cada vez mas despacio, pero nunca se detiene. */
-    private int splitThreshold() {
-        return 6 + 2 * Math.max(0, towns.size() - 1);
+     *  sube 2 por cada vez que ESA aldea ya se ha escindido (contador PROPIO): cada linaje coloniza
+     *  segun su propia madurez, asi una aldea joven vuelve a partir de 6 (colonizacion en cascada) y
+     *  una que ya pario varias colonias se calma. */
+    private int splitThreshold(Town t) {
+        return 6 + 2 * t.splits;
     }
 
     /** Desgracias que sirven de excusa para que unos vecinos se marchen a fundar una aldea nueva. */
@@ -3214,7 +3218,7 @@ public final class SettlementModule implements Listener {
         if (towns.size() >= MAX_TOWNS) {
             return;   // salvaguarda: el mundo no funda aldeas sin freno
         }
-        if (townPopulation(vid) < splitThreshold()) {
+        if (townPopulation(vid) < splitThreshold(towns.get(vid))) {
             return;
         }
         final Colono[] pair = findFounders(vid);
@@ -3228,6 +3232,7 @@ public final class SettlementModule implements Listener {
         }
         final boolean couple = pair[0].spouse != null && pair[0].spouse.equals(pair[1].name);
         relocateFounders(newVid, pair[0], pair[1], couple, originName, rng);
+        towns.get(vid).splits++;   // esta aldea ha colonizado una vez mas: su umbral sube (+2)
         save();
         saveTowns();
         final String reason = SPLIT_REASONS[rng.nextInt(SPLIT_REASONS.length)];
@@ -3447,6 +3452,9 @@ public final class SettlementModule implements Listener {
                             if (f.length >= 5 && !f[4].isEmpty()) {
                                 t.pool = Double.parseDouble(f[4]);   // hucha de crecimiento
                             }
+                            if (f.length >= 6 && !f[5].isEmpty()) {
+                                t.splits = Integer.parseInt(f[5]);   // veces que ya se escindio
+                            }
                             towns.add(t);
                         }
                     }
@@ -3466,7 +3474,8 @@ public final class SettlementModule implements Listener {
     private void saveTowns() {
         try (FileWriter w = new FileWriter(nameFile, false)) {
             for (final Town t : towns) {
-                w.write(t.name + ";" + t.cx + ";" + t.cz + ";" + t.baseY + ";" + t.pool + "\n");
+                w.write(t.name + ";" + t.cx + ";" + t.cz + ";" + t.baseY + ";" + t.pool + ";"
+                        + t.splits + "\n");
             }
         } catch (Exception ex) {
             plugin.getLogger().warning("[Aetheria] no pude guardar aldeas: " + ex.getMessage());

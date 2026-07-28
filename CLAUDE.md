@@ -204,10 +204,15 @@ valida solape (409), fondos (400, sin cobrar) y propiedad. Roadmap F0–F9 al d�
   aldeano; los hereda otro o esperan) y están persistidos (`buildings.txt`). **Memoria por
   individuo**: cada colono tiene su propio id de memoria (`colono:Nombre`), no comparten lo
   que les cuentas (`ConversationManager`).
-- **Multi-aldea autofundada** (`foundNewTown`/`assignTown`, `PER_TOWN=8`): cuando una aldea
-  llega a 8 vecinos, una pareja parte a **fundar una aldea nueva** con nombre propio a 220-400
-  bloques (~24 nombres curados y luego "Aldea N"); se registra en la crónica (evento
-  *fundacion*). Al **entrar** en el radio (~48 bloques) de una aldea aparece **su nombre en
+- **Multi-aldea por ESCISIÓN** (`trySplit`/`createTown`/`findFounders`/`relocateFounders`): las
+  aldeas crecen **sin tope**; cuando una alcanza el `splitThreshold()` (empieza en **6** y sube
+  **+2 por cada aldea** ya existente: 6, 8, 10… → escisiones cada vez más raras, mundo infinito
+  pero cada vez más lento), una **pareja sin hijos** (o dos solteros de distinto sexo) se marcha
+  empujada por una **desgracia** (mala cosecha, incendio, plaga…) y **funda una aldea nueva** a
+  200-360 bloques (~24 nombres curados y luego "Aldea N"). Los que parten **pierden todo su
+  peculio** (su prestigio de aldeano: empiezan de cero) y constan como **FUNDADORES venidos de la
+  aldea X** (campo `Colono.origin`, lo saben y lo cuentan). Se registra en la crónica (evento
+  *fundacion*). Salvaguarda `MAX_TOWNS=24`. Al **entrar** en el radio (~48 bloques) de una aldea aparece **su nombre en
   pantalla** (`onMove`, título de bienvenida). Cada aldea tiene **alcalde** (el vecino más
   veterano) con su cartel en la plaza (evento *gobierno* al cambiar) y un **granero** (barril)
   donde cada oficio deposita su producción física (trigo, lana, hierro...).
@@ -276,11 +281,13 @@ Todo entra en la misma hucha. **Los ninos cuentan como vecinos** en el marcador,
 la plaza, en el coste del proximo vecino y en los edificios civicos (taberna >=4, mercado >=6):
 si no, el jugador veia 6 habitantes y el mercado no aparecia.
 
-Techo de **8 aldeas x 8 vecinos = 64**; al llenarse el mundo las aldeas se
-densifican en vez de fundar mas. Al fundar una aldea se traza una **carretera** desde la mas
-cercana (3 de ancho, puentes de madera sobre el agua, faroles), construida por lotes. Todos los
-caminos llevan **rasante regulada**: medio bloque de desnivel por casilla con escalones de losa,
-para poder subirlos andando, y nunca arrancan sobre lo ya construido.
+Las aldeas crecen **sin tope** y el mundo se expande por **escisión** (ver arriba), cada vez a
+mayor tamaño (`splitThreshold`), con salvaguarda `MAX_TOWNS=24`. Al fundar una aldea se traza una
+**carretera** desde la mas cercana (3 de ancho; sobre agua un **puente de tablero de roble un
+bloque por encima** de la superficie con **pilones de piedra** hasta el lecho, `waterSurfaceY`;
+faroles), construida por lotes. Todos los caminos llevan **rasante regulada**: medio bloque de
+desnivel por casilla con escalones de losa, para poder subirlos andando, y nunca arrancan sobre lo
+ya construido.
 
 **Marcador (#15).** Muestra la **aldea que pisas** (nombre, vecinos, riqueza, prosperidad, barra
 de progreso al siguiente escalon y alcalde) y cambia sola al entrar en otra; debajo, el total del
@@ -317,7 +324,11 @@ reclamar parcela, llevar un paquete a la aldea vecina, socorrerla si está en ap
   decae** (ya lo amortigua la raíz). El decaimiento va en el bucle de simulación (F8).
 - **Un solo ranking por aldea** (`SettlementModule.computeRanking`): los vecinos puntúan con su
   **peculio** (ya existía, fluctúa solo) + veteranía acotada (`BONUS_VETERANIA=4/día`, tope 40),
-  los jugadores con su prestigio. **El primero es el ALCALDE**, sea aldeano o jugador — el
+  los jugadores con su prestigio. **El peculio NO entra en bruto**: `6*sqrt(peculio)` con techo
+  150 (total máximo 190). Medido en la partida real: el peculio es un acumulado de por vida que
+  crece ~60 AET/hora **con el servidor encendido**, mientras el prestigio del jugador solo sube
+  jugando y a ritmo acotado — en bruto, el aldeano más viejo se volvía inalcanzable solo, y
+  ningún multiplicador fijo lo arregla más de una semana. **El primero es el ALCALDE**, sea aldeano o jugador — el
   cambio reusa el cartel de la plaza y el evento *gobierno* de la crónica. Encima de la plaza,
   **tablón grande** con el top 8; `/prestigio` (`/ranking`) da tu puesto.
 - **El granero deja de ser un cofre público**: `onGranaryBarrel` cancela el clic salvo a los

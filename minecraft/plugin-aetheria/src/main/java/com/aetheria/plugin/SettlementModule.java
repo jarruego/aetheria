@@ -154,6 +154,7 @@ public final class SettlementModule implements Listener {
         int halfZ = 2;
         int pal;             // paleta de materiales de su casa (indice en COMBOS)
         boolean dimsKnown;   // ¿sabemos como es su casa? (si no, el albanil NO la reconstruye)
+        String origin;       // si es FUNDADOR: nombre de la aldea de la que vino (null si no lo es)
 
         double age(long now) {
             return initialAge + (now - bornMillis) * YEARS_PER_DAY / DAY_MS;
@@ -163,7 +164,8 @@ public final class SettlementModule implements Listener {
             return name + ";" + profKey + ";" + x + ";" + y + ";" + z + ";" + bornMillis + ";"
                     + initialAge + ";" + deathAge + ";" + (parent == null ? "" : parent) + ";"
                     + retired + ";" + floors + ";" + (spouse == null ? "" : spouse) + ";" + gender
-                    + ";" + vid + ";" + surname + ";" + wealth + ";" + halfX + ";" + halfZ + ";" + pal;
+                    + ";" + vid + ";" + surname + ";" + wealth + ";" + halfX + ";" + halfZ + ";" + pal
+                    + ";" + (origin == null ? "" : origin);
         }
     }
 
@@ -188,8 +190,10 @@ public final class SettlementModule implements Listener {
     private final java.util.Map<java.util.UUID, Integer> inTown = new java.util.HashMap<>();
 
     private static final double TOWN_RADIUS = 48;   // desde donde se considera que estas "en" la aldea
-    private static final int PER_TOWN = 8;   // al llenarse, una pareja funda otra aldea lejos
-    private static final int MAX_TOWNS = 8;  // techo del mundo: 8 aldeas x 8 vecinos
+    // Las aldeas crecen SIN TOPE (hasta el infinito). En vez de un cap por aldea, cuando una llega a
+    // cierto tamano una PAREJA se escinde y funda otra aldea (ver splitThreshold/trySplit). El techo
+    // de aldeas es solo una salvaguarda para que el mundo no se llene de pueblos sin freno.
+    private static final int MAX_TOWNS = 24;
     private static final String[] TOWN_NAMES = {"Rocavieja", "Valverde", "Fuenteclara", "Montenar",
         "Rivablanca", "Espinar", "Robledo", "Vallehondo", "Penaflor", "Aldealba", "Sotobravo",
         "Villalce", "Olmedal", "Riofrio", "Costaluna", "Miralbosque", "Pradoverde", "Encinar",
@@ -227,6 +231,20 @@ public final class SettlementModule implements Listener {
         return 30.0 * Math.pow(2, step);
     }
 
+    /** Poblacion a la que una aldea se ESCINDE (una pareja parte a fundar otra). Empieza en 6 y
+     *  sube 2 por cada aldea que ya exista, asi las escisiones son cada vez a mayor tamano y el
+     *  mundo se expande cada vez mas despacio, pero nunca se detiene. */
+    private int splitThreshold() {
+        return 6 + 2 * Math.max(0, towns.size() - 1);
+    }
+
+    /** Desgracias que sirven de excusa para que unos vecinos se marchen a fundar una aldea nueva. */
+    private static final String[] SPLIT_REASONS = {
+        "una mala cosecha", "una plaga en los cultivos", "un incendio que arraso un par de casas",
+        "una disputa vecinal", "la escasez de tierras de labor", "un pozo que se seco",
+        "un invierno muy duro",
+    };
+
     private final List<Town> towns = new ArrayList<>();
     private final java.util.Map<Integer, String> alcaldes = new java.util.HashMap<>();  // vid -> alcalde
 
@@ -236,11 +254,21 @@ public final class SettlementModule implements Listener {
     public record Rank(String name, double score, boolean player, java.util.UUID uuid) { }
 
     /**
-     * Prestigio de un ALDEANO = su peculio + un pellizco por veterania. El peculio ya fluctua
-     * solo (sube con su trabajo, baja con {@code spendUpkeep}), asi que no hace falta inventar
-     * un stat nuevo ni una decadencia aparte. La veterania suma poco y CON TOPE: es el matiz de
-     * "el veterano pesa", no una via para que el mas viejo gane siempre.
+     * Prestigio de un ALDEANO = lo que ha ahorrado trabajando + un pellizco por veterania. Se
+     * reutiliza el peculio que ya existia (sube con su trabajo, baja con {@code spendUpkeep}):
+     * ni stat nuevo ni decadencia aparte.
+     *
+     * <p>Pero el peculio NO entra en bruto, y esto es la clave del equilibrio: es un acumulado
+     * de por vida que crece <b>mientras el servidor este encendido</b> (~60 AET/hora en el
+     * vecino mas trabajador), mientras que el prestigio del jugador solo sube cuando juega y a
+     * ritmo acotado (3 encargos a la vez). En bruto, cualquier aldeano viejo se volvia
+     * inalcanzable con solo dejar el mundo corriendo. Por eso el dinero del aldeano se comprime
+     * por <b>raiz cuadrada y con techo</b>, igual que ya se comprimian las donaciones del
+     * jugador: un vecino rico y veterano es un rival serio (tope 190 = ~13 encargos) pero
+     * <b>alcanzable</b>, hoy y dentro de seis meses.
      */
+    private static final double RIQUEZA_FACTOR = 6.0;    // prestigio = 6 * raiz(peculio)
+    private static final double RIQUEZA_TOPE = 150.0;    // techo de lo que aporta el peculio
     private static final double BONUS_VETERANIA = 4.0;   // por dia real vivido en el pueblo
     private static final double VETERANIA_TOPE = 40.0;   // lo que como mucho aporta la veterania
 
@@ -514,6 +542,9 @@ public final class SettlementModule implements Listener {
                         c.pal = Integer.parseInt(f[18]);
                         c.dimsKnown = true;
                     }
+                    if (f.length >= 20 && !f[19].isEmpty()) {   // fundador venido de otra aldea
+                        c.origin = f[19];
+                    }
                 } else {   // formato antiguo: se le asigna una edad plausible
                     c.bornMillis = System.currentTimeMillis();
                     c.initialAge = 20 + rng.nextInt(40);
@@ -750,6 +781,7 @@ public final class SettlementModule implements Listener {
                 t.pool += need * 0.5;    // se liquida lo del que se va (y la hucha no se hunde)
                 loseNeighbour(vid, rng);
             }
+            trySplit(vid, rng);   // si la aldea es ya grande, una pareja parte a fundar otra
         }
         saveTowns();   // la hucha se persiste: el progreso no se pierde al reiniciar
         final int pop = totalPopulation();
@@ -764,24 +796,21 @@ public final class SettlementModule implements Listener {
     /** Coste de vida por vecino y ciclo (60 s), que sale de la hucha de su aldea. */
     private static final double LIVING_COST = 0.8;
 
-    /** Llega un vecino nuevo a esa aldea: nace de una pareja de alli o viene de fuera. Si la
-     *  aldea esta llena, el recien llegado se va a otra (o funda una nueva). */
+    /** Llega un vecino nuevo a ESA aldea (ya no hay tope por aldea: crece sin limite; cuando se
+     *  hace grande, una pareja se escinde y funda otra, ver {@link #trySplit}). Nace de una pareja
+     *  fertil de la aldea o, si no hay, se instala un forastero. */
     private void newNeighbour(int vid, java.util.Random rng) {
-        int dest = vid;
-        if (countInTown(vid) >= PER_TOWN) {
-            dest = assignTown();   // aldea con sitio; si no hay, se funda una nueva lejos
-        }
-        final int enAldea = countInTown(dest);
+        final int enAldea = countInTown(vid);
         if (enAldea < 2) {
             // Los dos primeros de una aldea son de distinto sexo (para que pueda haber familia).
-            final String g = enAldea == 1 ? oppositeOfSole(dest) : randGender(rng);
-            growAdult(dest, colonos.size(), freshName(g, rng), randomSurname(rng), g,
+            final String g = enAldea == 1 ? oppositeOfSole(vid) : randGender(rng);
+            growAdult(vid, colonos.size(), freshName(g, rng), randomSurname(rng), g,
                     20 + rng.nextInt(40), "");
             return;
         }
-        if (!bearChild(dest)) {   // sin pareja fertil en la aldea, llega un forastero
+        if (!bearChild(vid)) {   // sin pareja fertil en la aldea, llega un forastero
             final String g = randGender(rng);
-            growAdult(dest, colonos.size(), freshName(g, rng), randomSurname(rng), g,
+            growAdult(vid, colonos.size(), freshName(g, rng), randomSurname(rng), g,
                     20 + rng.nextInt(40), "");
         }
     }
@@ -1858,7 +1887,9 @@ public final class SettlementModule implements Listener {
             }
             final double dias = Math.max(0, (now - c.bornMillis) / (double) DAY_MS);
             final double veterania = Math.min(VETERANIA_TOPE, dias * BONUS_VETERANIA);
-            out.add(new Rank(c.name, c.wealth + veterania, false, null));
+            final double riqueza = Math.min(RIQUEZA_TOPE,
+                    RIQUEZA_FACTOR * Math.sqrt(Math.max(0, c.wealth)));
+            out.add(new Rank(c.name, riqueza + veterania, false, null));
         }
         out.addAll(playerRep.getOrDefault(vid, List.of()));
         out.sort((a, b) -> Double.compare(b.score(), a.score()));
@@ -2253,10 +2284,9 @@ public final class SettlementModule implements Listener {
                 .getState() instanceof org.bukkit.block.Container c2 ? c2.getInventory() : null;
     }
 
-    /** Nombre legible del genero para rotular su barril ("IRON_INGOT" -> "Iron ingot"). */
+    /** Nombre del genero para rotular su barril, en castellano ("IRON_INGOT" -> "Hierro"). */
     private static String granaryLabel(Material m) {
-        final String s = m.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
-        return s.isEmpty() ? "?" : Character.toUpperCase(s.charAt(0)) + s.substring(1);
+        return Goods.esCap(m);
     }
 
     /** Recoge los barriles SUELTOS que una version anterior dejo apilados hacia el sur del granero
@@ -2387,14 +2417,12 @@ public final class SettlementModule implements Listener {
         final int space = freeSpaceFor(p, good);
         final int take = Math.min(surplus, space);
         if (take <= 0) {
-            p.sendMessage("§7No te cabe mas " + good.name().toLowerCase(java.util.Locale.ROOT)
-                    + " encima.");
+            p.sendMessage("§7No te cabe mas " + Goods.es(good) + " encima.");
             return;
         }
         c.getInventory().removeItem(new org.bukkit.inventory.ItemStack(good, take));
         p.getInventory().addItem(new org.bukkit.inventory.ItemStack(good, take));
-        p.sendMessage("§a[Granero de " + town + "] §fTe llevas §e" + take + " "
-                + good.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ')
+        p.sendMessage("§a[Granero de " + town + "] §fTe llevas §e" + take + " " + Goods.es(good)
                 + "§f del excedente. §7(la reserva del pueblo se queda intacta)");
         p.playSound(p.getLocation(), org.bukkit.Sound.BLOCK_BARREL_OPEN, 0.8f, 1.1f);
     }
@@ -2659,6 +2687,11 @@ public final class SettlementModule implements Listener {
             if (c.name.equals(alcaldes.get(c.vid)) && c.vid < towns.size()) {
                 fam.append(" Eres el ALCALDE de ").append(towns.get(c.vid).name)
                         .append("; hablas con orgullo de tu pueblo.");
+            }
+            if (c.origin != null && !c.origin.isEmpty() && c.vid < towns.size()) {
+                fam.append(fem ? " Eres FUNDADORA de " : " Eres FUNDADOR de ")
+                        .append(towns.get(c.vid).name).append(", viniste desde ").append(c.origin)
+                        .append("; todos en la aldea saben que la fundaste tu y lo cuentas con orgullo.");
             }
             // Su PECULIO (lo que ha ahorrado trabajando): que hable de si le va bien o mal.
             final String bolsa = c.wealth < 10 ? " Apenas tienes ahorros; vives al dia."
@@ -3104,39 +3137,184 @@ public final class SettlementModule implements Listener {
         return "m";
     }
 
-    /** La primera aldea con sitio; si todas estan llenas, FUNDA una nueva lejos y devuelve su id. */
-    private int assignTown() {
-        for (int i = 0; i < towns.size(); i++) {
-            if (countInTown(i) < PER_TOWN) {
-                return i;
-            }
-        }
+    /**
+     * ESCISION (nuevo modo de fundar aldeas). Cuando una aldea alcanza el {@link #splitThreshold()},
+     * una PAREJA SIN HIJOS (o, en su defecto, dos solteros) se marcha empujada por una desgracia y
+     * funda una aldea nueva lejos. Los que parten <b>pierden todo su peculio</b> (su prestigio de
+     * aldeano: empiezan de cero) y en la aldea nueva constan como <b>FUNDADORES venidos de la aldea
+     * X</b>. La aldea de origen sigue creciendo sin tope; el umbral de la proxima escision sube.
+     */
+    private void trySplit(int vid, java.util.Random rng) {
         if (towns.size() >= MAX_TOWNS) {
-            // El mundo ya tiene sus 8 aldeas: en vez de fundar mas, las aldeas se
-            // DENSIFICAN. El nuevo vecino va a la menos poblada.
-            int best = 0;
-            for (int i = 1; i < towns.size(); i++) {
-                if (countInTown(i) < countInTown(best)) {
-                    best = i;
-                }
-            }
-            return best;
+            return;   // salvaguarda: el mundo no funda aldeas sin freno
         }
-        return foundNewTown();
+        if (townPopulation(vid) < splitThreshold()) {
+            return;
+        }
+        final Colono[] pair = findFounders(vid);
+        if (pair == null) {
+            return;   // no hay una pareja sin hijos ni dos solteros: la escision espera
+        }
+        final String originName = t(vid);
+        final int newVid = createTown();
+        if (newVid < 0) {
+            return;   // no encontro sitio para la aldea nueva: se reintenta el proximo ciclo
+        }
+        final boolean couple = pair[0].spouse != null && pair[0].spouse.equals(pair[1].name);
+        relocateFounders(newVid, pair[0], pair[1], couple, originName, rng);
+        save();
+        saveTowns();
+        final String reason = SPLIT_REASONS[rng.nextInt(SPLIT_REASONS.length)];
+        final String newName = towns.get(newVid).name;
+        final String who = pair[0].name + " y " + pair[1].name;
+        final String msg = "Tras " + reason + " en " + originName + ", " + who + " parten y fundan "
+                + newName + ".";
+        gateway.postEvent("fundacion", msg);
+        routines.pushGossip(msg);
+        Bukkit.getOnlinePlayers().forEach(pl -> pl.sendMessage("§d[Mundo] §f" + msg));
+        plugin.getLogger().info("[Aetheria] Escision: " + who + " fundan " + newName + " (desde "
+                + originName + ").");
     }
 
-    /** Funda una aldea NUEVA lejos de todas (fuera de vista), sobre tierra firme. Devuelve su id. */
-    private int foundNewTown() {
+    /** Elige quien se escinde: una PAREJA CASADA SIN HIJOS si la hay; si no, dos SOLTEROS de la
+     *  aldea (a ser posible de distinto sexo, para que la aldea nueva pueda crecer). null si no hay
+     *  candidatos validos. */
+    private Colono[] findFounders(int vid) {
+        for (final Colono a : colonos) {   // 1) pareja casada sin descendencia
+            if (a.vid != vid || a.spouse == null || a.spouse.isEmpty()) {
+                continue;
+            }
+            final Colono b = findColono(a.spouse);
+            if (b != null && b.vid == vid && childCount(a.name) == 0 && childCount(b.name) == 0) {
+                return new Colono[] {a, b};
+            }
+        }
+        Colono first = null;
+        Colono opposite = null;
+        Colono same = null;
+        for (final Colono c : colonos) {   // 2) dos solteros (mejor de distinto sexo)
+            if (c.vid != vid || (c.spouse != null && !c.spouse.isEmpty())) {
+                continue;
+            }
+            if (first == null) {
+                first = c;
+            } else if (!c.gender.equals(first.gender) && opposite == null) {
+                opposite = c;
+            } else if (same == null) {
+                same = c;
+            }
+        }
+        final Colono second = opposite != null ? opposite : same;
+        return first != null && second != null ? new Colono[] {first, second} : null;
+    }
+
+    /** Muda a los dos fundadores a la aldea nueva: derriba sus casas viejas, les construye vivienda
+     *  junto a la plaza nueva, les pone el peculio a CERO (pierden su prestigio) y les marca el
+     *  origen. Una pareja comparte casa (2 camas); dos solteros van a casitas separadas. */
+    private void relocateFounders(int newVid, Colono a, Colono b, boolean couple, String origin,
+            java.util.Random rng) {
+        demolish(a);
+        if (!couple || a.x != b.x || a.z != b.z) {
+            demolish(b);
+        }
+        if (couple) {
+            final int[] h = buildStarterHouse(newVid, colonos.size(), a.name.split(" ")[0], 2, rng);
+            placeFounder(a, newVid, origin, h);
+            placeFounder(b, newVid, origin, h);
+        } else {
+            placeFounder(a, newVid, origin,
+                    buildStarterHouse(newVid, colonos.size(), a.name.split(" ")[0], 1, rng));
+            placeFounder(b, newVid, origin,
+                    buildStarterHouse(newVid, colonos.size() + 1, b.name.split(" ")[0], 1, rng));
+        }
+    }
+
+    /** Asienta a un fundador en la aldea nueva (su casa ya construida, o el centro si no hubo sitio):
+     *  actualiza aldea, casa, peculio a 0 y origen, y lo re-registra en la rutina. */
+    private void placeFounder(Colono c, int newVid, String origin, int[] h) {
+        final Villager.Profession prof = profFromKey(c.profKey);
+        c.vid = newVid;
+        c.wealth = 0;          // pierde su prestigio de aldeano: empieza de cero en la aldea nueva
+        c.origin = origin;
+        if (h != null) {
+            c.x = h[0];
+            c.z = h[1];
+            c.y = h[2] + 1;
+            c.halfX = h[3];
+            c.halfZ = h[4];
+            c.pal = h[5];
+            c.floors = 1;
+            c.dimsKnown = true;
+        }
+        final Location center = townCenter(newVid);
+        final Location home = new Location(world, c.x + 0.5, c.y, c.z + 0.5);
+        final Location work = ensureBuilding(newVid, prof);
+        routines.removeColono(c.name);
+        routines.addColono("colono", c.name, home, work, prof, center, c.gender);
+        routines.setStayAtWork(c.name, isKeeper(c.profKey));
+        if (c.retired) {
+            routines.retire(c.name);
+        }
+    }
+
+    /** Construye una casa modesta junto a la plaza de una aldea y devuelve {cx,cz,fy,halfX,halfZ,pal}
+     *  (o null si no hubo hueco). {@code beds}=2 para la pareja fundadora, 1 para un soltero. */
+    private int[] buildStarterHouse(int vid, int index, String sign, int beds, java.util.Random rng) {
+        final Location center = townCenter(vid);
+        final int[] spot = findBuildSpot(center, index);
+        if (spot == null) {
+            return null;
+        }
+        final int cx = spot[0];
+        final int cz = spot[1];
+        final int fy = spot[2];
+        final int palIdx = rng.nextInt(COMBOS.length);
+        final Material[] pal = COMBOS[palIdx];
+        final int halfX = 2;
+        final int halfZ = beds >= 2 ? 3 : (rng.nextInt(100) < 35 ? 3 : 2);
+        final BlockFace door = towardPlaza(center, cx, cz);
+        prepareTerrain(cx, cz, fy);
+        Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
+                pal[0], pal[1], pal[2], pal[3], true, beds, sign);
+        deflood(cx, fy, cz, 1);
+        pathTo(cx, cz, center);
+        placed.add(new int[] {cx, cz});
+        plugin.buildRegistry().add(new int[] {cx - halfX - 1, fy - 2, cz - halfZ - 1,
+                cx + halfX + 1, fy + 14, cz + halfZ + 1});
+        return new int[] {cx, cz, fy, halfX, halfZ, palIdx};
+    }
+
+    /** Funda una aldea NUEVA vacia lejos de todas, sobre tierra firme, con su plaza, nombre y una
+     *  carretera hasta la mas cercana. Devuelve su id, o -1 si no encontro sitio. No mete gente:
+     *  de eso se encarga quien la funda ({@link #trySplit}). */
+    private int createTown() {
         final var rng = ThreadLocalRandom.current();
-        // Se parte de una aldea CUALQUIERA ya existente (no siempre de la primera): asi la
-        // el poblamiento se extiende en racimo, no en estrella alrededor del pueblo madre.
-        final Town origin = towns.get(rng.nextInt(towns.size()));
-        int bcx = 0;
-        int bcz = 0;
-        boolean found = false;
-        for (int t = 0; t < 80 && !found; t++) {
+        final int[] site = findTownSite(rng);
+        if (site == null) {
+            return -1;
+        }
+        final Location plaza = village.buildPlazaAt(site[0], site[1]);
+        towns.add(new Town(pickTownName(), plaza.getBlockX(), plaza.getBlockZ(),
+                plaza.getBlockY() - 1));
+        final int newVid = towns.size() - 1;
+        saveTowns();
+        final Town from = nearestTown(plaza.getBlockX(), plaza.getBlockZ(), newVid);
+        if (from != null) {   // CARRETERA desde la aldea mas cercana: las aldeas quedan conectadas
+            buildRoad(from.cx, from.cz, plaza.getBlockX(), plaza.getBlockZ());
+        }
+        return newVid;
+    }
+
+    /** Busca un emplazamiento para una aldea nueva a 200-360 bloques de una existente, sobre tierra
+     *  firme y lejos de las demas. Devuelve {cx,cz} o null. */
+    private int[] findTownSite(java.util.Random rng) {
+        if (towns.isEmpty()) {
+            return null;
+        }
+        final Town origin = towns.get(rng.nextInt(towns.size()));   // en racimo, no en estrella
+        for (int t = 0; t < 80; t++) {
             final double ang = rng.nextDouble() * Math.PI * 2;
-            final int dist = 200 + rng.nextInt(160);   // 200-360 bloques de la aldea de origen
+            final int dist = 200 + rng.nextInt(160);
             final int cx = origin.cx + (int) Math.round(Math.cos(ang) * dist);
             final int cz = origin.cz + (int) Math.round(Math.sin(ang) * dist);
             boolean far = true;
@@ -3153,41 +3331,23 @@ public final class SettlementModule implements Listener {
             if (world.getBlockAt(cx, gy, cz).isLiquid() || world.getBlockAt(cx, gy + 1, cz).isLiquid()) {
                 continue;   // agua: no fundar ahi
             }
-            bcx = cx;
-            bcz = cz;
-            found = true;
+            return new int[] {cx, cz};
         }
-        if (!found) {
-            return 0;   // no encontro sitio; el nuevo se queda en la aldea principal
-        }
-        String name = null;
+        return null;
+    }
+
+    /** El primer nombre de aldea libre de la lista curada; si se agotan, "Aldea N". */
+    private String pickTownName() {
         final java.util.Set<String> used = new java.util.HashSet<>();
         for (final Town tw : towns) {
             used.add(tw.name);
         }
         for (final String n : TOWN_NAMES) {
             if (!used.contains(n)) {
-                name = n;
-                break;
+                return n;
             }
         }
-        if (name == null) {
-            name = "Aldea " + (towns.size() + 1);
-        }
-        final Location plaza = village.buildPlazaAt(bcx, bcz);
-        towns.add(new Town(name, plaza.getBlockX(), plaza.getBlockZ(), plaza.getBlockY() - 1));
-        saveTowns();
-        // CARRETERA desde la aldea MAS CERCANA hasta la nueva: las aldeas quedan conectadas.
-        final Town from = nearestTown(plaza.getBlockX(), plaza.getBlockZ(), towns.size() - 1);
-        if (from != null) {
-            buildRoad(from.cx, from.cz, plaza.getBlockX(), plaza.getBlockZ());
-        }
-        final String msg = "Unos colonos parten a fundar una nueva aldea, " + name + ", lejos de aqui.";
-        gateway.postEvent("fundacion", msg);
-        routines.pushGossip(msg);
-        Bukkit.getOnlinePlayers().forEach(pl -> pl.sendMessage("§d[Mundo] §f" + msg));
-        plugin.getLogger().info("[Aetheria] Nueva aldea fundada: " + name + " en " + bcx + "," + bcz);
-        return towns.size() - 1;
+        return "Aldea " + (towns.size() + 1);
     }
 
     /** La aldea ya existente mas cercana a un punto (ignorando la de indice `skip`). */

@@ -62,6 +62,17 @@ public final class ConversationManager implements Listener {
     }
 
     // Apariencias distintas: cada guia viste segun su bioma + profesion (deterministico).
+    /** Frases de relleno mientras el NPC "piensa" (el LLM tarda): dan naturalidad a la espera. */
+    private static final String[] THINKING = {
+        "mmm, dejame pensar...",
+        "a ver, a ver...",
+        "hmm...",
+        "espera, que lo pienso...",
+        "pues... veamos.",
+        "buena pregunta, dame un segundo...",
+        "uf, dejame que recuerde...",
+    };
+
     private static final Villager.Type[] TYPES = {
         Villager.Type.PLAINS, Villager.Type.DESERT, Villager.Type.SAVANNA,
         Villager.Type.JUNGLE, Villager.Type.TAIGA, Villager.Type.SNOW, Villager.Type.SWAMP,
@@ -125,6 +136,9 @@ public final class ConversationManager implements Listener {
         if (event.getHand() != EquipmentSlot.HAND) {
             return;   // el evento se dispara por ambas manos: solo atendemos la principal
         }
+        if (event.getPlayer().isSneaking()) {
+            return;   // AGACHADO es el gesto de COMERCIAR (NpcTradeModule); de pie, se habla
+        }
         final var entity = event.getRightClicked();
         final NpcInfo info = npcs.get(entity.getUniqueId());
         if (info == null) {
@@ -183,6 +197,18 @@ public final class ConversationManager implements Listener {
         }
 
         runSync(() -> player.sendMessage("§7Tu: §f" + msg));
+        // FRASE INTERMEDIA si el LLM tarda: para que no parezca que el NPC se ha colgado. Solo se
+        // muestra si a los ~0.8 s aun no ha contestado; si responde rapido, no aparece.
+        final java.util.concurrent.atomic.AtomicBoolean answered =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            if (!answered.get() && player.isOnline()
+                    && npcUuid.equals(talking.get(player.getUniqueId()))) {
+                player.sendMessage("§a[" + info.name() + "] §7§o"
+                        + THINKING[java.util.concurrent.ThreadLocalRandom.current()
+                                .nextInt(THINKING.length)]);
+            }
+        }, 16L);   // ~0.8 s
         // Memoria POR INDIVIDUO: los colonos/ninos comparten npc_id generico ("colono"/"nino"),
         // asi que se les da un id de memoria unico por nombre (si no, un aldeano "recordaria" lo
         // que le contaste a otro). El orquestador resuelve la persona por el prefijo antes de ":".
@@ -192,6 +218,7 @@ public final class ConversationManager implements Listener {
         gateway.conversation(memId, player.getUniqueId().toString(), msg, info.name(),
                         bios.get(info.name()))
                 .whenComplete((json, err) -> runSync(() -> {
+                    answered.set(true);   // corta la frase intermedia si aun no ha saltado
                     if (!player.isOnline()) {
                         return;
                     }

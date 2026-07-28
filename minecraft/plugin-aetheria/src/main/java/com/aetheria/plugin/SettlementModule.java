@@ -242,6 +242,20 @@ public final class SettlementModule implements Listener {
         return 6 + 2 * t.splits;
     }
 
+    /**
+     * TAMANO A EFECTOS DE COSTE: los vecinos que hay ahora <b>mas los que se marcharon a fundar</b>
+     * (dos por cada aldea colonizada).
+     *
+     * <p>Sin esto, escindirse salia gratis: al perder dos vecinos el coste del siguiente caia a la
+     * cuarta parte (cada vecino cuesta el doble que el anterior), asi que la aldea madre reponia a
+     * los dos que se fueron casi al instante y la escision no se notaba. Ahora una aldea que ya ha
+     * colonizado <b>sigue pagando precios de aldea grande</b>: haber mandado gente fuera pesa, que
+     * es justo lo que significa quedarse a medias.
+     */
+    private int chargedSize(int vid) {
+        return townPopulation(vid) + 2 * towns.get(vid).splits;
+    }
+
     /** Desgracias que sirven de excusa para que unos vecinos se marchen a fundar una aldea nueva. */
     private static final String[] SPLIT_REASONS = {
         "una mala cosecha", "una plaga en los cultivos", "un incendio que arraso un par de casas",
@@ -794,7 +808,7 @@ public final class SettlementModule implements Listener {
             final Town t = towns.get(vid);
             final int n = townPopulation(vid);   // los ninos tambien comen (y cuentan en el HUD)
             t.pool -= LIVING_COST * n;   // lo que cuesta dar de comer y alojar a los que ya estan
-            final double need = growthCost(n);
+            final double need = growthCost(chargedSize(vid));
             if (t.pool >= need) {
                 t.pool -= need;
                 newNeighbour(vid, rng);
@@ -911,7 +925,7 @@ public final class SettlementModule implements Listener {
                 lastPitch = now;
                 alc.getPathfinder().moveTo(p.getLocation(), 1.0);   // se acerca a saludar
                 final int falta = (int) Math.max(0,
-                        growthCost(townPopulation(vid)) - towns.get(vid).pool);
+                        growthCost(chargedSize(vid)) - towns.get(vid).pool);
                 p.sendMessage("§6[" + entry.getValue() + "] §f" + p.getName() + ", soy el alcalde de "
                         + towns.get(vid).name + ". Nos faltan §e" + falta + " AET§f para que se "
                         + "instale otro vecino.");
@@ -957,7 +971,7 @@ public final class SettlementModule implements Listener {
                 continue;
             }
             final Town t = towns.get(vid);
-            if (Math.abs(b.getX() - (t.cx + 3)) <= 5 && Math.abs(b.getZ() - (t.cz - 13)) <= 5
+            if (Math.abs(b.getX() - (t.cx + 3)) <= 5 && Math.abs(b.getZ() - (t.cz + boticaDz(vid))) <= 5
                     && Math.abs(b.getY() - t.baseY) <= 8) {
                 return t.name;
             }
@@ -972,7 +986,7 @@ public final class SettlementModule implements Listener {
 
     /** Lo que cuesta el proximo vecino de esa aldea. */
     public double townNeed(int vid) {
-        return vid >= 0 && vid < towns.size() ? growthCost(townPopulation(vid)) : 0;
+        return vid >= 0 && vid < towns.size() ? growthCost(chargedSize(vid)) : 0;
     }
 
     /** El alcalde en ejercicio de esa aldea (cadena vacia si no hay). */
@@ -2117,7 +2131,7 @@ public final class SettlementModule implements Listener {
             final Town t = towns.get(vid);
             civicReserved.add(civicRegion(t.cx + 9, t.cz, t.baseY, 4));        // taberna (futura)
             civicReserved.add(civicRegion(t.cx - 3, t.cz + 12, t.baseY, 3));   // mercado (futuro)
-            civicReserved.add(civicRegion(t.cx + 3, t.cz - 13, t.baseY, 4));   // botica (futura)
+            civicReserved.add(civicRegion(t.cx + 3, t.cz + boticaDz(vid), t.baseY, 4));   // botica (futura)
             ensureCivics(vid, t);   // el granero se levanta ya (permanente); taberna/mercado si toca
         }
     }
@@ -2155,10 +2169,16 @@ public final class SettlementModule implements Listener {
         ensureCivic(vid, "mercado", t.cx - 3, t.cz + 12, t.baseY, 5, 6,
                 "El pueblo levanta un mercado en " + t.name + ".");
         // BOTICA: cuando el pueblo llega a 8 vecinos ya da para tener quien cure.
-        ensureCivic(vid, "botica", t.cx + 3, t.cz - 13, t.baseY, 5, 8,
+        final int bdz = boticaDz(vid);
+        final boolean hadBotica = civicBuilt.contains(vid + ":botica");
+        ensureCivic(vid, "botica", t.cx + 3, t.cz + bdz, t.baseY, 5, 8,
                 "El pueblo abre una botica en " + t.name + ": ya hay quien cure a los heridos.");
+        if (!hadBotica && civicBuilt.contains(vid + ":botica") && bdz == -18) {
+            civicBuilt.add(vid + ":botica-new");   // se construyo en el sitio nuevo (separada)
+            saveCivicBuildings();
+        }
         if (civicBuilt.contains(vid + ":botica") && trade != null) {
-            trade.ensureHealer(new Location(world, t.cx + 3 + 0.5, t.baseY + 1, t.cz - 13 - 1 + 0.5),
+            trade.ensureHealer(new Location(world, t.cx + 3 + 0.5, t.baseY + 1, t.cz + bdz - 1 + 0.5),
                     t.name, vid);
         }
         // El mercader (entidad) puede desaparecer entre reinicios: se re-asegura si hay mercado.
@@ -2185,6 +2205,17 @@ public final class SettlementModule implements Listener {
     /** Engancha las parcelas de jugador, para no construir NUNCA sobre lo que es de alguien. */
     public void setClaims(ClaimModule claims) {
         this.claims = claims;
+    }
+
+    /** Desplazamiento en Z de la BOTICA respecto al centro de la aldea. Las aldeas NUEVAS
+     *  (escindidas, sin portal al norte) la separan de la plaza (-18, su borde sur queda fuera del
+     *  nucleo). Las que YA tenian botica (sin el centinela) y el pueblo del spawn (vid 0, con portal
+     *  al norte) la dejan donde estaba (-13): no se mueve ni se duplica nada existente. */
+    private int boticaDz(int vid) {
+        if (civicBuilt.contains(vid + ":botica") && !civicBuilt.contains(vid + ":botica-new")) {
+            return -13;
+        }
+        return vid == 0 ? -13 : -18;
     }
 
     private void ensureCivic(int vid, String type, int cx, int cz, int baseY, int half, int minPop,
@@ -2733,7 +2764,9 @@ public final class SettlementModule implements Listener {
         }
         final int hab = townPopulation(near);   // los ninos tambien son vecinos del pueblo
         final double wealth = townWealth(near);
-        final double need = growthCost(hab);   // hab ya incluye a los ninos
+        // El marcador tiene que enseñar el MISMO coste que se cobra de verdad (si no, la barra de
+        // "proximo vecino" mentiria en las aldeas que ya han colonizado).
+        final double need = growthCost(chargedSize(near));
         final double pool = towns.get(near).pool;
         return new String[] {
             towns.get(near).name,
@@ -3177,11 +3210,13 @@ public final class SettlementModule implements Listener {
         // tramos en diagonal (donde el avance alterna entre X y Z), las franjas no se solapaban:
         // la calzada salia a trozos de uno o dos bloques. Ahora se pavimenta el CUADRO 3x3 de cada
         // casilla, asi que la carretera mide tres bloques de ancho vaya en la direccion que vaya.
-        for (int ox = -1; ox <= 1; ox++) {
-            for (int oz = -1; oz <= 1; oz++) {
+        for (int ox = -1; ox <= 2; ox++) {
+            for (int oz = -1; oz <= 2; oz++) {
             final int px = x + ox;
             final int pz = z + oz;
-            final int w = (perpX != 0 ? ox : oz);   // 0 = eje de la calzada; ±1 = arcen
+            // CUATRO bloques de ancho: dos carriles de calzada (0 y 1) y sus dos arcenes (-1 y 2).
+            final int lane = (perpX != 0 ? ox : oz);
+            final boolean edge = lane == -1 || lane == 2;
             if (claims != null && claims.isClaimed(px, pz)) {
                 continue;   // ni un bloque dentro de la parcela de alguien
             }
@@ -3197,10 +3232,10 @@ public final class SettlementModule implements Listener {
             }
             if (water) {   // PUENTE: tablero de madera, barandilla en los arcenes y pilones de piedra
                 world.getBlockAt(px, ny, pz).setType(Material.OAK_PLANKS, false);
-                if (w != 0) {
+                if (edge) {
                     world.getBlockAt(px, ny + 1, pz).setType(Material.OAK_FENCE, false);
                 }
-                if (index % 5 == 0 && w != 0) {   // pilon cada pocos tramos: del tablero al lecho
+                if (index % 5 == 0 && edge) {   // pilon cada pocos tramos: del tablero al lecho
                     for (int y = ny - 1; y > gy; y--) {
                         world.getBlockAt(px, y, pz).setType(Material.STONE_BRICKS, false);
                     }
@@ -3223,12 +3258,12 @@ public final class SettlementModule implements Listener {
                 }
             }
             world.getBlockAt(px, ny, pz).setType(
-                    w == 0 && !slab ? Material.DIRT_PATH : Material.GRAVEL, false);
-            if (slab && w == 0) {
+                    !edge && !slab ? Material.DIRT_PATH : Material.GRAVEL, false);
+            if (slab && !edge) {
                 world.getBlockAt(px, ny + 1, pz).setType(Material.COBBLESTONE_SLAB, false);
             }
             // Si el terraplen es alto, el arcen lleva BARANDILLA: se cruza el barranco sin caerse.
-            if (filled >= 3 && w != 0) {
+            if (filled >= 3 && edge) {
                 world.getBlockAt(px, ny + 1, pz).setType(Material.OAK_FENCE, false);
             }
             }
@@ -3448,6 +3483,9 @@ public final class SettlementModule implements Listener {
      * aldeano: empiezan de cero) y en la aldea nueva constan como <b>FUNDADORES venidos de la aldea
      * X</b>. La aldea de origen sigue creciendo sin tope; el umbral de la proxima escision sube.
      */
+    /** Parte del fondo comun que se llevan los fundadores a la aldea nueva (dote de fundacion). */
+    private static final double SPLIT_DOWRY = 0.5;
+
     private void trySplit(int vid, java.util.Random rng) {
         if (towns.size() >= MAX_TOWNS) {
             return;   // salvaguarda: el mundo no funda aldeas sin freno
@@ -3471,6 +3509,14 @@ public final class SettlementModule implements Listener {
         }
         final boolean couple = pair[0].spouse != null && pair[0].spouse.equals(pair[1].name);
         relocateFounders(newVid, pair[0], pair[1], couple, originName, rng);
+        // DOTE DE FUNDACION: los que parten se llevan la mitad del fondo comun de su aldea. Antes
+        // la hucha de la madre se quedaba intacta y la hija nacia sin un AET: como al perder dos
+        // vecinos el coste del siguiente cae en picado, la madre los reponia al instante y la
+        // escision no se notaba. Ahora la madre se queda a medias (le cuesta reponerse) y la hija
+        // arranca con algo con lo que crecer.
+        final double dote = Math.max(0, towns.get(vid).pool) * SPLIT_DOWRY;
+        towns.get(vid).pool -= dote;
+        towns.get(newVid).pool += dote;
         towns.get(vid).splits++;   // esta aldea ha colonizado una vez mas: su umbral sube (+2)
         save();
         saveTowns();
@@ -3478,7 +3524,7 @@ public final class SettlementModule implements Listener {
         final String newName = towns.get(newVid).name;
         final String who = pair[0].name + " y " + pair[1].name;
         final String msg = "Tras " + reason + " en " + originName + ", " + who + " parten y fundan "
-                + newName + ".";
+                + newName + (dote >= 1 ? " con " + (int) dote + " AET del fondo comun." : ".");
         gateway.postEvent("fundacion", msg);
         routines.pushGossip(msg);
         Bukkit.getOnlinePlayers().forEach(pl -> pl.sendMessage("§d[Mundo] §f" + msg));

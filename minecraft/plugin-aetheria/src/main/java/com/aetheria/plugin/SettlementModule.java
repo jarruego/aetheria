@@ -1980,44 +1980,68 @@ public final class SettlementModule implements Listener {
         }
     }
 
-    /** El barril central del GRANERO de una aldea (se re-crea si alguien lo quito). Cota FIJA
-     *  (suelo de la plaza), NO groundY: si no, el barril se ve a si mismo como suelo y cada ciclo
-     *  se plantaria otro encima -> pila vertical de barriles. */
-    private org.bukkit.inventory.Inventory granary(int vid) {
+    /** Cuantos barriles puede tener como maximo el granero (uno por genero). Fila al oeste de la
+     *  plaza, a cota FIJA (suelo), extendida hacia +Z. */
+    private static final int GRANARY_SLOTS = 24;
+
+    /**
+     * Barril DEDICADO a un genero dentro del granero de la aldea: cada tipo de recurso tiene el
+     * suyo, de modo que las pociones u otros objetos NO apilables ya no atascan el granero entero.
+     * Se marca cada barril con una clave PDC invisible ("granary_good") para reencontrar el suyo
+     * tras un reinicio. {@code createIfMissing=false} devuelve null si ese genero aun no tiene
+     * barril (sirve para {@code takeFromGranary}, que no debe crear ninguno).
+     */
+    private org.bukkit.inventory.Inventory granaryBarrel(int vid, Material good,
+            boolean createIfMissing) {
         if (vid < 0 || vid >= towns.size()) {
             return null;
         }
         final Town t = towns.get(vid);
-        final org.bukkit.block.Block bb = world.getBlockAt(t.cx - 12, t.baseY + 1, t.cz);
-        if (bb.getType() != Material.BARREL) {
-            if (!bb.getType().isAir() && !natural(bb.getType())) {
-                return null;   // hay algo construido ahi: no se pisa
+        final org.bukkit.NamespacedKey key = new org.bukkit.NamespacedKey(plugin, "granary_good");
+        final String tag = good.name();
+        int firstFree = -1;
+        for (int i = 0; i < GRANARY_SLOTS; i++) {
+            final org.bukkit.block.Block b = world.getBlockAt(t.cx - 12, t.baseY + 1, t.cz + i);
+            if (b.getType() == Material.BARREL) {
+                if (b.getState() instanceof org.bukkit.block.Container c) {
+                    final String owner = c.getPersistentDataContainer()
+                            .get(key, org.bukkit.persistence.PersistentDataType.STRING);
+                    if (tag.equals(owner)) {
+                        return c.getInventory();               // el barril de este genero
+                    }
+                    if (owner == null && firstFree < 0 && c.getInventory().isEmpty()) {
+                        firstFree = i;                          // barril libre sin dueno asignado
+                    }
+                }
+            } else if (firstFree < 0 && (b.getType().isAir() || natural(b.getType()))) {
+                firstFree = i;                                  // hueco donde plantar un barril
             }
-            bb.setType(Material.BARREL, false);
         }
-        return bb.getState() instanceof org.bukkit.block.Container c ? c.getInventory() : null;
+        if (!createIfMissing || firstFree < 0) {
+            return null;   // el granero esta lleno de barriles o el sitio esta ocupado
+        }
+        final org.bukkit.block.Block b = world.getBlockAt(t.cx - 12, t.baseY + 1, t.cz + firstFree);
+        if (b.getType() != Material.BARREL) {
+            b.setType(Material.BARREL, false);
+        }
+        if (b.getState() instanceof org.bukkit.block.Container c) {
+            c.getPersistentDataContainer()
+                    .set(key, org.bukkit.persistence.PersistentDataType.STRING, tag);
+            c.update();
+        }
+        return world.getBlockAt(t.cx - 12, t.baseY + 1, t.cz + firstFree)
+                .getState() instanceof org.bukkit.block.Container c2 ? c2.getInventory() : null;
     }
 
     /**
      * #11 - Deposita en el granero de la aldea lo que un colono acaba de producir DE VERDAD
-     * (una espiga segada, un tronco talado, un lingote fundido...). Devuelve cuantas unidades
-     * NO cupieron: ese excedente se vende fuera y va al sector comercio.
+     * (una espiga segada, un tronco talado, un lingote fundido...). Cada genero cae en SU barril;
+     * lo que no cupo en ese barril (o si no queda hueco para uno nuevo) se devuelve como excedente,
+     * que se vende fuera y va al sector comercio.
      */
     public int depositInGranary(int vid, Material good, int amount) {
-        final org.bukkit.inventory.Inventory inv = granary(vid);
+        final org.bukkit.inventory.Inventory inv = granaryBarrel(vid, good, true);
         if (inv == null) {
-            return amount;
-        }
-        // TOPE POR PRODUCTO (2 arcas). Sin esto, el oficio mas rapido llenaba el granero entero
-        // y ya no cabia nada mas: el herrero se quedaba sin piedra que fundir y el arquero sin
-        // madera para flechas. Lo que pasa del tope se vende fuera (excedente al comercio).
-        int have = 0;
-        for (final org.bukkit.inventory.ItemStack st : inv.getContents()) {
-            if (st != null && st.getType() == good) {
-                have += st.getAmount();
-            }
-        }
-        if (have >= 128) {
             return amount;
         }
         final var left = inv.addItem(new org.bukkit.inventory.ItemStack(good, amount));
@@ -2031,15 +2055,13 @@ public final class SettlementModule implements Listener {
     /**
      * #11 - Saca del granero UNA unidad del primer material de la lista que haya (la cadena de
      * oficios: el herrero funde lo que el cantero pico, el carnicero ahuma lo que hay). Devuelve
-     * el material consumido, o null si el granero no tenia nada de eso.
+     * el material consumido, o null si el granero no tenia nada de eso. Cada genero vive en su
+     * propio barril, asi que se consulta el barril de cada material.
      */
     public Material takeFromGranary(int vid, Material[] wanted) {
-        final org.bukkit.inventory.Inventory inv = granary(vid);
-        if (inv == null) {
-            return null;
-        }
         for (final Material m : wanted) {
-            if (inv.contains(m)) {
+            final org.bukkit.inventory.Inventory inv = granaryBarrel(vid, m, false);
+            if (inv != null && inv.contains(m)) {
                 inv.removeItem(new org.bukkit.inventory.ItemStack(m, 1));
                 return m;
             }

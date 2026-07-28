@@ -1,6 +1,9 @@
 package com.aetheria.plugin;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 
 import org.bukkit.Bukkit;
@@ -126,11 +129,32 @@ public final class ShopModule implements CommandExecutor {
     }
 
     private void showPrices(Player player) {
-        player.sendMessage("§6=== Mercado de Aetheria (venta) ===");
-        player.sendMessage("§7Trigo §a0.4  §7Hierro §a3  §7Oro §a5  §7Diamante §a12  §7Esmeralda §a10");
-        player.sendMessage("§7Carbon §a0.5  §7Perla ender §a3  §7Vara de blaze §a4  §7Polvora §a1");
+        player.sendMessage("§6=== Mercado de Aetheria (venta) · " + PRICE.size() + " materiales ===");
+        // TODOS los materiales vendibles, de mayor a menor precio (y por nombre a igualdad), 3 por
+        // linea. Se genera del mapa PRICE, asi que nunca se queda corto al anadir generos nuevos.
+        final List<Map.Entry<Material, Double>> items = new ArrayList<>(PRICE.entrySet());
+        items.sort(Comparator.comparingDouble((Map.Entry<Material, Double> e) -> e.getValue())
+                .reversed().thenComparing(e -> e.getKey().name()));
+        final StringBuilder line = new StringBuilder();
+        int n = 0;
+        for (final Map.Entry<Material, Double> e : items) {
+            line.append("§7").append(nice(e.getKey())).append(" §a")
+                    .append(trim(e.getValue())).append("  ");
+            if (++n % 3 == 0) {
+                player.sendMessage(line.toString());
+                line.setLength(0);
+            }
+        }
+        if (line.length() > 0) {
+            player.sendMessage(line.toString());
+        }
         player.sendMessage("§7Vende lo que lleves en la mano con §f/sell §7(o §f/sell all§7).");
         player.sendMessage("§7Mira el valor exacto de un objeto con §f/worth§7.");
+    }
+
+    /** Precio sin decimales sobrantes: 3.0 -> "3", 0.4 -> "0.4". */
+    private static String trim(double v) {
+        return v == Math.floor(v) ? Integer.toString((int) v) : Double.toString(v);
     }
 
     private static String nice(Material m) {

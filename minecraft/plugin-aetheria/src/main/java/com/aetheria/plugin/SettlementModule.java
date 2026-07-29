@@ -211,6 +211,8 @@ public final class SettlementModule implements Listener {
         double pool;
         /** Ciclos seguidos con la hucha en rojo (una mala racha, no una mala noche). */
         int hungry;
+        /** Veces que quiso crecer y no habia solar libre (para avisarlo por el log). */
+        int noRoom;
         /** Cuantas veces ESTA aldea ya se ha escindido (fundo una colonia). Sube su umbral de
          *  escision: cada linaje coloniza segun su propia madurez. */
         int splits;
@@ -1075,9 +1077,17 @@ public final class SettlementModule implements Listener {
                 // no se produce, pero se sigue comiendo) la metia en numeros rojos, asi que la
                 // aldea perdia al vecino que acababa de ganar. Ese era el sube y baja que dejaba
                 // un pueblo grande en tres habitantes.
-                t.pool -= need;
-                t.hungry = 0;
-                newNeighbour(vid, rng);
+                // Se cobra SOLO si el vecino se ha instalado de verdad. Antes se descontaba
+                // antes de intentarlo: si no habia solar libre (terreno, parcela de un jugador,
+                // choque con lo ya construido), la aldea pagaba 480 AET y no llegaba nadie. Asi
+                // se quedaba clavada en 4-6 habitantes por mucho que produjera.
+                if (newNeighbour(vid, rng)) {
+                    t.pool -= need;
+                    t.hungry = 0;
+                } else if (++t.noRoom % 10 == 1) {
+                    plugin.getLogger().warning("[Aetheria] " + t.name + " tiene fondos para otro "
+                            + "vecino pero NO ENCUENTRA SOLAR libre (reintentando).");
+                }
             } else if (t.pool < 0) {
                 // HAMBRE: un solo ciclo en rojo no echa a nadie (una noche cualquiera lo provoca).
                 // Hace falta una mala racha SOSTENIDA, y al que se va se le liquida lo suyo dejando
@@ -1110,20 +1120,20 @@ public final class SettlementModule implements Listener {
     /** Llega un vecino nuevo a ESA aldea (ya no hay tope por aldea: crece sin limite; cuando se
      *  hace grande, una pareja se escinde y funda otra, ver {@link #trySplit}). Nace de una pareja
      *  fertil de la aldea o, si no hay, se instala un forastero. */
-    private void newNeighbour(int vid, java.util.Random rng) {
+    private boolean newNeighbour(int vid, java.util.Random rng) {
         final int enAldea = countInTown(vid);
         if (enAldea < 2) {
             // Los dos primeros de una aldea son de distinto sexo (para que pueda haber familia).
             final String g = enAldea == 1 ? oppositeOfSole(vid) : randGender(rng);
-            growAdult(vid, colonos.size(), freshName(g, rng), randomSurname(rng), g,
-                    20 + rng.nextInt(40), "");
-            return;
-        }
-        if (!bearChild(vid)) {   // sin pareja fertil en la aldea, llega un forastero
-            final String g = randGender(rng);
-            growAdult(vid, colonos.size(), freshName(g, rng), randomSurname(rng), g,
+            return growAdult(vid, colonos.size(), freshName(g, rng), randomSurname(rng), g,
                     20 + rng.nextInt(40), "");
         }
+        if (bearChild(vid)) {
+            return true;
+        }
+        final String g = randGender(rng);   // sin pareja fertil en la aldea, llega un forastero
+        return growAdult(vid, colonos.size(), freshName(g, rng), randomSurname(rng), g,
+                20 + rng.nextInt(40), "");
     }
 
     /** La aldea no da para tantos: se pierde un vecino (primero los ninos, luego alguien al azar). */
@@ -1374,9 +1384,12 @@ public final class SettlementModule implements Listener {
         if (farmRadius >= 7 || ThreadLocalRandom.current().nextInt(100) >= 45) {
             return;
         }
-        farmRadius++;
         final int fx = village.spawnX() + 14;
         final int fz = village.spawnZ() + 22;
+        if (!world.isChunkLoaded(fx >> 4, fz >> 4)) {
+            return;   // zona de cultivos descargada: no forzar la carga del chunk
+        }
+        farmRadius++;
         final int fy = village.baseY();
         final int r = farmRadius;
         int planted = 0;
@@ -1493,7 +1506,7 @@ public final class SettlementModule implements Listener {
         }
     }
 
-    private void growAdult(int vid, int index, String given, String surname, String gender,
+    private boolean growAdult(int vid, int index, String given, String surname, String gender,
             double initialAge, String parent) {
         final Location center = townCenter(vid);
         final String name = surname.isEmpty() ? given : given + " " + surname;   // "Nombre Apellido"
@@ -1516,7 +1529,7 @@ public final class SettlementModule implements Listener {
         } else {
             final int[] spot = findBuildSpot(center, index);
             if (spot == null) {
-                return;   // no encontro sitio libre ni casa en venta; lo reintenta el proximo ciclo
+                return false;   // sin sitio libre ni casa en venta: NO se cobra (se reintenta luego)
             }
             cx = spot[0];
             cz = spot[1];
@@ -1572,6 +1585,7 @@ public final class SettlementModule implements Listener {
                 "§a[Pueblo] §f" + name + " §7(" + oficio(prof) + ") se ha instalado en §f" + pueblo + "§7."));
         plugin.getLogger().info("[Aetheria] Pueblo vivo: +1 colono (" + name + ", " + prof
                 + ") en aldea " + vid + ".");
+        return true;   // vecino instalado de verdad
     }
 
     private boolean compatible(Colono a, Colono b) {
@@ -2097,6 +2111,13 @@ public final class SettlementModule implements Listener {
         for (int vid = 0; vid < towns.size(); vid++) {
             final int v = vid;   // final para la lambda del refresco del ranking
             final Town t = towns.get(vid);
+            if (!plazaLoaded(t)) {
+                // Aldea DESCARGADA (nadie cerca): NO se toca. Antes se refrescaban cada 60 s los
+                // civicos, el granero, el arca, el ranking y hasta se pedia el prestigio al backend,
+                // forzando la carga de su chunk una y otra vez: era la causa principal del lag. Su
+                // vida civica se repinta sola al entrar un jugador (refreshTownVisuals).
+                continue;
+            }
             ensureCivics(vid, t);   // granero (siempre), taberna (>=4 hab), mercado (>=6 hab)
             ensureDonationChest(vid, t);   // arca del pueblo: donde el jugador puede aportar
             applyRanking(vid);             // ranking, panel, tablon y alcalde (con lo ya sabido)

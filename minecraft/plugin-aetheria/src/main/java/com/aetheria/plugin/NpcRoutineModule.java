@@ -563,10 +563,10 @@ public final class NpcRoutineModule {
 
     private Mob spawnWorker(Worker w) {
         // Reutiliza un aldeano ya existente con ese nombre (evita CLONES al recargar chunks o
-        // reiniciar: no volvemos a generar uno si el mundo ya guardo al original).
-        for (final org.bukkit.entity.Entity e : world.getEntities()) {
-            if (e instanceof Villager ex && e.getScoreboardTags().contains(WORKER_TAG)
-                    && ex.customName() != null) {
+        // reiniciar: no volvemos a generar uno si el mundo ya guardo al original). Se recorren SOLO
+        // los aldeanos (getEntitiesByClass), no todas las entidades del mundo, que era O(N) caro.
+        for (final Villager ex : world.getEntitiesByClass(Villager.class)) {
+            if (ex.getScoreboardTags().contains(WORKER_TAG) && ex.customName() != null) {
                 final String pn = PlainTextComponentSerializer.plainText().serialize(ex.customName());
                 if (pn.equals(w.name) || pn.startsWith(w.name + " ")) {
                     convo.registerConversable(ex, w.npcId, w.name);

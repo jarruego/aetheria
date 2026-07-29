@@ -38,10 +38,22 @@ public final class HudModule implements Listener, CommandExecutor {
         this.settlement = settlement;
     }
 
-    /** Refresca el marcador de todos los jugadores cada 5 s. */
+    // Prosperidad GLOBAL cacheada: es la MISMA para todos, asi que se pide UNA vez por ciclo (no
+    // una por jugador cada 5 s, que multiplicaba las llamadas al backend).
+    private volatile String cachedLevel = "estable";
+    private volatile String cachedNext = "estable";
+
+    /** Refresca el marcador de todos los jugadores cada 8 s. */
     public void start() {
-        plugin.getServer().getScheduler().runTaskTimer(plugin,
-                () -> Bukkit.getOnlinePlayers().forEach(this::updateSidebar), 60L, 100L);
+        plugin.getServer().getScheduler().runTaskTimer(plugin, () ->
+            gateway.getProsperity().whenComplete((pros, e) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                if (e == null && pros != null) {
+                    cachedLevel = pros.get("level").getAsString();
+                    cachedNext = pros.has("next_level")
+                            ? pros.get("next_level").getAsString() : cachedLevel;
+                }
+                Bukkit.getOnlinePlayers().forEach(this::updateSidebar);
+            })), 60L, 160L);
     }
 
     @EventHandler
@@ -69,19 +81,15 @@ public final class HudModule implements Listener, CommandExecutor {
     }
 
     private void updateSidebar(Player player) {
+        // Solo el SALDO es por jugador; la prosperidad ya viene cacheada (global, una vez por ciclo).
         gateway.getBalance(player.getUniqueId().toString()).whenComplete((bal, e1) ->
-            gateway.getProsperity().whenComplete((pros, e2) -> Bukkit.getScheduler().runTask(plugin, () -> {
+            Bukkit.getScheduler().runTask(plugin, () -> {
                 if (!player.isOnline()) {
                     return;
                 }
                 final double balance = (e1 == null && bal != null) ? bal.get("balance").getAsDouble() : 0.0;
-                final boolean okPros = e2 == null && pros != null;
-                final String level = okPros ? pros.get("level").getAsString() : "estable";
-                // A donde va la economia del MUNDO (el detalle de progreso se ve por aldea).
-                final String next = okPros && pros.has("next_level")
-                        ? pros.get("next_level").getAsString() : level;
-                render(player, balance, level, next);
-            })));
+                render(player, balance, cachedLevel, cachedNext);
+            }));
     }
 
     private void render(Player player, double balance, String prosperity, String nextLevel) {

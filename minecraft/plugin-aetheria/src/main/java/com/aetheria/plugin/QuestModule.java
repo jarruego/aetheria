@@ -156,8 +156,9 @@ public final class QuestModule implements Listener, CommandExecutor {
     // La RONDA del alguacil: no se queda clavado, pero tampoco se va del pueblo
     // ------------------------------------------------------------------
 
-    /** Hasta donde se aleja del centro de la plaza en su ronda. */
-    private static final double RONDA = 5.0;
+    /** Hasta donde se aleja del centro de la plaza en su ronda: patrulla TODA la aldea (no se queda
+     *  clavado en la plaza), volviendo si se pasa. */
+    private static final double RONDA = 22.0;
     /** A que distancia repara en un jugador que pasa. */
     private static final double SALUDO = 7.0;
     /** Cada cuanto puede volver a ofrecerle faena al MISMO jugador. */

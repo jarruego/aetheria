@@ -38,7 +38,9 @@ public final class NpcRoutineModule {
     };
     private static final double ARRIVE_SQ = 4.0;   // 2 bloques: se considera "ha llegado"
     private static final double SPEED = 1.1;       // multiplicador de velocidad del aldeano
-    private static final long PERIOD_TICKS = 10L;  // reevalua/reemite el camino 2 veces/seg
+    private static final long PERIOD_TICKS = 20L;  // reevalua/reemite el camino 1 vez/seg (antes 2):
+                                                   // menos pathfinding en el servidor y menos
+                                                   // paquetes de movimiento de NPC al cliente
 
     /** Un vecino: su entidad, su persona y sus tres puntos de la jornada. */
     private static final class Worker {
@@ -671,7 +673,7 @@ public final class NpcRoutineModule {
             // Anti-atasco: si esta PRACTICAMENTE congelado varios ciclos (terreno, cerebro del
             // aldeano peleando con el pathfinding...), se le teletransporta al destino y sigue.
             if (w.last != null && at.distanceSquared(w.last) < 0.01) {
-                if (++w.stuck >= 6) {   // ~3 s sin moverse
+                if (++w.stuck >= 3) {   // ~3 s sin moverse (el ciclo ahora es de 1 s)
                     w.entity.teleport(target);
                     w.stuck = 0;
                 }

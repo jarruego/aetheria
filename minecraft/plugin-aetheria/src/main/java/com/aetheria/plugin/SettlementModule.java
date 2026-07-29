@@ -181,6 +181,13 @@ public final class SettlementModule implements Listener {
     private final File childFile;     // ninos.txt: los ninos del pueblo (aun no son adultos)
     // Edificios civicos ya levantados por aldea (granero, taberna, mercado). Clave "vid:tipo".
     private final java.util.Set<String> civicBuilt = new java.util.HashSet<>();
+    /**
+     * Cota a la que se LEVANTO cada civico ("vid:tipo" -> y). Es la unica verdad para sus
+     * carteles, sus barriles y su NPC: recalcularla del terreno en cada ciclo dejaba el granero
+     * con dos carteles a alturas distintas y los barriles perdidos, porque el edificio estaba a
+     * una cota y todo lo demas se buscaba en otra.
+     */
+    private final java.util.Map<String, Integer> civicY = new java.util.HashMap<>();
     // Solares RESERVADOS para edificios civicos aun no construidos (taberna/mercado): las casas
     // los evitan desde el principio, para no tener que pisarlos luego. En memoria (se recalcula).
     private final List<int[]> civicReserved = new ArrayList<>();
@@ -845,6 +852,7 @@ public final class SettlementModule implements Listener {
                 continue;
             }
             o.addProperty("kind", key.substring(sep + 1));
+            o.addProperty("base_y", civicY.getOrDefault(key, 0));
             cv.add(o);
         }
         root.add("civics", cv);
@@ -920,7 +928,11 @@ public final class SettlementModule implements Listener {
             civicBuilt.clear();
             for (final com.google.gson.JsonElement el : st.getAsJsonArray("civics")) {
                 final com.google.gson.JsonObject o = el.getAsJsonObject();
-                civicBuilt.add(o.get("vid").getAsInt() + ":" + o.get("kind").getAsString());
+                final String k = o.get("vid").getAsInt() + ":" + o.get("kind").getAsString();
+                civicBuilt.add(k);
+                if (o.has("base_y") && o.get("base_y").getAsInt() != 0) {
+                    civicY.put(k, o.get("base_y").getAsInt());
+                }
             }
             final List<int[]> boxes = new ArrayList<>();
             for (final com.google.gson.JsonElement el : st.getAsJsonArray("regions")) {
@@ -968,12 +980,12 @@ public final class SettlementModule implements Listener {
     }
 
     private static String profKey(Villager.Profession p) {
-        return p.getKey().getKey();
+        return Professions.key(p);   // la API de aldeanos vive en Professions (ver esa clase)
     }
 
     /** True si ese oficio es el de TABERNERO (se queda en la barra, no pasea). */
     private static boolean isKeeper(String key) {
-        return profKey(TAVERN_KEEPER).equals(key);
+        return Professions.isKeeper(key);
     }
 
     /** El oficio que MENOS tiene la aldea, para que se equilibre (no 6 del mismo y ninguno de otro). */
@@ -1008,12 +1020,7 @@ public final class SettlementModule implements Listener {
     }
 
     private static Villager.Profession profFromKey(String key) {
-        for (final Villager.Profession p : PROFS) {
-            if (p.getKey().getKey().equals(key)) {
-                return p;
-            }
-        }
-        return Villager.Profession.FARMER;
+        return Professions.bukkit(key);
     }
 
     /** Un nombre del sexo dado que NO este ya en uso por otro colono o nino. */
@@ -2464,6 +2471,12 @@ public final class SettlementModule implements Listener {
         board.teleport(loc);
     }
 
+    /** Cota real de un edificio civico ya levantado (o la de la plaza si aun no existe). */
+    private int civicYOf(int vid, String type) {
+        final Town t = towns.get(Math.max(0, Math.min(vid, towns.size() - 1)));
+        return civicY.getOrDefault(vid + ":" + type, t.baseY);
+    }
+
     /** Posicion del ARCA del pueblo (fondo comun) en la plaza de una aldea. */
     public int[] donationChest(int vid) {
         if (vid < 0 || vid >= towns.size()) {
@@ -2582,18 +2595,64 @@ public final class SettlementModule implements Listener {
             saveCivicBuildings();
         }
         if (civicBuilt.contains(vid + ":botica") && trade != null) {
-            trade.ensureHealer(new Location(world, t.cx + 3 + 0.5, t.baseY + 1, t.cz + bdz - 1 + 0.5),
-                    t.name, vid);
+            trade.ensureHealer(new Location(world, t.cx + 3 + 0.5,
+                    civicYOf(vid, "botica") + 1, t.cz + bdz - 1 + 0.5), t.name, vid);
         }
         // El mercader (entidad) puede desaparecer entre reinicios: se re-asegura si hay mercado.
         if (civicBuilt.contains(vid + ":mercado")) {
-            market.ensureTrader(new Location(world, t.cx - 3 + 0.5, t.baseY + 1, t.cz + 12 + 0.5),
-                    t.name);
+            market.ensureTrader(new Location(world, t.cx - 3 + 0.5,
+                    civicYOf(vid, "mercado") + 1, t.cz + 12 + 0.5), t.name);
         }
         // El PREGONERO reparte los encargos del pueblo desde el primer dia (junto al arca).
         if (quests != null) {
             quests.ensureCrier(new Location(world, t.cx + 3.5, t.baseY + 1, t.cz + 2.5), t.name, vid);
         }
+    }
+
+    /**
+     * RECONSTRUYE los edificios civicos de la aldea donde esta el jugador (granero, taberna,
+     * mercado, botica), tal cual estaban.
+     *
+     * <p>Existe porque un fallo del trazador de caminos llego a comerse paredes de la taberna y
+     * del mercado: el desbroce del camino quitaba lo "natural" y las esquinas de esos edificios
+     * son TRONCOS, que cuentan como natural para poder talar arboles. Ya no puede pasar (los
+     * caminos consultan el registro de construcciones antes de tocar nada), pero lo que se rompio
+     * sigue roto, y reconstruir a mano un mercado no es plan.
+     *
+     * <p>Los constructores son idempotentes: sobrescriben las mismas posiciones, asi que esto
+     * repara sin duplicar nada. Devuelve cuantos edificios se han rehecho, o -1 si no estas en
+     * ninguna aldea.
+     */
+    public int repairCivics(Player p) {
+        final int vid = townAt(p);
+        if (vid < 0) {
+            return -1;
+        }
+        final Town t = towns.get(vid);
+        int hechos = 0;
+        village.setRepairing(true);   // rehacer el edificio, sin volver a mover tierra
+        try {
+            if (civicBuilt.contains(vid + ":granero")) {
+                village.buildGranary(t.cx - 12, t.cz, civicYOf(vid, "granero"), t.name);
+                hechos++;
+            }
+            if (civicBuilt.contains(vid + ":taberna")) {
+                village.buildTavern(t.cx + 9, t.cz, civicYOf(vid, "taberna"), t.name);
+                hechos++;
+            }
+            if (civicBuilt.contains(vid + ":mercado")) {
+                village.buildMarket(t.cx - 3, t.cz + 12, civicYOf(vid, "mercado"), t.name);
+                hechos++;
+            }
+            if (civicBuilt.contains(vid + ":botica")) {
+                village.buildApothecary(t.cx + 3, t.cz + boticaDz(vid),
+                        civicYOf(vid, "botica"), t.name);
+                hechos++;
+            }
+        } finally {
+            village.setRepairing(false);
+        }
+        return hechos;
     }
 
     /** Engancha las misiones (dependencia opcional; se inyecta despues para evitar el ciclo). */
@@ -2623,9 +2682,40 @@ public final class SettlementModule implements Listener {
         return vid == 0 ? -13 : -18;
     }
 
-    private void ensureCivic(int vid, String type, int cx, int cz, int baseY, int half, int minPop,
-            String msg) {
+    /**
+     * Cota a la que se apoya un edificio civico: la del TERRENO donde cae, no la de la plaza.
+     *
+     * <p>Los civicos van en puntos fijos respecto a la plaza, y antes se construian a la altura de
+     * esta. En cuanto el terreno bajaba un poco (Valverde), el cimiento rellenaba con tierra hasta
+     * ocho bloques y el edificio quedaba sobre un pedestal. Ahora se apoya en la MEDIANA del suelo
+     * de su huella —mitad se talla, mitad se rellena, lo minimo en ambos casos— y solo se acerca a
+     * la plaza si la diferencia es grande, para que el pueblo no se descuelgue por la ladera.
+     */
+    private int civicBaseY(int cx, int cz, int half, int plazaY) {
+        final java.util.List<Integer> alturas = new ArrayList<>();
+        for (int dx = -half; dx <= half; dx += 2) {
+            for (int dz = -half; dz <= half; dz += 2) {
+                alturas.add(groundY(cx + dx, cz + dz));
+            }
+        }
+        if (alturas.isEmpty()) {
+            return plazaY;
+        }
+        java.util.Collections.sort(alturas);
+        final int mediana = alturas.get(alturas.size() / 2);
+        // Nunca mas de 3 bloques de desnivel respecto a la plaza: un pueblo es un pueblo, no una
+        // ladera con edificios sueltos.
+        return Math.max(plazaY - 3, Math.min(plazaY + 3, mediana));
+    }
+
+    private void ensureCivic(int vid, String type, int cx, int cz, int baseYPlaza, int half,
+            int minPop, String msg) {
         final String key = vid + ":" + type;
+        // Si ya existe, se respeta la cota con la que se LEVANTO (no se recalcula: el terreno
+        // cambia y el edificio no). Si es nuevo, se calcula ahora y se recuerda.
+        final int baseY = civicBuilt.contains(key)
+                ? civicY.getOrDefault(key, baseYPlaza)
+                : civicBaseY(cx, cz, half, baseYPlaza);
         if (civicBuilt.contains(key)) {
             village.civicSign(type, cx, cz, baseY, t(vid));   // mantenimiento: rotulo y ajustes
             return;
@@ -2653,6 +2743,7 @@ public final class SettlementModule implements Listener {
                 cx + half + 1, baseY + 16, cz + half + 1});
         placed.add(new int[] {cx, cz});
         civicBuilt.add(key);
+        civicY.put(key, baseY);
         saveCivicBuildings();
         if ("taberna".equals(type)) {
             routines.setTavern(townCenter(vid));   // desde ya, la vida social se muda a la taberna
@@ -2676,7 +2767,20 @@ public final class SettlementModule implements Listener {
         try (BufferedReader r = new BufferedReader(new FileReader(civicFile2))) {
             String line;
             while ((line = r.readLine()) != null) {
-                if (!line.isBlank()) {
+                if (line.isBlank()) {
+                    continue;
+                }
+                // "vid:tipo:cota" (formato nuevo) o "vid:tipo" (el de antes, sin cota)
+                final String[] f = line.trim().split(":");
+                if (f.length >= 3) {
+                    final String k = f[0] + ":" + f[1];
+                    civicBuilt.add(k);
+                    try {
+                        civicY.put(k, Integer.parseInt(f[2]));
+                    } catch (NumberFormatException ignored) {
+                        // sin cota: se usara la de la plaza
+                    }
+                } else {
                     civicBuilt.add(line.trim());
                 }
             }
@@ -2725,12 +2829,13 @@ public final class SettlementModule implements Listener {
         final Town t = towns.get(vid);
         final int gx = t.cx - 12;
         final int gz = t.cz;
+        final int gy = civicYOf(vid, "granero");   // la cota con la que se levanto el granero
         final org.bukkit.NamespacedKey key = new org.bukkit.NamespacedKey(plugin, GRANARY_KEY);
         final String tag = good.name();
         int firstFree = -1;
         for (int i = 0; i < GRANARY_BARRELS.length; i++) {
             final int[] o = GRANARY_BARRELS[i];
-            final org.bukkit.block.Block b = world.getBlockAt(gx + o[0], t.baseY + o[1], gz + o[2]);
+            final org.bukkit.block.Block b = world.getBlockAt(gx + o[0], gy + o[1], gz + o[2]);
             if (b.getType() != Material.BARREL) {
                 continue;   // hueco de la pared sin barril (griefeado): no plantamos fuera de sitio
             }
@@ -2749,14 +2854,14 @@ public final class SettlementModule implements Listener {
             return null;   // todos los barriles del granero ya tienen dueno: el resto se vende fuera
         }
         final int[] o = GRANARY_BARRELS[firstFree];
-        final org.bukkit.block.Block b = world.getBlockAt(gx + o[0], t.baseY + o[1], gz + o[2]);
+        final org.bukkit.block.Block b = world.getBlockAt(gx + o[0], gy + o[1], gz + o[2]);
         if (b.getState() instanceof org.bukkit.block.Container c) {
             c.getPersistentDataContainer()
                     .set(key, org.bukkit.persistence.PersistentDataType.STRING, tag);
             c.customName(net.kyori.adventure.text.Component.text("§6" + granaryLabel(good)));
             c.update();
         }
-        return world.getBlockAt(gx + o[0], t.baseY + o[1], gz + o[2])
+        return world.getBlockAt(gx + o[0], gy + o[1], gz + o[2])
                 .getState() instanceof org.bukkit.block.Container c2 ? c2.getInventory() : null;
     }
 
@@ -3387,8 +3492,8 @@ public final class SettlementModule implements Listener {
         roads.pathTo(cx, cz, fy, half, plaza);
     }
 
-    private void buildRoad(int x0, int z0, int x1, int z1) {
-        roads.buildRoad(x0, z0, x1, z1);
+    private void buildRoad(int x0, int z0, int x1, int z1, String nameStart, String nameEnd) {
+        roads.buildRoad(x0, z0, x1, z1, nameStart, nameEnd);
     }
 
     /** Edad de muerte: 65..110, concentrada en 80-90 (media de dos uniformes, pico ~87). */
@@ -3425,13 +3530,28 @@ public final class SettlementModule implements Listener {
      *  tierra, piedra y sus variantes, grava, arena, arcilla, nieve y minerales. NO incluye
      *  madera/tablon/ladrillo/cristal (eso es la casa) para que no se pueda vandalizar. */
     private static boolean terrain(Material m) {
-        if (m.name().endsWith("_ORE")) {
+        // MATERIAL EN BRUTO: todo lo que el mundo genera tal cual (tierra en cualquiera de sus
+        // formas, arena, roca madre, grava, mineral y sus bloques en bruto, hielo, barro...). Es
+        // recolectable aunque este dentro del pueblo: se protege lo CONSTRUIDO, no el suelo.
+        // Se mira por nombre y por etiqueta para no dejarse variantes al cambiar de version.
+        final String n = m.name();
+        if (n.endsWith("_ORE") || n.startsWith("RAW_") || n.endsWith("_DIRT") || n.endsWith("_SAND")
+                || n.endsWith("_TERRACOTTA") || n.startsWith("DEEPSLATE")) {
+            return true;
+        }
+        if (Tag.DIRT.isTagged(m) || Tag.SAND.isTagged(m) || Tag.BASE_STONE_OVERWORLD.isTagged(m)) {
             return true;
         }
         return switch (m) {
             case DIRT, GRASS_BLOCK, COARSE_DIRT, PODZOL, ROOTED_DIRT, MUD, DIRT_PATH, MYCELIUM,
-                 STONE, GRANITE, DIORITE, ANDESITE, DEEPSLATE, TUFF, CALCITE, GRAVEL, CLAY,
-                 SAND, RED_SAND, SANDSTONE, RED_SANDSTONE, SNOW, SNOW_BLOCK, MOSS_BLOCK -> true;
+                 FARMLAND, CLAY, TERRACOTTA,
+                 STONE, GRANITE, DIORITE, ANDESITE, DEEPSLATE, COBBLED_DEEPSLATE, TUFF, CALCITE,
+                 BASALT, SMOOTH_BASALT, BLACKSTONE, DRIPSTONE_BLOCK, POINTED_DRIPSTONE,
+                 MAGMA_BLOCK, OBSIDIAN, AMETHYST_BLOCK, BUDDING_AMETHYST,
+                 GRAVEL, SUSPICIOUS_GRAVEL, SUSPICIOUS_SAND,
+                 SAND, RED_SAND, SANDSTONE, RED_SANDSTONE,
+                 SNOW, SNOW_BLOCK, POWDER_SNOW, ICE, PACKED_ICE, BLUE_ICE, FROSTED_ICE,
+                 MOSS_BLOCK, MOSS_CARPET, SCULK -> true;
             default -> false;
         };
     }
@@ -3544,7 +3664,7 @@ public final class SettlementModule implements Listener {
             return townCenter(vid);
         }
         final Town t = towns.get(vid);
-        return new Location(world, t.cx + 9 + 2 + 0.5, t.baseY + 1, t.cz + 0.5);
+        return new Location(world, t.cx + 9 + 2 + 0.5, civicYOf(vid, "taberna") + 1, t.cz + 0.5);
     }
 
     private Location townCenter(int vid) {
@@ -3762,8 +3882,10 @@ public final class SettlementModule implements Listener {
         final int newVid = towns.size() - 1;
         saveTowns();
         final Town from = nearestTown(plaza.getBlockX(), plaza.getBlockZ(), newVid);
-        if (from != null) {   // CARRETERA desde la aldea mas cercana: las aldeas quedan conectadas
-            buildRoad(from.cx, from.cz, plaza.getBlockX(), plaza.getBlockZ());
+        if (from != null) {   // CARRETERA desde la aldea mas cercana: las aldeas quedan conectadas,
+            // con un cartel "Camino a <aldea>" en cada extremo.
+            buildRoad(from.cx, from.cz, plaza.getBlockX(), plaza.getBlockZ(),
+                    from.name, towns.get(newVid).name);
         }
         return newVid;
     }
@@ -3865,18 +3987,56 @@ public final class SettlementModule implements Listener {
         return land;
     }
 
-    /** El primer nombre de aldea libre de la lista curada; si se agotan, "Aldea N". */
+    /**
+     * Nombres de aldea PENDIENTES de usar, inventados por la IA. La lista curada de
+     * {@link #TOWN_NAMES} pasa a ser la red de seguridad: con ~24 nombres fijos, al cabo de unas
+     * fundaciones se repetian siempre los mismos y se acababa en "Aldea 7".
+     */
+    private final java.util.ArrayDeque<String> nameReserve = new java.util.ArrayDeque<>();
+    private boolean namesPending;
+
+    /** Un nombre de aldea libre: primero de la reserva de la IA, si no, de la lista curada. */
     private String pickTownName() {
         final java.util.Set<String> used = new java.util.HashSet<>();
         for (final Town tw : towns) {
             used.add(tw.name);
         }
+        while (!nameReserve.isEmpty()) {
+            final String n = nameReserve.poll();
+            if (!used.contains(n)) {
+                refillNames();
+                return n;
+            }
+        }
+        refillNames();
         for (final String n : TOWN_NAMES) {
             if (!used.contains(n)) {
                 return n;
             }
         }
         return "Aldea " + (towns.size() + 1);
+    }
+
+    /** Rellena la reserva de nombres en 2o plano cuando va quedando corta. */
+    private void refillNames() {
+        if (namesPending || nameReserve.size() >= 5) {
+            return;
+        }
+        namesPending = true;
+        gateway.villageNames(12).whenComplete((arr, err) -> Bukkit.getScheduler().runTask(plugin,
+                () -> {
+                    namesPending = false;
+                    if (err != null || arr == null) {
+                        return;
+                    }
+                    for (final com.google.gson.JsonElement el : arr) {
+                        final String n = el.getAsString();
+                        if (n != null && n.length() >= 4 && n.length() <= 20
+                                && !nameReserve.contains(n)) {
+                            nameReserve.add(n);
+                        }
+                    }
+                }));
     }
 
     /** La aldea ya existente mas cercana a un punto (ignorando la de indice `skip`). */

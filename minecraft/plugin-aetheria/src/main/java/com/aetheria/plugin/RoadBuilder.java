@@ -106,6 +106,13 @@ public final class RoadBuilder {
                 continue;   // parcela de un jugador: el sendero no entra
             }
             final int ny = Math.floorDiv(prof[i], 2) - 1;
+            if (plugin.buildRegistry().containsColumn(px, pz) || isBuilt(px, pz, ny)) {
+                // LO CONSTRUIDO NO SE TOCA, ni lo nuestro ni lo que genera Minecraft. Un sendero
+                // llego a pavimentar el interior de una casa (dejando dentro al jugador) y el
+                // desbroce se comio las esquinas de la taberna: son TRONCOS, y un tronco cuenta
+                // como "natural" para poder talar arboles... salvo cuando es una pared.
+                continue;
+            }
             final boolean slab = Math.floorMod(prof[i], 2) == 1;
             final Material at = world.getBlockAt(px, ny, pz).getType();
             if (!at.isAir() && !natural(at)) {
@@ -117,6 +124,7 @@ public final class RoadBuilder {
                     world.getBlockAt(px, y, pz).setType(Material.AIR, false);
                 }
             }
+            stabilizeCeiling(px, pz, ny + 4);
             for (int y = ny; y >= ny - 6; y--) {       // y no deja el sendero en el aire
                 final Block b = world.getBlockAt(px, y, pz);
                 if (b.getType().isAir() || b.isLiquid()) {
@@ -125,7 +133,10 @@ public final class RoadBuilder {
                     break;
                 }
             }
-            world.getBlockAt(px, ny, pz).setType(slab ? Material.GRAVEL : Material.DIRT_PATH, false);
+            // Nada de GRAVA en el firme: es un bloque que CAE, y en cuanto algo le quita el apoyo
+            // (una excavacion al lado, un pilon retirado) se desmorona sobre el camino.
+            world.getBlockAt(px, ny, pz).setType(slab ? Material.COBBLESTONE : Material.DIRT_PATH,
+                    false);
             if (slab) {
                 world.getBlockAt(px, ny + 1, pz).setType(Material.COBBLESTONE_SLAB, false);
             }
@@ -142,21 +153,47 @@ public final class RoadBuilder {
      * cargar de golpe 300 casillas —muchas en trozos de mundo aun sin generar— congelaria el
      * servidor. Asi la carretera "se va abriendo" sin que se note.
      */
-    public void buildRoad(int x0, int z0, int x1, int z1) {
+    public void buildRoad(int x0, int z0, int x1, int z1, String nameStart, String nameEnd) {
+        // TRAZADO CON ESQUIVE. Se avanza hacia la otra aldea, pero si la siguiente casilla cae
+        // sobre OBRA (una casa nuestra, un edificio civico o una aldea que genero Minecraft), el
+        // camino se desplaza de lado y la rodea. Si no consigue rodearla en unas cuantas casillas,
+        // se abandona el trazado: mejor quedarse sin carretera que abrirla a traves de una casa.
         final List<int[]> tiles = new ArrayList<>();
         int x = x0;
         int z = z0;
+        int lateral = 0;         // casillas seguidas esquivando
+        int ladoEsquive = 0;     // por que lado se rodea (se mantiene mientras dure el rodeo)
         for (int guard = 0; (x != x1 || z != z1) && guard < 900; guard++) {
             final int dx = x1 - x;
             final int dz = z1 - z;
-            if (Math.abs(dx) >= Math.abs(dz)) {
-                x += Integer.signum(dx);
-                tiles.add(new int[] {x, z, 0, 1});   // avanza en X -> el ancho va en Z
+            final boolean porX = Math.abs(dx) >= Math.abs(dz);
+            int nx = x + (porX ? Integer.signum(dx) : 0);
+            int nz = z + (porX ? 0 : Integer.signum(dz));
+            if (blocked(nx, nz)) {
+                if (ladoEsquive == 0) {   // empieza el rodeo: se elige el lado que esta libre
+                    final int a = porX ? z + 1 : x + 1;
+                    ladoEsquive = blocked(porX ? x : a, porX ? a : z) ? -1 : 1;
+                }
+                final int sx = x + (porX ? 0 : ladoEsquive);
+                final int sz = z + (porX ? ladoEsquive : 0);
+                if (lateral >= 16 || blocked(sx, sz)) {
+                    plugin.getLogger().warning("[Aetheria] Carretera cancelada: no hay por donde "
+                            + "pasar sin meterse en una construccion (" + x + "," + z + ").");
+                    return;   // antes que atravesar una casa, no hay carretera
+                }
+                nx = sx;
+                nz = sz;
+                lateral++;
             } else {
-                z += Integer.signum(dz);
-                tiles.add(new int[] {x, z, 1, 0});   // avanza en Z -> el ancho va en X
+                lateral = 0;
+                ladoEsquive = 0;
             }
+            // El ancho va perpendicular a como se ha avanzado en ESTA casilla.
+            tiles.add(new int[] {nx, nz, nx != x ? 0 : 1, nx != x ? 1 : 0});
+            x = nx;
+            z = nz;
         }
+
         // DOS FASES, las dos por lotes para no congelar el servidor:
         //   1) SE MIDE el terreno de punta a punta (y el agua, si la hay).
         //   2) SE PROYECTA la rasante entre la cota de UNA aldea y la de la OTRA, con pendiente
@@ -201,8 +238,58 @@ public final class RoadBuilder {
             }
             if (state[1] >= n) {
                 Bukkit.getScheduler().cancelTask(task[0]);
+                // Un cartel en CADA extremo del camino (donde empieza el pavimento, a 15 bloques de
+                // cada aldea), apuntando a la aldea de destino: "Camino a <aldea>".
+                placeRoadSign(tiles, prof, x0, z0, nameEnd);    // saliendo del origen -> a la nueva
+                placeRoadSign(tiles, prof, x1, z1, nameStart);  // saliendo de la nueva -> al origen
             }
         }, 1L, 1L).getTaskId();
+    }
+
+    /** Cartel "Camino a &lt;dest&gt;" en el extremo del camino mas cercano a (tx,tz): sobre un poste en
+     *  el arcen, a la altura de la rasante y mirando hacia la aldea. */
+    private void placeRoadSign(List<int[]> tiles, int[] prof, int tx, int tz, String dest) {
+        if (dest == null || dest.isBlank()) {
+            return;
+        }
+        int best = -1;
+        double bestD = Double.MAX_VALUE;
+        for (int i = 0; i < tiles.size(); i++) {
+            final int[] t = tiles.get(i);
+            final double d = Math.hypot(t[0] - tx, t[1] - tz);
+            if (d >= 15 && d < bestD) {   // el borde pavimentado (la carretera para a 15 del centro)
+                bestD = d;
+                best = i;
+            }
+        }
+        if (best < 0) {
+            return;
+        }
+        final int[] t = tiles.get(best);
+        final int ny = Math.floorDiv(prof[best], 2) - 1;
+        final int sx = t[0] + t[2] * 2;   // arcen (carril exterior), nunca el centro del camino
+        final int sz = t[1] + t[3] * 2;
+        world.getBlockAt(sx, ny + 1, sz).setType(Material.OAK_FENCE, false);
+        final Block sb = world.getBlockAt(sx, ny + 2, sz);
+        sb.setType(Material.OAK_SIGN, false);
+        if (sb.getBlockData() instanceof org.bukkit.block.data.type.Sign sd) {
+            sd.setRotation(cardinalToward(sx, sz, tx, tz));
+            sb.setBlockData(sd, false);
+        }
+        if (sb.getState() instanceof org.bukkit.block.Sign sign) {
+            final org.bukkit.block.sign.SignSide front =
+                    sign.getSide(org.bukkit.block.sign.Side.FRONT);
+            front.line(1, net.kyori.adventure.text.Component.text("Camino a"));
+            front.line(2, net.kyori.adventure.text.Component.text("§6" + dest));
+            sign.update();
+        }
+    }
+
+    private static org.bukkit.block.BlockFace cardinalToward(int fx, int fz, int tx, int tz) {
+        if (Math.abs(tx - fx) >= Math.abs(tz - fz)) {
+            return tx >= fx ? org.bukkit.block.BlockFace.EAST : org.bukkit.block.BlockFace.WEST;
+        }
+        return tz >= fz ? org.bukkit.block.BlockFace.SOUTH : org.bukkit.block.BlockFace.NORTH;
     }
 
     /**
@@ -295,6 +382,9 @@ public final class RoadBuilder {
             if (claims != null && claims.isClaimed(px, pz)) {
                 continue;   // ni un bloque dentro de la parcela de alguien
             }
+            if (plugin.buildRegistry().containsColumn(px, pz) || isBuilt(px, pz, ny)) {
+                continue;   // obra de alguien (nuestra o de Minecraft): no se toca
+            }
             // MANDA QUIEN LLEGO PRIMERO. Cada casilla pinta un cuadro de 4x4 y los cuadros se
             // solapan; si una columna se repintaba desde una casilla posterior (a otra cota),
             // aparecian escalones absurdos justo donde la calzada gira. Pintada una vez, se
@@ -312,6 +402,7 @@ public final class RoadBuilder {
                     b.setType(Material.AIR, false);
                 }
             }
+            stabilizeCeiling(px, pz, ny + 5);   // que el techo no se derrumbe sobre la calzada
             if (water) {   // PUENTE: tablero de madera, barandilla en los arcenes y pilones de piedra
                 world.getBlockAt(px, ny, pz).setType(Material.OAK_PLANKS, false);
                 if (edge) {
@@ -357,13 +448,32 @@ public final class RoadBuilder {
         final boolean tunnel = !water
                 && !world.getBlockAt(x, ny + 5, z).getType().isAir()
                 && world.getBlockAt(x, ny + 5, z).getType().isSolid();
-        if (tunnel && index % 6 == 0) {   // farol del tunel en el lateral, no en medio del paso
-            world.getBlockAt(x + perpX * 2, ny + 3, z + perpZ * 2).setType(Material.LANTERN, false);
+        if (tunnel && index % 6 == 0) {
+            // TUNEL: el farol va COLGADO DEL TECHO y pegado a la pared lateral, alternando lado.
+            // Antes se ponia suelto a media altura: sin nada encima ni debajo, se caia al primer
+            // toque; y a la altura de la cabeza, estorbaba el paso.
+            final int s = (index / 6) % 2 == 0 ? 2 : -1;
+            final int lx = x + perpX * s;
+            final int lz = z + perpZ * s;
+            if (world.getBlockAt(lx, ny + 5, lz).getType().isSolid()) {
+                final Block b = world.getBlockAt(lx, ny + 4, lz);
+                b.setType(Material.LANTERN, false);
+                if (b.getBlockData() instanceof org.bukkit.block.data.type.Lantern lan) {
+                    lan.setHanging(true);   // colgado de la roca, no apoyado en el aire
+                    b.setBlockData(lan, false);
+                }
+            }
         }
         if (index % 24 == 12 && !tunnel) {
-            // Farola SIEMPRE al borde (nunca en el centro): en el arcen, alternando lado y lado.
-            // El poste va en el carril exterior (2 o -1), que tiene calzada debajo (no flota).
-            final int s = (index / 24) % 2 == 0 ? 2 : -1;
+            // Farola FUERA de la calzada, alternando lado y lado: nunca en el firme por el que se
+            // anda (ni en el centro ni en el arcen), para no estrechar el paso. Si justo ahi no hay
+            // suelo donde apoyarla (terraplen, cuneta), se arrima al arcen antes que quedar flotando.
+            final int fuera = (index / 24) % 2 == 0 ? 3 : -2;
+            final int arcen = (index / 24) % 2 == 0 ? 2 : -1;
+            int s = fuera;
+            if (!world.getBlockAt(x + perpX * fuera, ny, z + perpZ * fuera).getType().isSolid()) {
+                s = arcen;
+            }
             final int lx = x + perpX * s;
             final int lz = z + perpZ * s;
             world.getBlockAt(lx, ny + 1, lz).setType(Material.OAK_FENCE, false);
@@ -372,6 +482,95 @@ public final class RoadBuilder {
     }
 
 
+
+    /**
+     * ASEGURA EL TECHO sobre la calzada recien abierta.
+     *
+     * <p>Al abrir una trinchera o un tunel, la grava y la arena que quedan justo encima <b>se
+     * caen</b> —son bloques con gravedad— y acaban tapando el camino que se acaba de trazar. Aqui
+     * se convierten en su equivalente solido (grava a piedra, arena a arenisca), asi que el techo
+     * aguanta y el camino sigue despejado. Solo se tocan los bloques que de verdad caerian: el
+     * resto del terreno se queda como estaba.
+     */
+    private void stabilizeCeiling(int x, int z, int fromY) {
+        for (int y = fromY; y < fromY + 6; y++) {
+            final Block b = world.getBlockAt(x, y, z);
+            final Material m = b.getType();
+            if (!falls(m)) {
+                return;   // el primer bloque que se sostiene solo ya sujeta lo de arriba
+            }
+            b.setType(stable(m), false);
+        }
+    }
+
+    /** ¿Es un bloque que se desploma al quedarse sin apoyo? */
+    private static boolean falls(Material m) {
+        return m == Material.GRAVEL || m == Material.SUSPICIOUS_GRAVEL
+                || m == Material.SUSPICIOUS_SAND || Tag.SAND.isTagged(m)
+                || m.name().endsWith("_CONCRETE_POWDER");
+    }
+
+    /** Su equivalente que NO cae, del mismo aire (grava a piedra, arena a arenisca). */
+    private static Material stable(Material m) {
+        final String n = m.name();
+        if (n.contains("RED_SAND")) {
+            return Material.RED_SANDSTONE;
+        }
+        if (Tag.SAND.isTagged(m) || m == Material.SUSPICIOUS_SAND) {
+            return Material.SANDSTONE;
+        }
+        return Material.STONE;
+    }
+
+    /** ¿Esta casilla es intransitable para un camino (obra de alguien o parcela de un jugador)? */
+    private boolean blocked(int x, int z) {
+        if (plugin.buildRegistry().containsColumn(x, z)) {
+            return true;
+        }
+        if (claims != null && claims.isClaimed(x, z)) {
+            return true;
+        }
+        return isBuilt(x, z, groundY(x, z));
+    }
+
+    /**
+     * ¿Hay OBRA en esta columna? Vale para lo nuestro y para lo que genera Minecraft (una aldea
+     * vanilla, un puesto de saqueadores, un templo...).
+     *
+     * <p>Hace falta mirar la columna entera y no solo el bloque de la calzada porque el desbroce
+     * quita lo "natural", y un TRONCO cuenta como natural para poder talar arboles: junto a unos
+     * tablones, ese tronco es la esquina de una casa. Regla: si en la columna hay algo que solo
+     * puede haber puesto alguien (tablones, puerta, cristal, escalera, cama, farol, mesa...), esa
+     * columna NO SE TOCA, ni para pavimentar ni para desbrozar.
+     */
+    private boolean isBuilt(int x, int z, int aroundY) {
+        for (int y = aroundY - 1; y <= aroundY + 6; y++) {
+            if (manMade(world.getBlockAt(x, y, z).getType())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Materiales que NO salen de la generacion natural del terreno: los ha puesto alguien. */
+    private static boolean manMade(Material m) {
+        if (Tag.PLANKS.isTagged(m) || Tag.DOORS.isTagged(m) || Tag.BEDS.isTagged(m)
+                || Tag.WOOL.isTagged(m) || Tag.WOODEN_STAIRS.isTagged(m)
+                || Tag.WOODEN_SLABS.isTagged(m) || Tag.WOODEN_TRAPDOORS.isTagged(m)
+                || Tag.FENCE_GATES.isTagged(m) || Tag.WOODEN_FENCES.isTagged(m)
+                || Tag.ALL_SIGNS.isTagged(m)) {
+            return true;
+        }
+        final String n = m.name();
+        return n.contains("GLASS") || n.endsWith("_BRICKS") || n.contains("BOOKSHELF")
+                || n.contains("CRAFTING_TABLE") || n.contains("FURNACE") || n.contains("SMOKER")
+                || n.contains("BARREL") || n.contains("CHEST") || n.contains("LOOM")
+                || n.contains("STONECUTTER") || n.contains("COMPOSTER") || n.contains("CAULDRON")
+                || n.contains("BELL") || n.contains("CAMPFIRE") || n.contains("ANVIL")
+                || n.contains("LECTERN") || n.contains("GRINDSTONE") || n.contains("SCAFFOLDING")
+                || n.contains("BREWING_STAND") || n.contains("HAY_BLOCK") || n.contains("CARPET")
+                || n.contains("TERRACOTTA") && n.contains("GLAZED");
+    }
 
     /** Altura del SUELO real (ignora hojas, troncos y plantas), escaneando hacia abajo. */
     private int groundY(int x, int z) {

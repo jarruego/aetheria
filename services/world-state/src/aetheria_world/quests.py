@@ -24,7 +24,7 @@ from aetheria_world.config import settings
 
 # Cuenta del sistema (banco): de aqui sale la recompensa, como en /internal/reward.
 _BANCO = uuid.UUID("00000000-0000-0000-0000-000000000000")
-_STARTING_BALANCE = decimal.Decimal("100.00")
+_STARTING_BALANCE = decimal.Decimal("10000.00")
 
 # BAREMO: techo de recompensa por tipo de mision (aet, prestigio). Es la autoridad:
 # lo que pide el plugin se recorta a esto. Las SOCIALES valen tanto prestigio como las

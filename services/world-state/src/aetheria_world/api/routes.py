@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException
 
 from aetheria_world import quests as q
+from aetheria_world import village_state as vstate
 from aetheria_world.config import settings
 from aetheria_world.db import is_ready, pool
 from aetheria_world.models import (
@@ -268,7 +269,7 @@ async def put_summary(body: SummaryUpsert) -> dict:
 
 # --- Economia (Fase 6): cuentas, transferencias y cobro de servicios ---
 
-_STARTING_BALANCE = decimal.Decimal("100.00")
+_STARTING_BALANCE = decimal.Decimal("10000.00")
 _BANCO = uuid.UUID("00000000-0000-0000-0000-000000000000")  # cuenta del sistema (sumidero)
 
 
@@ -680,6 +681,41 @@ async def player_reputation(player_uuid: str) -> dict:
     _require_db()
     async with pool().acquire() as conn:
         return {"villages": await q.player_reputation(conn, player_uuid)}
+
+
+# --- El PUEBLO en la base de datos (0010): aldeas, colonos, edificios y su historia ---
+
+@router.get("/village-state")
+async def village_state_load(world: str = "main") -> dict:
+    """Estado completo del pueblo. Lo pide el plugin al arrancar (antes lo leia de .txt)."""
+    _require_db()
+    async with pool().acquire() as conn:
+        return await vstate.load(conn, world)
+
+
+@router.put("/village-state")
+async def village_state_save(body: dict) -> dict:
+    """Instantanea del pueblo que manda el plugin (el sigue siendo la autoridad del mundo)."""
+    _require_db()
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            return await vstate.save(conn, body)
+
+
+@router.post("/village-state/death")
+async def village_state_death(body: dict) -> dict:
+    """Apunta a un vecino que ya no esta: de aqui sale la memoria del pueblo."""
+    _require_db()
+    async with pool().acquire() as conn:
+        return await vstate.record_death(conn, body)
+
+
+@router.get("/village-state/history")
+async def village_state_history(world: str = "main", limit: int = 50) -> dict:
+    """Los vecinos que ya no estan (cementerio, linajes, primeros pobladores)."""
+    _require_db()
+    async with pool().acquire() as conn:
+        return {"gone": await vstate.history(conn, world, limit)}
 
 
 @router.post("/reputation/decay")

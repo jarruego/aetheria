@@ -209,6 +209,8 @@ public final class SettlementModule implements Listener {
         /** HUCHA de la aldea: lo que lleva ahorrado para traer al siguiente vecino. Sube con el
          *  trabajo de sus habitantes y baja con lo que cuesta mantenerlos. */
         double pool;
+        /** Ciclos seguidos con la hucha en rojo (una mala racha, no una mala noche). */
+        int hungry;
         /** Cuantas veces ESTA aldea ya se ha escindido (fundo una colonia). Sube su umbral de
          *  escision: cada linaje coloniza segun su propia madurez. */
         int splits;
@@ -226,12 +228,7 @@ public final class SettlementModule implements Listener {
      * hay mas gente produciendo: el pueblo arranca despacio y luego coge ritmo, sin dispararse.
      */
     private static double growthCost(int n) {
-        // Cada vecino cuesta EL DOBLE que el anterior: el pueblo arranca rapido y luego se
-        // atasca solo. Pasar de 6 o 7 vecinos ya no sale por si mismo: ahi es donde entra la
-        // ayuda del jugador (donaciones al arca o al alcalde). El exponente se acota para que
-        // una aldea densificada no pida cifras absurdas.
-        final int step = Math.max(0, Math.min(10, n - 2));
-        return 30.0 * Math.pow(2, step);
+        return TownMath.growthCost(n);   // la cuenta vive en TownMath (y esta cubierta por tests)
     }
 
     /** Poblacion a la que una aldea se ESCINDE (una pareja parte a fundar otra). Empieza en 6 y
@@ -239,21 +236,20 @@ public final class SettlementModule implements Listener {
      *  segun su propia madurez, asi una aldea joven vuelve a partir de 6 (colonizacion en cascada) y
      *  una que ya pario varias colonias se calma. */
     private int splitThreshold(Town t) {
-        return 6 + 2 * t.splits;
+        return TownMath.splitThreshold(t.splits);
     }
 
     /**
-     * TAMANO A EFECTOS DE COSTE: los vecinos que hay ahora <b>mas los que se marcharon a fundar</b>
-     * (dos por cada aldea colonizada).
+     * Tamano a efectos de coste: SOLO los vecinos que hay ahora.
      *
-     * <p>Sin esto, escindirse salia gratis: al perder dos vecinos el coste del siguiente caia a la
-     * cuarta parte (cada vecino cuesta el doble que el anterior), asi que la aldea madre reponia a
-     * los dos que se fueron casi al instante y la escision no se notaba. Ahora una aldea que ya ha
-     * colonizado <b>sigue pagando precios de aldea grande</b>: haber mandado gente fuera pesa, que
-     * es justo lo que significa quedarse a medias.
+     * <p>Se probo a cobrar tambien por los que se marcharon a fundar (poblacion + 2 por escision)
+     * y dejaba a la aldea madre demasiado tocada: encima de perder gente y medio fondo, pagaba
+     * precios de aldea grande y no levantaba cabeza. El freno a colonizar sin parar lo pone el
+     * UMBRAL de escision ({@link #splitThreshold}, +2 por cada aldea fundada), no el precio de
+     * cada vecino.
      */
     private int chargedSize(int vid) {
-        return townPopulation(vid) + 2 * towns.get(vid).splits;
+        return townPopulation(vid);
     }
 
     /** Desgracias que sirven de excusa para que unos vecinos se marchen a fundar una aldea nueva. */
@@ -298,6 +294,8 @@ public final class SettlementModule implements Listener {
     private QuestModule quests;
     /** Comercio con vecinos y BOTICA (opcional): pone al boticario cuando se construye. */
     private NpcTradeModule trade;
+    /** Quien traza carreteras y senderos (ver RoadBuilder). */
+    private final RoadBuilder roads;
     /**
      * Parcelas de jugador (opcional). El pueblo las consulta ANTES de plantar cualquier cosa:
      * casas, edificios civicos, puestos de oficio y carreteras. Lo que es de un jugador no se
@@ -359,6 +357,11 @@ public final class SettlementModule implements Listener {
      * roca, grava, arena, arboles/hojas, vegetacion, mineral... Si es FALSE, es algo puesto por
      * alguien (madera trabajada, ladrillo, cristal, cofre...) y NO se debe romper para construir.
      */
+    /** Version compartida con {@link RoadBuilder}: los caminos allanan lo mismo que el pueblo. */
+    static boolean isNatural(Material m) {
+        return natural(m);
+    }
+
     private static boolean natural(Material m) {
         if (m.isAir() || m == Material.WATER || m == Material.LAVA) {
             return true;
@@ -498,6 +501,7 @@ public final class SettlementModule implements Listener {
         this.world = world;
         this.market = market;
         plugin.getDataFolder().mkdirs();
+        this.roads = new RoadBuilder(plugin, world);
         this.dataFile = new File(plugin.getDataFolder(), "colonos.txt");
         this.civicFile = new File(plugin.getDataFolder(), "civic.txt");
         this.nameFile = new File(plugin.getDataFolder(), "village.txt");
@@ -512,11 +516,17 @@ public final class SettlementModule implements Listener {
                 .filter(e -> e.getScoreboardTags().contains(BABY_TAG)
                         || e.getScoreboardTags().contains(PANEL_TAG))
                 .forEach(org.bukkit.entity.Entity::remove);
-        final boolean fresh = !dataFile.exists();
-        loadTowns();       // las aldeas (nombre + centro) ANTES que los colonos y edificios
-        loadBuildings();   // los edificios de oficio (permanentes)
+        // FUENTE DE VERDAD: la base de datos (0010). Si responde y hay pueblo guardado, se usa
+        // eso; si no (gateway caido, primer arranque), se tira de los .txt locales, que se siguen
+        // escribiendo como copia de seguridad.
+        final boolean fromDb = loadFromDb();
+        final boolean fresh = !fromDb && !dataFile.exists();
+        if (!fromDb) {
+            loadTowns();       // las aldeas (nombre + centro) ANTES que los colonos y edificios
+            loadBuildings();   // los edificios de oficio (permanentes)
+            loadCivicBuildings();   // que edificios civicos (granero/taberna/mercado) ya existen
+        }
         loadVacants();     // casas en venta que quedaron de bodas anteriores
-        loadCivicBuildings();   // que edificios civicos (granero/taberna/mercado) ya existen
         for (int vid = 0; vid < towns.size(); vid++) {   // aldeas que YA tienen taberna
             if (civicBuilt.contains(vid + ":taberna")) {
                 routines.setTavern(townCenter(vid));
@@ -539,8 +549,26 @@ public final class SettlementModule implements Listener {
                 + colonos.size() + " colonos cargados).");
     }
 
-    /** Reaparece a los colonos guardados en sus casas (los bloques ya persisten en el mundo). */
+    /**
+     * Reaparece a los colonos guardados en sus casas (los bloques ya persisten en el mundo).
+     *
+     * <p>Si el pueblo se ha cargado de la BASE DE DATOS, los colonos ya estan en memoria y aqui
+     * solo hay que darles cuerpo: no se relee el .txt (si no, saldrian por duplicado).
+     */
     private void load() {
+        if (!colonos.isEmpty()) {
+            for (final Colono c : colonos) {
+                routines.addColono("colono", c.name, new Location(world, c.x + 0.5, c.y, c.z + 0.5),
+                        ensureBuilding(c.vid, profFromKey(c.profKey)), profFromKey(c.profKey),
+                        townCenter(c.vid), c.gender);
+                routines.setStayAtWork(c.name, isKeeper(c.profKey));
+                if (c.retired) {
+                    routines.retire(c.name);
+                }
+                placed.add(new int[] {c.x, c.z});
+            }
+            return;
+        }
         if (!dataFile.exists()) {
             return;
         }
@@ -678,6 +706,238 @@ public final class SettlementModule implements Listener {
         } catch (Exception e) {
             plugin.getLogger().warning("[Aetheria] no pude guardar colonos: " + e.getMessage());
         }
+        pushState();   // y a la base de datos, que es la fuente de verdad (0010)
+    }
+
+    // ------------------------------------------------------------------
+    // EL PUEBLO EN LA BASE DE DATOS (migracion 0010, Fase 1 del plan de mejoras)
+    //
+    // Hasta ahora el estado del pueblo vivia en ficheros de texto de la carpeta del plugin, lo
+    // que contradecia la regla de oro #4 y dejaba al backend sin saber que existian las aldeas.
+    // Ahora la fuente de verdad es Postgres; los .txt se siguen escribiendo como copia local de
+    // seguridad, por si el gateway no responde justo al arrancar (sin ellos, el plugin creeria
+    // que el mundo esta vacio y reconstruiria el pueblo encima del que ya hay).
+    //
+    // El plugin sigue MANDANDO: el decide quien nace y donde se construye. Esto es solo donde lo
+    // apunta. Se manda la instantanea entera (como se reescribia el fichero entero), con un
+    // pequeno freno para no inundar el gateway cuando pasan muchas cosas seguidas.
+    // ------------------------------------------------------------------
+
+    private long lastPush;
+    private boolean pushPending;
+    private static final long PUSH_COOLDOWN_MS = 8000L;
+
+    /** Manda a la base de datos el estado del pueblo (con freno: como mucho cada 8 s). */
+    private void pushState() {
+        final long now = System.currentTimeMillis();
+        if (now - lastPush < PUSH_COOLDOWN_MS) {
+            if (!pushPending) {   // se agenda una unica escritura de recogida
+                pushPending = true;
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    pushPending = false;
+                    lastPush = System.currentTimeMillis();
+                    gateway.saveVillageState(stateJson());
+                }, 20L * 9);
+            }
+            return;
+        }
+        lastPush = now;
+        gateway.saveVillageState(stateJson());
+    }
+
+    /** La instantanea del pueblo, tal cual la guarda el backend. */
+    private com.google.gson.JsonObject stateJson() {
+        final com.google.gson.JsonObject root = new com.google.gson.JsonObject();
+        root.addProperty("world", world.getName());
+
+        final com.google.gson.JsonArray vs = new com.google.gson.JsonArray();
+        for (int vid = 0; vid < towns.size(); vid++) {
+            final Town t = towns.get(vid);
+            final com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+            o.addProperty("vid", vid);
+            o.addProperty("name", t.name);
+            o.addProperty("cx", t.cx);
+            o.addProperty("cz", t.cz);
+            o.addProperty("base_y", t.baseY);
+            o.addProperty("pool", t.pool);
+            o.addProperty("splits", t.splits);
+            vs.add(o);
+        }
+        root.add("villages", vs);
+
+        final com.google.gson.JsonArray cs = new com.google.gson.JsonArray();
+        for (final Colono c : colonos) {
+            final com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+            o.addProperty("name", c.name);
+            o.addProperty("vid", c.vid);
+            o.addProperty("prof_key", c.profKey);
+            o.addProperty("surname", c.surname);
+            o.addProperty("gender", c.gender);
+            o.addProperty("x", c.x);
+            o.addProperty("y", c.y);
+            o.addProperty("z", c.z);
+            o.addProperty("born_millis", c.bornMillis);
+            o.addProperty("initial_age", c.initialAge);
+            o.addProperty("death_age", c.deathAge);
+            o.addProperty("parent", c.parent);
+            o.addProperty("spouse", c.spouse);
+            o.addProperty("origin", c.origin);
+            o.addProperty("retired", c.retired);
+            o.addProperty("floors", c.floors);
+            o.addProperty("half_x", c.halfX);
+            o.addProperty("half_z", c.halfZ);
+            o.addProperty("pal", c.pal);
+            o.addProperty("dims_known", c.dimsKnown);
+            o.addProperty("wealth", c.wealth);
+            cs.add(o);
+        }
+        root.add("colonos", cs);
+
+        final com.google.gson.JsonArray bs = new com.google.gson.JsonArray();
+        for (final Building b : buildings) {
+            final com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+            o.addProperty("vid", b.vid);
+            o.addProperty("prof_key", b.profKey);
+            o.addProperty("cx", b.cx);
+            o.addProperty("cz", b.cz);
+            o.addProperty("base_y", b.baseY);
+            bs.add(o);
+        }
+        root.add("buildings", bs);
+
+        final com.google.gson.JsonArray cv = new com.google.gson.JsonArray();
+        for (final String key : civicBuilt) {
+            final int sep = key.indexOf(':');
+            if (sep <= 0) {
+                continue;
+            }
+            final com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+            try {
+                o.addProperty("vid", Integer.parseInt(key.substring(0, sep)));
+            } catch (NumberFormatException ex) {
+                continue;
+            }
+            o.addProperty("kind", key.substring(sep + 1));
+            cv.add(o);
+        }
+        root.add("civics", cv);
+
+        final com.google.gson.JsonArray rs = new com.google.gson.JsonArray();
+        for (final int[] box : plugin.buildRegistry().all()) {
+            final com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+            for (final int v : box) {
+                a.add(v);
+            }
+            rs.add(a);
+        }
+        root.add("regions", rs);
+        return root;
+    }
+
+    /**
+     * Carga el pueblo desde la base de datos al arrancar. Devuelve true si habia algo guardado
+     * (entonces los .txt no se leen). Se espera un momento a proposito: el mundo no puede
+     * empezar a construirse sin saber que hay ya, y sin esto el plugin plantaria una aldea nueva
+     * encima de la que existe.
+     */
+    private boolean loadFromDb() {
+        try {
+            final com.google.gson.JsonObject st = gateway.loadVillageState(world.getName())
+                    .get(10, java.util.concurrent.TimeUnit.SECONDS);
+            if (st == null || !st.has("villages") || st.getAsJsonArray("villages").isEmpty()) {
+                return false;
+            }
+            towns.clear();
+            for (final com.google.gson.JsonElement el : st.getAsJsonArray("villages")) {
+                final com.google.gson.JsonObject o = el.getAsJsonObject();
+                final Town t = new Town(o.get("name").getAsString(), o.get("cx").getAsInt(),
+                        o.get("cz").getAsInt(), o.get("base_y").getAsInt());
+                t.pool = o.get("pool").getAsDouble();
+                t.splits = o.get("splits").getAsInt();
+                towns.add(t);
+            }
+            colonos.clear();
+            for (final com.google.gson.JsonElement el : st.getAsJsonArray("colonos")) {
+                final com.google.gson.JsonObject o = el.getAsJsonObject();
+                final Colono c = new Colono();
+                c.name = o.get("name").getAsString();
+                c.vid = o.get("vid").getAsInt();
+                c.profKey = o.get("prof_key").getAsString();
+                c.surname = str(o, "surname");
+                c.gender = o.has("gender") && !o.get("gender").isJsonNull()
+                        ? o.get("gender").getAsString() : "m";
+                c.x = o.get("x").getAsInt();
+                c.y = o.get("y").getAsInt();
+                c.z = o.get("z").getAsInt();
+                c.bornMillis = o.get("born_millis").getAsLong();
+                c.initialAge = o.get("initial_age").getAsDouble();
+                c.deathAge = o.get("death_age").getAsInt();
+                c.parent = nullable(o, "parent");
+                c.spouse = nullable(o, "spouse");
+                c.origin = str(o, "origin");
+                c.retired = o.get("retired").getAsBoolean();
+                c.floors = o.get("floors").getAsInt();
+                c.halfX = o.get("half_x").getAsInt();
+                c.halfZ = o.get("half_z").getAsInt();
+                c.pal = o.get("pal").getAsInt();
+                c.dimsKnown = o.get("dims_known").getAsBoolean();
+                c.wealth = o.get("wealth").getAsDouble();
+                colonos.add(c);
+            }
+            buildings.clear();
+            for (final com.google.gson.JsonElement el : st.getAsJsonArray("buildings")) {
+                final com.google.gson.JsonObject o = el.getAsJsonObject();
+                buildings.add(new Building(o.get("vid").getAsInt(), o.get("prof_key").getAsString(),
+                        o.get("cx").getAsInt(), o.get("cz").getAsInt(), o.get("base_y").getAsInt()));
+            }
+            civicBuilt.clear();
+            for (final com.google.gson.JsonElement el : st.getAsJsonArray("civics")) {
+                final com.google.gson.JsonObject o = el.getAsJsonObject();
+                civicBuilt.add(o.get("vid").getAsInt() + ":" + o.get("kind").getAsString());
+            }
+            final List<int[]> boxes = new ArrayList<>();
+            for (final com.google.gson.JsonElement el : st.getAsJsonArray("regions")) {
+                final com.google.gson.JsonArray a = el.getAsJsonArray();
+                final int[] box = new int[6];
+                for (int i = 0; i < 6 && i < a.size(); i++) {
+                    box[i] = a.get(i).getAsInt();
+                }
+                boxes.add(box);
+            }
+            plugin.buildRegistry().replaceAll(boxes);
+            plugin.getLogger().info("[Aetheria] Pueblo cargado de la BASE DE DATOS: "
+                    + towns.size() + " aldeas, " + colonos.size() + " colonos, "
+                    + buildings.size() + " edificios.");
+            return true;
+        } catch (Exception e) {
+            plugin.getLogger().warning("[Aetheria] no pude leer el pueblo de la base de datos ("
+                    + e.getMessage() + "); tiro de la copia local en disco.");
+            return false;
+        }
+    }
+
+    private static String str(com.google.gson.JsonObject o, String key) {
+        return o.has(key) && !o.get(key).isJsonNull() ? o.get(key).getAsString() : "";
+    }
+
+    private static String nullable(com.google.gson.JsonObject o, String key) {
+        return o.has(key) && !o.get(key).isJsonNull() ? o.get(key).getAsString() : null;
+    }
+
+    /** Deja constancia en la historia del pueblo de un vecino que ya no esta. */
+    private void recordGone(Colono c, String cause) {
+        final com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+        o.addProperty("world", world.getName());
+        o.addProperty("name", c.name);
+        o.addProperty("vid", c.vid);
+        o.addProperty("prof_key", c.profKey);
+        o.addProperty("surname", c.surname);
+        o.addProperty("gender", c.gender);
+        o.addProperty("born_millis", c.bornMillis);
+        o.addProperty("age_at_death", c.age(System.currentTimeMillis()));
+        o.addProperty("wealth", c.wealth);
+        o.addProperty("cause", cause);
+        gateway.recordDeath(o);
     }
 
     private static String profKey(Villager.Profession p) {
@@ -809,12 +1069,28 @@ public final class SettlementModule implements Listener {
             final int n = townPopulation(vid);   // los ninos tambien comen (y cuentan en el HUD)
             t.pool -= LIVING_COST * n;   // lo que cuesta dar de comer y alojar a los que ya estan
             final double need = growthCost(chargedSize(vid));
-            if (t.pool >= need) {
+            if (t.pool >= need * TownMath.NEIGHBOUR_MARGIN) {
+                // Se trae un vecino nuevo SOLO si queda reserva despues de pagarlo. Antes bastaba
+                // con cubrir el coste justo: la hucha quedaba en CERO y la primera noche (de noche
+                // no se produce, pero se sigue comiendo) la metia en numeros rojos, asi que la
+                // aldea perdia al vecino que acababa de ganar. Ese era el sube y baja que dejaba
+                // un pueblo grande en tres habitantes.
                 t.pool -= need;
+                t.hungry = 0;
                 newNeighbour(vid, rng);
             } else if (t.pool < 0) {
-                t.pool += need * 0.5;    // se liquida lo del que se va (y la hucha no se hunde)
-                loseNeighbour(vid, rng);
+                // HAMBRE: un solo ciclo en rojo no echa a nadie (una noche cualquiera lo provoca).
+                // Hace falta una mala racha SOSTENIDA, y al que se va se le liquida lo suyo dejando
+                // la hucha a cero, sin el reembolso de antes (que disparaba una recompra inmediata
+                // y de ahi el yo-yo de poblacion).
+                t.hungry++;
+                if (t.hungry >= TownMath.HUNGRY_CYCLES) {
+                    t.pool = 0;
+                    t.hungry = 0;
+                    loseNeighbour(vid, rng);
+                }
+            } else {
+                t.hungry = 0;   // vuelve a haber fondo: se olvida la mala racha
             }
             trySplit(vid, rng);   // si la aldea es ya grande, una pareja parte a fundar otra
         }
@@ -1258,7 +1534,7 @@ public final class SettlementModule implements Listener {
             Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
                     pal[0], pal[1], pal[2], pal[3], true, 1, name);   // 1 cama (soltero)
             deflood(cx, fy, cz, 1);                            // por si algo de agua se colo
-            pathTo(cx, cz, center);                            // sendero hacia la plaza
+            pathTo(cx, cz, fy, Math.max(halfX, halfZ), center);   // sendero de la puerta a la plaza
             placed.add(new int[] {cx, cz});
             plugin.buildRegistry().add(new int[] {cx - halfX - 1, fy - 2, cz - halfZ - 1,
                     cx + halfX + 1, fy + 14, cz + halfZ + 1});   // anti-solape con el jugador
@@ -1369,7 +1645,7 @@ public final class SettlementModule implements Listener {
         Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
                 pal[0], pal[1], pal[2], pal[3], true, 4, a.name + " y " + b.name);   // 2 hab x 2 camas
         deflood(cx, fy, cz, 1);                                          // por si se colo agua
-        pathTo(cx, cz, center);
+        pathTo(cx, cz, fy, Math.max(halfX, halfZ), center);
         final Location workA = ensureBuilding(a.vid, profFromKey(a.profKey));
         final Location workB = ensureBuilding(b.vid, profFromKey(b.profKey));
 
@@ -1448,6 +1724,7 @@ public final class SettlementModule implements Listener {
                         c.name, oficioDelDifunto, (int) age,
                         family.isEmpty() ? "" : " Le sobreviven " + family + ".", successor);
                 gateway.postEvent("obituario", msg);
+                recordGone(c, "vejez");   // el pueblo guarda memoria de los suyos (0010)
                 routines.pushGossip("ha muerto " + c.name + ", el " + oficioDelDifunto + ".");
                 Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage("§8[Pueblo] §7" + msg));
                 inherit(c);   // su peculio pasa a la viuda/viudo y a sus hijos
@@ -1659,7 +1936,7 @@ public final class SettlementModule implements Listener {
         Blueprint.workplaceShowcase(world, cx, fy, cz, key);
         tradeSign(cx, fy, cz, prof, door);
         deflood(cx, fy, cz, 1);
-        pathTo(cx, cz, townCenter(vid));
+        pathTo(cx, cz, fy, 3, townCenter(vid));   // el puesto de oficio ocupa ~3
         placed.add(new int[] {cx, cz});
         plugin.buildRegistry().add(new int[] {cx - 5, fy - 2, cz - 5, cx + 5, fy + 14, cz + 5});
         buildings.add(new Building(vid, key, cx, cz, fy));
@@ -1883,10 +2160,7 @@ public final class SettlementModule implements Listener {
                 continue;
             }
             final double dias = Math.max(0, (now - c.bornMillis) / (double) DAY_MS);
-            final double veterania = Math.min(VETERANIA_TOPE, dias * BONUS_VETERANIA);
-            final double riqueza = Math.min(RIQUEZA_TOPE,
-                    RIQUEZA_FACTOR * Math.sqrt(Math.max(0, c.wealth)));
-            out.add(new Rank(c.name, riqueza + veterania, false, null));
+            out.add(new Rank(c.name, TownMath.villagerScore(c.wealth, dias), false, null));
         }
         out.addAll(playerRep.getOrDefault(vid, List.of()));
         out.sort((a, b) -> Double.compare(b.score(), a.score()));
@@ -1984,16 +2258,36 @@ public final class SettlementModule implements Listener {
      * primeros del ranking. Es la forma de que el jugador vea de un vistazo por donde va la
      * carrera por la alcaldia sin escribir ningun comando.
      */
-    private void prestigeBoard(int vid, Town t, List<Rank> rk) {
-        final Location loc = new Location(world, t.cx + 0.5, t.baseY + 6.0, t.cz + 0.5);
-        final String tag = RANK_TAG + "_" + vid;
-        TextDisplay board = null;
-        for (final org.bukkit.entity.Entity e : world.getNearbyEntities(loc, 10, 10, 10)) {
+    /** ¿Esta cargado el trozo de mundo de la plaza? Si NO, no se tocan sus paneles flotantes:
+     *  buscar entidades daria vacio y se spawnearia un duplicado cada ciclo (era lo que llenaba la
+     *  plaza de texto superpuesto y ralentizaba la aldea). */
+    private boolean plazaLoaded(Town t) {
+        return world.isChunkLoaded(t.cx >> 4, t.cz >> 4);
+    }
+
+    /** El TextDisplay con ese tag cerca de {@code loc}, quedandose con UNO y ELIMINANDO los
+     *  duplicados apilados. null si no hay ninguno. */
+    private TextDisplay singlePanel(Location loc, String tag, double r) {
+        TextDisplay keep = null;
+        for (final org.bukkit.entity.Entity e : world.getNearbyEntities(loc, r, r, r)) {
             if (e instanceof TextDisplay td && e.getScoreboardTags().contains(tag)) {
-                board = td;
-                break;
+                if (keep == null) {
+                    keep = td;
+                } else {
+                    td.remove();   // duplicado apilado: fuera
+                }
             }
         }
+        return keep;
+    }
+
+    private void prestigeBoard(int vid, Town t, List<Rank> rk) {
+        if (!plazaLoaded(t)) {
+            return;
+        }
+        final Location loc = new Location(world, t.cx + 0.5, t.baseY + 6.0, t.cz + 0.5);
+        final String tag = RANK_TAG + "_" + vid;
+        TextDisplay board = singlePanel(loc, tag, 10);
         if (board == null) {
             board = (TextDisplay) world.spawnEntity(loc, EntityType.TEXT_DISPLAY);
             board.addScoreboardTag(PANEL_TAG);
@@ -2058,6 +2352,9 @@ public final class SettlementModule implements Listener {
      * visible; tambien se puede donar al alcalde o con /donar.
      */
     private void ensureDonationChest(int vid, Town t) {
+        if (!plazaLoaded(t)) {
+            return;   // aldea descargada: no se toca (evita duplicar el arca y su cartel)
+        }
         final int[] c = donationChest(vid);
         final Block b = world.getBlockAt(c[0], c[1], c[2]);
         if (b.getType() != Material.CHEST) {
@@ -2066,11 +2363,10 @@ public final class SettlementModule implements Listener {
         }
         final String tag = "aetheria_arca_" + vid;
         final Location loc = new Location(world, c[0] + 0.5, c[1] + 1.4, c[2] + 0.5);
-        for (final org.bukkit.entity.Entity e : world.getNearbyEntities(loc, 3, 3, 3)) {
-            if (e instanceof TextDisplay td && e.getScoreboardTags().contains(tag)) {
-                td.text(Component.text("§6Arca de " + t.name + "\n§7clic para aportar"));
-                return;
-            }
+        final TextDisplay existing = singlePanel(loc, tag, 3);
+        if (existing != null) {
+            existing.text(Component.text("§6Arca de " + t.name + "\n§7clic para aportar"));
+            return;
         }
         final TextDisplay td = (TextDisplay) world.spawnEntity(loc, EntityType.TEXT_DISPLAY);
         td.addScoreboardTag(PANEL_TAG);
@@ -2087,6 +2383,9 @@ public final class SettlementModule implements Listener {
     /** Panel HOLOGRAFICO de color (Text Display) flotando sobre la plaza: nombre del pueblo,
      *  alcalde, habitantes y prosperidad — como una pantalla de informacion, sin carteles. */
     private void infoPanel(int vid, Town t, String alcalde) {
+        if (!plazaLoaded(t)) {
+            return;   // aldea descargada: no se toca (evita duplicar el panel)
+        }
         final int gy = t.baseY;   // cota fija de la plaza (nada de groundY: no debe "trepar")
         // Limpia posibles carteles/poste viejos apilados (bug anterior) sobre el punto del cartel.
         for (int yy = gy; yy <= gy + 20; yy++) {
@@ -2097,13 +2396,7 @@ public final class SettlementModule implements Listener {
         }
         final Location loc = new Location(world, t.cx + 0.5, gy + 3.4, t.cz + 0.5);
         final String tag = PANEL_TAG + "_" + vid;
-        TextDisplay panel = null;
-        for (final org.bukkit.entity.Entity e : world.getNearbyEntities(loc, 10, 10, 10)) {
-            if (e instanceof TextDisplay td && e.getScoreboardTags().contains(tag)) {
-                panel = td;
-                break;
-            }
-        }
+        TextDisplay panel = singlePanel(loc, tag, 10);
         if (panel == null) {
             panel = (TextDisplay) world.spawnEntity(loc, EntityType.TEXT_DISPLAY);
             panel.addScoreboardTag(PANEL_TAG);
@@ -2205,6 +2498,7 @@ public final class SettlementModule implements Listener {
     /** Engancha las parcelas de jugador, para no construir NUNCA sobre lo que es de alguien. */
     public void setClaims(ClaimModule claims) {
         this.claims = claims;
+        roads.setClaims(claims);
     }
 
     /** Desplazamiento en Z de la BOTICA respecto al centro de la aldea. Las aldeas NUEVAS
@@ -2438,7 +2732,7 @@ public final class SettlementModule implements Listener {
      * la carne...) y no se toca. Por encima, es lo que hoy el pueblo vendria vendiendo fuera con
      * prima: eso si se lo puede llevar quien se ha ganado la confianza del pueblo.
      */
-    private static final int SURPLUS_THRESHOLD = 128;
+    private static final int SURPLUS_THRESHOLD = TownMath.SURPLUS_THRESHOLD;
 
     /**
      * GRANERO CERRADO. Hasta ahora cualquiera podia abrir los barriles del granero y vaciar la
@@ -2553,6 +2847,9 @@ public final class SettlementModule implements Listener {
             return;
         }
         final Town t = towns.get(vid);
+        if (!plazaLoaded(t)) {
+            return;   // aldea descargada: no se fuerza la carga del chunk ni se tocan etiquetas
+        }
         for (final int[] o : GRANARY_BARRELS) {
             final int bx = t.cx - 12 + o[0];
             final int by = t.baseY + o[1];
@@ -2972,317 +3269,16 @@ public final class SettlementModule implements Listener {
      *
      * <p>Nunca pisa lo construido: talla/rellena solo terreno natural.
      */
-    private void pathTo(int cx, int cz, Location plaza) {
-        int x = cx;
-        int z = cz;
-        final int tx = plaza.getBlockX();
-        final int tz = plaza.getBlockZ();
-        // Altura de la superficie pisable medida en MEDIOS bloques: asi una losa es +1 y un
-        // bloque entero es +2. La regla del camino es simple: entre dos casillas seguidas la
-        // superficie no cambia mas de MEDIO bloque (|delta| <= 1).
-        // La rasante NO se siembra en el centro de la casa (ahi el "suelo" es el tejado recien
-        // construido: salia una escalera absurda bajando del tejado). Se siembra en la PRIMERA
-        // casilla de terreno natural que pisa el camino, ya fuera de la construccion.
-        int prevH = -1;
-        for (int guard = 0; (x != tx || z != tz) && guard < 220; guard++) {
-            if (Math.abs(tx - x) >= Math.abs(tz - z)) {
-                x += Integer.signum(tx - x);
-            } else {
-                z += Integer.signum(tz - z);
-            }
-            final int gy = groundY(x, z);
-            if (world.getBlockAt(x, gy, z).isLiquid()) {
-                continue;   // charco/rio: el sendero no lo cruza (los solares ya evitan el agua)
-            }
-            final Material ground = world.getBlockAt(x, gy, z).getType();
-            if (!natural(ground)) {
-                continue;   // casa, plaza o edificio: ni se pisa ni cuenta para la rasante
-            }
-            final int wantH = 2 * (gy + 1);                                  // lo que pide el terreno
-            if (prevH < 0) {
-                prevH = wantH;   // primera casilla de tierra firme: el camino arranca A RAS
-            }
-            final int h = Math.max(prevH - 1, Math.min(prevH + 1, wantH));   // medio bloque como mucho
-            final int ny = Math.floorDiv(h, 2) - 1;          // bloque de suelo del camino
-            final boolean slab = Math.floorMod(h, 2) == 1;   // media altura: escalon de losa
-            final Material at = world.getBlockAt(x, ny, z).getType();
-            if (!at.isAir() && !natural(at)) {
-                continue;   // hay algo construido justo ahi: no se toca (y la rasante no cambia)
-            }
-            for (int y = ny + 1; y <= ny + 4; y++) {          // talla el terreno que sobresale
-                final Material m = world.getBlockAt(x, y, z).getType();
-                if (!m.isAir() && natural(m)) {
-                    world.getBlockAt(x, y, z).setType(Material.AIR, false);
-                }
-            }
-            for (int y = ny; y >= ny - 5; y--) {              // y rellena el hueco por debajo
-                final Block b = world.getBlockAt(x, y, z);
-                if (b.getType().isAir() || b.isLiquid()) {
-                    b.setType(Material.DIRT, false);
-                } else {
-                    break;
-                }
-            }
-            world.getBlockAt(x, ny, z).setType(slab ? Material.GRAVEL : Material.DIRT_PATH, false);
-            if (slab) {
-                world.getBlockAt(x, ny + 1, z).setType(Material.COBBLESTONE_SLAB, false);
-            }
-            prevH = h;
-        }
+    // Los CAMINOS (carreteras entre aldeas y senderos de puerta a plaza) viven ahora en
+    // RoadBuilder: trazar un camino no tiene nada que ver con casar a dos vecinos.
+
+    private void pathTo(int cx, int cz, int fy, int half, Location plaza) {
+        roads.pathTo(cx, cz, fy, half, plaza);
     }
 
-    /**
-     * #14 - CARRETERA entre dos aldeas. Es un camino de verdad: 3 casillas de ancho, con la
-     * misma <b>rasante regulada</b> que los senderos (medio bloque por casilla, con losas de
-     * escalon, para poder recorrerla andando), <b>puentes de madera</b> donde cruza agua y
-     * faroles cada tramo.
-     *
-     * <p>Se construye <b>por lotes</b> (unas pocas casillas por tick): son cientos de bloques y
-     * cargar de golpe 300 casillas —muchas en trozos de mundo aun sin generar— congelaria el
-     * servidor. Asi la carretera "se va abriendo" sin que se note.
-     */
     private void buildRoad(int x0, int z0, int x1, int z1) {
-        final List<int[]> tiles = new ArrayList<>();
-        int x = x0;
-        int z = z0;
-        for (int guard = 0; (x != x1 || z != z1) && guard < 900; guard++) {
-            final int dx = x1 - x;
-            final int dz = z1 - z;
-            if (Math.abs(dx) >= Math.abs(dz)) {
-                x += Integer.signum(dx);
-                tiles.add(new int[] {x, z, 0, 1});   // avanza en X -> el ancho va en Z
-            } else {
-                z += Integer.signum(dz);
-                tiles.add(new int[] {x, z, 1, 0});   // avanza en Z -> el ancho va en X
-            }
-        }
-        // DOS FASES, las dos por lotes para no congelar el servidor:
-        //   1) SE MIDE el terreno de punta a punta (y el agua, si la hay).
-        //   2) SE PROYECTA la rasante entre la cota de UNA aldea y la de la OTRA, con pendiente
-        //      acotada, y solo entonces se pavimenta.
-        // Antes se decidia la altura casilla a casilla mirando solo el suelo de debajo: la
-        // carretera no sabia a que altura estaba el pueblo de destino y aparecian saltos.
-        final int n = tiles.size();
-        final int[] terr = new int[n];        // cota "deseable" de cada casilla (medios bloques)
-        final boolean[] wet = new boolean[n]; // ¿esa casilla es agua? (ahi va tablero de puente)
-        final int[] prof = new int[n];        // la rasante ya proyectada
-        final int startH = 2 * (groundY(x0, z0) + 1);
-        final int endH = 2 * (groundY(x1, z1) + 1);
-        final int[] state = {0, 0};   // {fase, indice}
-        final int[] task = new int[1];
-        task[0] = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            if (state[0] == 0) {   // --- fase 1: medir ---
-                for (int k = 0; k < 12 && state[1] < n; k++, state[1]++) {
-                    final int[] t = tiles.get(state[1]);
-                    final int gy = groundY(t[0], t[1]);
-                    final int wt = waterSurfaceY(t[0], t[1], gy);
-                    wet[state[1]] = wt >= 0;
-                    // Sobre agua, la cota deseable es el tablero (un bloque de aire sobre la
-                    // lamina); en tierra, el propio suelo.
-                    terr[state[1]] = wt >= 0 ? 2 * (wt + 2) : 2 * (gy + 1);
-                }
-                if (state[1] >= n) {
-                    planProfile(terr, wet, prof, startH, endH);
-                    state[0] = 1;
-                    state[1] = 0;
-                }
-                return;
-            }
-            for (int k = 0; k < 6 && state[1] < n; k++, state[1]++) {   // --- fase 2: pavimentar ---
-                paveTile(tiles, state[1], prof[state[1]], wet[state[1]]);
-            }
-            if (state[1] >= n) {
-                Bukkit.getScheduler().cancelTask(task[0]);
-            }
-        }, 1L, 1L).getTaskId();
+        roads.buildRoad(x0, z0, x1, z1);
     }
-
-    /**
-     * Proyecta la RASANTE de la carretera entre las dos aldeas: sale de la cota de una y llega a
-     * la de la otra <b>sin un solo salto</b>, con medio bloque de desnivel por casilla como
-     * maximo. Lo que no cabe en esa pendiente lo resuelve el terreno:
-     *
-     * <ul>
-     *   <li>si la rasante queda <b>por debajo</b> del monte, la carretera lo atraviesa: <b>tunel</b>;</li>
-     *   <li>si queda <b>por encima</b> del suelo (barranco, vaguada), se levanta <b>terraplen</b>
-     *       o <b>puente</b> segun haya agua debajo.</li>
-     * </ul>
-     *
-     * <p>Se hace con dos pasadas (ida y vuelta) sobre la cota deseable: la de ida limita cuanto
-     * puede SUBIR y la de vuelta cuanto puede BAJAR, asi que el resultado cumple la pendiente en
-     * los dos sentidos. Los cruces de agua se allanan antes, para que un islote no hunda el puente.
-     */
-    private void planProfile(int[] terr, boolean[] wet, int[] prof, int startH, int endH) {
-        final int n = terr.length;
-        if (n == 0) {
-            return;
-        }
-        // Un islote o un bajio corto en mitad de un cruce no baja el tablero: se allana al nivel
-        // del agua de alrededor, y asi el puente sale plano de orilla a orilla.
-        for (int i = 0; i < n; i++) {
-            if (wet[i]) {
-                continue;
-            }
-            int j = i;
-            while (j < n && !wet[j]) {
-                j++;
-            }
-            final boolean shortGap = (j - i) <= BRIDGE_GAP;
-            if (shortGap && i > 0 && j < n) {   // agua a los dos lados y hueco corto: es un islote
-                final int deck = Math.max(terr[i - 1], terr[j]);
-                for (int k = i; k < j; k++) {
-                    if (terr[k] < deck) {
-                        terr[k] = deck;
-                        wet[k] = true;   // se trata como cruce: tablero, no camino de tierra
-                    }
-                }
-            }
-            i = j;
-        }
-        prof[0] = startH;
-        for (int i = 1; i < n; i++) {           // ida: limita la SUBIDA
-            prof[i] = Math.min(terr[i], prof[i - 1] + 1);
-        }
-        prof[n - 1] = endH;
-        for (int i = n - 2; i >= 0; i--) {      // vuelta: limita la BAJADA y ata el final a la aldea
-            prof[i] = Math.min(prof[i], prof[i + 1] + 1);
-        }
-        prof[0] = startH;
-        for (int i = 1; i < n; i++) {           // remate: ni un solo escalon de mas de medio bloque
-            prof[i] = Math.max(prof[i - 1] - 1, Math.min(prof[i - 1] + 1, prof[i]));
-        }
-    }
-
-    /** Y del bloque de AGUA mas alto que cubre la columna (x,z) por encima del suelo solido, o -1
-     *  si no esta cubierta de agua. Sirve para trazar el puente POR ENCIMA del agua en vez de
-     *  hundir la carretera hasta el lecho. */
-    private int waterSurfaceY(int x, int z, int groundY) {
-        int top = -1;
-        for (int y = groundY + 1; y <= groundY + 24; y++) {
-            final Block b = world.getBlockAt(x, y, z);
-            final Material m = b.getType();
-            if (b.isLiquid() || m == Material.ICE || m == Material.PACKED_ICE
-                    || m == Material.BLUE_ICE || m == Material.FROSTED_ICE) {
-                top = y;   // agua (o su superficie helada): por aqui pasa el tablero
-            } else if (m == Material.KELP || m == Material.KELP_PLANT || m == Material.SEAGRASS
-                    || m == Material.TALL_SEAGRASS || m == Material.SEA_PICKLE
-                    || m == Material.BUBBLE_COLUMN || Tag.CORALS.isTagged(m)
-                    || Tag.CORAL_PLANTS.isTagged(m)) {
-                continue;   // VEGETACION del fondo: no tapa la columna, el agua sigue por encima
-                // (esto cortaba los puentes: un alga bastaba para que la casilla no fuera "agua"
-                //  y la carretera se hundia hasta el lecho con su escalera de piedra)
-            } else if (!m.isAir()) {
-                break;   // algo solido de verdad tapa la columna: no es agua abierta
-            }
-        }
-        return top;
-    }
-
-    /** Hasta cuantas casillas de bajio/islote se puentean de largo sin cortar el tablero. */
-    private static final int BRIDGE_GAP = 14;
-
-    /** Cuanto puede rellenar la calzada hacia abajo para cruzar un barranco (terraplen/viaducto). */
-    private static final int ROAD_FILL = 40;
-
-    /**
-     * Pavimenta UNA casilla de carretera (con sus dos arcenes) a la cota que le toca segun la
-     * RASANTE ya proyectada entre las dos aldeas ({@link #planProfile}). Aqui ya no se decide
-     * altura: solo se ejecuta. Segun donde caiga la rasante respecto al terreno sale una cosa u
-     * otra sin codigo especial — tablero de puente sobre el agua, terraplen sobre un barranco,
-     * o tunel si el monte queda por encima.
-     */
-    private void paveTile(List<int[]> tiles, int index, int h, boolean water) {
-        final int[] tile = tiles.get(index);
-        final int x = tile[0];
-        final int z = tile[1];
-        final int perpX = tile[2];
-        final int perpZ = tile[3];
-        final int gy = groundY(x, z);   // fondo solido (bajo el agua, si la hay)
-        if (!water && !natural(world.getBlockAt(x, gy, z).getType())) {
-            return;   // plaza o edificio: la carretera pasa de largo sin tocar nada
-        }
-        if (claims != null && claims.isClaimed(x, z)) {
-            return;   // parcela de un jugador: la carretera no la atraviesa a la brava
-        }
-        final int ny = Math.floorDiv(h, 2) - 1;
-        final boolean slab = Math.floorMod(h, 2) == 1;
-        // ANCHO 3 DE VERDAD. Antes se pavimentaba solo la franja perpendicular al avance y, en los
-        // tramos en diagonal (donde el avance alterna entre X y Z), las franjas no se solapaban:
-        // la calzada salia a trozos de uno o dos bloques. Ahora se pavimenta el CUADRO 3x3 de cada
-        // casilla, asi que la carretera mide tres bloques de ancho vaya en la direccion que vaya.
-        for (int ox = -1; ox <= 2; ox++) {
-            for (int oz = -1; oz <= 2; oz++) {
-            final int px = x + ox;
-            final int pz = z + oz;
-            // CUATRO bloques de ancho: dos carriles de calzada (0 y 1) y sus dos arcenes (-1 y 2).
-            final int lane = (perpX != 0 ? ox : oz);
-            final boolean edge = lane == -1 || lane == 2;
-            if (claims != null && claims.isClaimed(px, pz)) {
-                continue;   // ni un bloque dentro de la parcela de alguien
-            }
-            final Material at = world.getBlockAt(px, ny, pz).getType();
-            if (!at.isAir() && !at.name().contains("WATER") && !natural(at)) {
-                continue;   // algo construido (una plaza, una casa): la carretera no lo pisa
-            }
-            for (int y = ny + 1; y <= ny + 4; y++) {
-                final Block b = world.getBlockAt(px, y, pz);
-                if (!b.getType().isAir() && (natural(b.getType()) || b.isLiquid())) {
-                    b.setType(Material.AIR, false);
-                }
-            }
-            if (water) {   // PUENTE: tablero de madera, barandilla en los arcenes y pilones de piedra
-                world.getBlockAt(px, ny, pz).setType(Material.OAK_PLANKS, false);
-                if (edge) {
-                    world.getBlockAt(px, ny + 1, pz).setType(Material.OAK_FENCE, false);
-                }
-                if (index % 5 == 0 && edge) {   // pilon cada pocos tramos: del tablero al lecho
-                    for (int y = ny - 1; y > gy; y--) {
-                        world.getBlockAt(px, y, pz).setType(Material.STONE_BRICKS, false);
-                    }
-                }
-                continue;
-            }
-            // VIADUCTO: la calzada nunca se queda colgando sobre el vacio. Se rellena hacia abajo
-            // hasta encontrar suelo firme, hasta MUY hondo: antes solo bajaba 5 bloques y al cruzar
-            // un barranco el camino "seguia al fondo del precipicio", con un salto mortal en medio.
-            // Los tres primeros bloques son tierra (el camino) y por debajo, piedra: se ve como un
-            // terraplen/viaducto, no como una columna de barro.
-            int filled = 0;
-            for (int y = ny; y >= ny - ROAD_FILL; y--) {
-                final Block b = world.getBlockAt(px, y, pz);
-                if (b.getType().isAir() || b.isLiquid()) {
-                    b.setType(ny - y < 3 ? Material.DIRT : Material.STONE_BRICKS, false);
-                    filled++;
-                } else {
-                    break;
-                }
-            }
-            world.getBlockAt(px, ny, pz).setType(
-                    !edge && !slab ? Material.DIRT_PATH : Material.GRAVEL, false);
-            if (slab && !edge) {
-                world.getBlockAt(px, ny + 1, pz).setType(Material.COBBLESTONE_SLAB, false);
-            }
-            // Si el terraplen es alto, el arcen lleva BARANDILLA: se cruza el barranco sin caerse.
-            if (filled >= 3 && edge) {
-                world.getBlockAt(px, ny + 1, pz).setType(Material.OAK_FENCE, false);
-            }
-            }
-        }
-        // TUNEL: si sobre la calzada sigue habiendo montaña, es que la carretera la atraviesa (la
-        // rasante nunca trepa mas de medio bloque por casilla, asi que ante un monte se mete por
-        // dentro). Se ilumina cada pocos pasos para que no sea una boca de lobo.
-        final boolean tunnel = !water
-                && !world.getBlockAt(x, ny + 5, z).getType().isAir()
-                && world.getBlockAt(x, ny + 5, z).getType().isSolid();
-        if (tunnel && index % 6 == 0) {
-            world.getBlockAt(x + perpX, ny + 3, z + perpZ).setType(Material.LANTERN, false);
-        }
-        if (index % 24 == 12 && !tunnel) {   // farol de camino cada tramo (en el arcen)
-            world.getBlockAt(x + perpX, ny + 1, z + perpZ).setType(Material.OAK_FENCE, false);
-            world.getBlockAt(x + perpX, ny + 2, z + perpZ).setType(Material.LANTERN, false);
-        }
-    }
-
 
     /** Edad de muerte: 65..110, concentrada en 80-90 (media de dos uniformes, pico ~87). */
     private static int randomDeathAge(java.util.Random rng) {
@@ -3484,7 +3480,7 @@ public final class SettlementModule implements Listener {
      * X</b>. La aldea de origen sigue creciendo sin tope; el umbral de la proxima escision sube.
      */
     /** Parte del fondo comun que se llevan los fundadores a la aldea nueva (dote de fundacion). */
-    private static final double SPLIT_DOWRY = 0.5;
+    private static final double SPLIT_DOWRY = TownMath.SPLIT_DOWRY;
 
     private void trySplit(int vid, java.util.Random rng) {
         if (towns.size() >= MAX_TOWNS) {
@@ -3633,7 +3629,7 @@ public final class SettlementModule implements Listener {
         Blueprint.buildHouse(world, cx, cz, fy, door, halfX, halfZ, 1, false,
                 pal[0], pal[1], pal[2], pal[3], true, beds, sign);
         deflood(cx, fy, cz, 1);
-        pathTo(cx, cz, center);
+        pathTo(cx, cz, fy, Math.max(halfX, halfZ), center);
         placed.add(new int[] {cx, cz});
         plugin.buildRegistry().add(new int[] {cx - halfX - 1, fy - 2, cz - halfZ - 1,
                 cx + halfX + 1, fy + 14, cz + halfZ + 1});
@@ -3831,6 +3827,7 @@ public final class SettlementModule implements Listener {
         } catch (Exception ex) {
             plugin.getLogger().warning("[Aetheria] no pude guardar aldeas: " + ex.getMessage());
         }
+        pushState();
     }
 
     /** Seca una casa: quita el agua/lava que se haya colado dentro (±3 del centro, sin tocar

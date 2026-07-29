@@ -281,6 +281,10 @@ public final class NpcRoutineModule {
             t.setBillboard(Display.Billboard.CENTER);
             t.setSeeThrough(true);
             t.addScoreboardTag(SONG_TAG);
+            // NO persistente: es un texto efimero de unos segundos. Si el chunk se descarga antes de
+            // que salte su tarea de borrado (te alejas), el TextDisplay se DESCARTA en vez de quedar
+            // guardado y reaparecer huerfano al recargar (era lo que dejaba frases de canto colgadas).
+            t.setPersistent(false);
         });
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (td.isValid()) {

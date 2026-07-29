@@ -214,6 +214,14 @@ public final class GatewayClient {
         return getJson("/v1/player-gossip?player_uuid=" + playerUuid);
     }
 
+    /** Frases de TABERNA generadas por IA (chistes, brindis, ocurrencias) para la noche: {lines:[]}.
+     *  Sabor decorativo; el plugin las pide una vez por noche y las cachea. */
+    public CompletableFuture<JsonObject> tavernLines() {
+        final JsonObject body = new JsonObject();
+        body.addProperty("n", 8);
+        return post("/v1/tavern-lines", body);
+    }
+
     /**
      * #11 - Reporta la PRODUCCION FISICA de los aldeanos (por lotes, un apunte por sector).
      * El backend la convierte en ingresos del pueblo: la economia vive del trabajo real.
@@ -370,6 +378,35 @@ public final class GatewayClient {
         return getJson("/v1/players/" + enc(uuid) + "/reputation")
                 .thenApply(json -> json.has("villages") ? json.getAsJsonArray("villages")
                         : new com.google.gson.JsonArray());
+    }
+
+    // --- EL PUEBLO en la base de datos (0010): aldeas, colonos, edificios y su historia ---
+
+    /** Trae el estado completo del pueblo guardado en Postgres (al arrancar el plugin). */
+    public CompletableFuture<JsonObject> loadVillageState(String world) {
+        return getJson("/v1/village-state?world=" + enc(world));
+    }
+
+    /** Guarda la instantanea del pueblo. El plugin manda; esto es solo donde lo apunta. */
+    public CompletableFuture<JsonObject> saveVillageState(JsonObject state) {
+        final HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/v1/village-state"))
+                .timeout(Duration.ofSeconds(20))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + token)
+                .PUT(HttpRequest.BodyPublishers.ofString(gson.toJson(state)))
+                .build();
+        return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(resp -> {
+                    final JsonObject out = new JsonObject();
+                    out.addProperty("ok", resp.statusCode() / 100 == 2);
+                    return out;
+                });
+    }
+
+    /** Apunta en la historia del pueblo a un vecino que ya no esta (muerte o emigracion). */
+    public CompletableFuture<JsonObject> recordDeath(JsonObject body) {
+        return sendCapturing("/v1/village-state/death", gson.toJson(body));
     }
 
     /** Los nombres de aldea llevan espacios ("Puebla Nueva"): hay que escaparlos en la URL. */

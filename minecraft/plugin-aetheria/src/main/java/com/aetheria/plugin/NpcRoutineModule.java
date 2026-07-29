@@ -417,6 +417,36 @@ public final class NpcRoutineModule implements Listener {
 
     /** Si el vecino esta DENTRO de la taberna (al atardecer), de vez en cuando "canta": aparece un
      *  texto flotante sobre su cabeza unos segundos. Da vida a la taberna llena. */
+    // Frases de TABERNA generadas por IA (chistes, brindis, ocurrencias): una tanda NUEVA cada
+    // noche, cacheada. Si no hay IA, el backend devuelve un repertorio fijo.
+    private final List<String> tavernLines = new ArrayList<>();
+    private long tavernLinesDay = -1;
+    private boolean tavernFetching = false;
+
+    /** Una vez por NOCHE pide al backend una tanda nueva de frases de taberna (generadas por IA). */
+    private void ensureTavernLines() {
+        final long day = world.getFullTime() / 24000L;
+        if (day == tavernLinesDay || tavernFetching) {
+            return;   // ya las tenemos (o se estan pidiendo)
+        }
+        tavernLinesDay = day;
+        tavernFetching = true;
+        plugin.gateway().tavernLines().whenComplete((json, err) -> Bukkit.getScheduler().runTask(
+                plugin, () -> {
+                    tavernFetching = false;
+                    if (err != null || json == null || !json.has("lines")) {
+                        return;
+                    }
+                    tavernLines.clear();
+                    for (final com.google.gson.JsonElement el : json.getAsJsonArray("lines")) {
+                        final String s = el.getAsString();
+                        if (s != null && !s.isBlank()) {
+                            tavernLines.add(s);
+                        }
+                    }
+                }));
+    }
+
     private void maybeSing(Worker w) {
         if (w.town == null || w.entity == null) {
             return;
@@ -436,7 +466,15 @@ public final class NpcRoutineModule implements Listener {
             return;
         }
         w.lastSong = now;
-        final String line = SONGS[java.util.concurrent.ThreadLocalRandom.current().nextInt(SONGS.length)];
+        ensureTavernLines();   // asegura la tanda de frases de IA de esta noche
+        final var rng = java.util.concurrent.ThreadLocalRandom.current();
+        final String line;
+        if (!tavernLines.isEmpty() && rng.nextInt(100) < 55) {
+            // 55%: una ocurrencia/chiste/brindis de IA (en blanco, se lee como comentario).
+            line = "§f" + tavernLines.get(rng.nextInt(tavernLines.size()));
+        } else {
+            line = SONGS[rng.nextInt(SONGS.length)];   // el resto, un canto de siempre
+        }
         bubble(at.clone().add(0, 2.3, 0), line, 90L);   // ~4,5 s y desaparece
     }
 

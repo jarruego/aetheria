@@ -22,6 +22,7 @@ from aetheria_ai.models.plan import (
     ServiceResponse,
 )
 from aetheria_ai.planner.planner import build_plan
+from aetheria_ai.tavern import tavern_lines
 from aetheria_ai.validator.validator import validate_plan
 from aetheria_ai.world_state_client import charge_player, record_plan_audit
 
@@ -36,6 +37,13 @@ _DEFAULT_BLUEPRINT_PRICE = 25.0
 @router.post("/conversation", response_model=ConversationResponse)
 async def conversation(request: ConversationRequest) -> ConversationResponse:
     return await handle_conversation(request)
+
+
+@router.post("/tavern-lines")
+async def tavern_lines_route(body: dict | None = None) -> dict:
+    """Frases de taberna generadas por IA (chistes, brindis, ocurrencias) para la noche. Sabor."""
+    n = int((body or {}).get("n", 8))
+    return {"lines": await tavern_lines(n)}
 
 
 @router.post("/plans", response_model=PlanResponse)

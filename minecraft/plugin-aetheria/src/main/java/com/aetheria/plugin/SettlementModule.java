@@ -2394,6 +2394,27 @@ public final class SettlementModule implements Listener {
         if (!plazaLoaded(t)) {
             return;
         }
+        // TITULO en un display APARTE (un TextDisplay no permite tamanos por linea): el nombre de la
+        // aldea, MAS GRANDE y CENTRADO, encima de la lista.
+        final Location titleLoc = new Location(world, t.cx + 0.5, t.baseY + 8.6, t.cz + 0.5);
+        final String titleTag = RANK_TAG + "_title_" + vid;
+        TextDisplay title = singlePanel(titleLoc, titleTag, 10);
+        if (title == null) {
+            title = (TextDisplay) world.spawnEntity(titleLoc, EntityType.TEXT_DISPLAY);
+            title.addScoreboardTag(PANEL_TAG);
+            title.addScoreboardTag(titleTag);
+            title.setBillboard(Display.Billboard.CENTER);
+            title.setSeeThrough(false);
+            title.setPersistent(true);
+            title.setAlignment(TextDisplay.TextAlignment.CENTER);
+            title.setViewRange(1.4f);
+            title.setTransformation(new org.bukkit.util.Transformation(
+                    new org.joml.Vector3f(), new org.joml.Quaternionf(),
+                    new org.joml.Vector3f(2.6f, 2.6f, 2.6f), new org.joml.Quaternionf()));
+        }
+        title.text(Component.text("§6§l" + t.name));
+        title.teleport(titleLoc);
+
         final Location loc = new Location(world, t.cx + 0.5, t.baseY + 6.0, t.cz + 0.5);
         final String tag = RANK_TAG + "_" + vid;
         TextDisplay board = singlePanel(loc, tag, 10);
@@ -2412,7 +2433,7 @@ public final class SettlementModule implements Listener {
                     new org.joml.Vector3f(), new org.joml.Quaternionf(),
                     new org.joml.Vector3f(1.5f, 1.5f, 1.5f), new org.joml.Quaternionf()));
         }
-        final StringBuilder sb = new StringBuilder("§6§l" + t.name + "\n \n");
+        final StringBuilder sb = new StringBuilder();   // el titulo va en su propio display, encima
         if (rk.isEmpty()) {
             sb.append("§7(aun no hay nadie en el tablon)");
         }

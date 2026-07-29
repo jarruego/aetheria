@@ -9,6 +9,11 @@ gateway:
 # NPC por defecto con el que se dirige la conversacion/planes desde los comandos.
 default-npc: "arquitecto-01"
 
+# Skins HUMANAS de los NPC (disfraz de jugador con skin via packetevents). Los modelos de jugador
+# con skin pesan mas en el CLIENTE que los aldeanos vanilla: si notas FPS bajos con muchos NPC cerca,
+# ponlo en false para comprobarlo (los NPC volveran a verse como aldeanos, sin tocar su comportamiento).
+human-skins: true
+
 # Rol del servidor: 'main' (por defecto) o 'lobby'. Puede sobreescribirse con la
 # variable de entorno AETHERIA_ROLE (recomendado en docker-compose).
 role: "main"

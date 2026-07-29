@@ -32,7 +32,11 @@ public final class AetheriaPlugin extends JavaPlugin {
 
         // SKINS HUMANAS de los NPC (packetevents): si el plugin esta, se registra el listener que
         // disfraza los aldeanos de jugador con skin. Dependencia BLANDA: sin el, siguen de aldeanos.
-        if (getServer().getPluginManager().getPlugin("packetevents") != null) {
+        // Se puede APAGAR con `human-skins: false` en config.yml (los modelos de jugador con skin
+        // pesan mas en el CLIENTE que los aldeanos; util para comprobar si son la causa de FPS bajos).
+        saveDefaultConfig();
+        final boolean humanSkins = getConfig().getBoolean("human-skins", true);
+        if (humanSkins && getServer().getPluginManager().getPlugin("packetevents") != null) {
             final SkinCache skins = new SkinCache();
             skins.loadProfSkins();   // skins por oficio (las que va pasando el dueno)
             skins.loadAsync(this);   // set de arranque por sexo (fallback), en 2o plano
@@ -132,16 +136,23 @@ public final class AetheriaPlugin extends JavaPlugin {
                         new SettlementModule(this, gateway, village, routines, convo, gameWorld, market);
                 getServer().getPluginManager().registerEvents(settlement, this);   // protege sus casas
 
-                // MISIONES + PRESTIGIO: el pregonero de cada aldea reparte encargos generados por
+                // MISIONES + PRESTIGIO: el alguacil de cada aldea reparte encargos generados por
                 // codigo; cumplirlos (y aportar al arca) da prestigio, y el primero del ranking de
                 // la aldea (vecinos y jugadores en la misma tabla) es su ALCALDE. Se engancha ANTES
-                // de arrancar el pueblo para que los pregoneros ya esten en la primera pasada.
+                // de arrancar el pueblo para que los alguaciles ya esten en la primera pasada.
                 final QuestModule questsMod = new QuestModule(this, gateway, settlement);
                 getServer().getPluginManager().registerEvents(questsMod, this);
                 Objects.requireNonNull(getCommand("prestigio")).setExecutor(questsMod);
                 settlement.setQuests(questsMod);
                 market.setQuests(questsMod);
+                questsMod.start();   // la ronda del alguacil por la plaza de cada aldea
                 questsRef = questsMod;
+
+                // COMERCIO con los vecinos en AET (agachado + clic; nunca la ventana vanilla de
+                // esmeraldas) y BOTICA del pueblo, donde el boticario cura por dinero.
+                final NpcTradeModule trade = new NpcTradeModule(this, gateway, settlement);
+                getServer().getPluginManager().registerEvents(trade, this);
+                settlement.setTrade(trade);
 
                 settlement.start();
                 settlementRef = settlement;
@@ -166,6 +177,11 @@ public final class AetheriaPlugin extends JavaPlugin {
             // Fase 9: parcelas reclamables con propietario y proteccion.
             final ClaimModule claims = new ClaimModule(this, gateway, role);
             claims.setQuests(questsRef, settlementRef);   // reclamar parcela puede ser un encargo
+            if (settlementRef != null) {
+                // El pueblo consulta las parcelas ANTES de construir: nada de casas de colono
+                // (ni carreteras) encima del terreno de un jugador.
+                settlementRef.setClaims(claims);
+            }
             if (getConfig().getBoolean("claims.enabled", true)) {
                 Objects.requireNonNull(getCommand("claim")).setExecutor(claims);
                 Objects.requireNonNull(getCommand("unclaim")).setExecutor(claims);

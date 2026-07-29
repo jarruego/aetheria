@@ -191,6 +191,12 @@ public final class RoadBuilder {
                 return;
             }
             for (int k = 0; k < 6 && state[1] < n; k++, state[1]++) {   // --- fase 2: pavimentar ---
+                final int[] t = tiles.get(state[1]);
+                // La carretera acaba a 15 bloques del CENTRO de cada aldea: asi no se mete entre los
+                // edificios ni los pisa; los senderos internos del pueblo la enlazan.
+                if (Math.hypot(t[0] - x0, t[1] - z0) < 15 || Math.hypot(t[0] - x1, t[1] - z1) < 15) {
+                    continue;
+                }
                 paveTile(tiles, state[1], prof[state[1]], wet[state[1]], painted);
             }
             if (state[1] >= n) {

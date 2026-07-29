@@ -197,11 +197,25 @@ public final class VillageModule {
     /** Nivela y despeja un solar a la cota dada: talla el terreno natural (y arboles) que sobresale,
      *  rellena los huecos por debajo y deja cesped. Para que un edificio quede A RAS y con el acceso
      *  despejado, no incrustado en una loma ni con la puerta tapada por un talud. */
+    /** ¿Pasa una CARRETERA (o sendero) por esta columna? Su calzada es DIRT_PATH. Para no cubrirla
+     *  de tierra/hierba al nivelar el solar de un edificio (OAK_PLANKS no vale: es de casas). */
+    private boolean roadHere(int x, int z, int floorY) {
+        for (int y = floorY - 3; y <= floorY + 3; y++) {
+            if (world.getBlockAt(x, y, z).getType() == Material.DIRT_PATH) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void levelPad(int cx, int cz, int half, int floorY) {
         for (int dx = -half; dx <= half; dx++) {
             for (int dz = -half; dz <= half; dz++) {
                 final int x = cx + dx;
                 final int z = cz + dz;
+                if (roadHere(x, z, floorY)) {
+                    continue;   // NO se echa tierra/hierba sobre una carretera que pase por aqui
+                }
                 for (int y = floorY + 1; y <= floorY + 12; y++) {   // talla la loma/arbol por encima
                     final Block b = world.getBlockAt(x, y, z);
                     if (!b.getType().isAir() && TerrainPlanner.natural(b.getType())) {
@@ -449,6 +463,68 @@ public final class VillageModule {
 
     /** Taberna GRANDE (9x9): salon de madera con barra, mesas con sillas, barriles y cristaleras.
      *  La puerta mira al OESTE (hacia la plaza). Nivela su solar. Devuelve su centro. */
+    /**
+     * BOTICA del pueblo (edificio civico desde 8 vecinos): la casa del boticario, donde se cura
+     * al que llega tocado. Piedra y madera, alambique y caldero al fondo, estanterias con hierbas
+     * y una cruz de faroles en la fachada para que se vea desde la plaza.
+     */
+    public Location buildApothecary(int cx, int cz, int floorY, String town) {
+        final int half = 4;
+        levelPad(cx, cz, half + 2, floorY);
+        foundation(cx, cz, half, floorY, Material.STONE_BRICKS, 6);
+        // Muros de 4 de alto: esquinas de troncos, paredes de piedra (aspecto de casa de oficio).
+        for (int y = floorY + 1; y <= floorY + 4; y++) {
+            for (int dx = -half; dx <= half; dx++) {
+                for (int dz = -half; dz <= half; dz++) {
+                    if (Math.abs(dx) != half && Math.abs(dz) != half) {
+                        continue;
+                    }
+                    final boolean corner = Math.abs(dx) == half && Math.abs(dz) == half;
+                    set(cx + dx, y, cz + dz, corner ? Material.SPRUCE_LOG : Material.STONE_BRICKS);
+                }
+            }
+        }
+        for (int d = -2; d <= 2; d += 2) {   // ventanales
+            set(cx + d, floorY + 2, cz - half, Material.GLASS_PANE);
+            set(cx + d, floorY + 2, cz + half, Material.GLASS_PANE);
+            set(cx - half, floorY + 2, cz + d, Material.GLASS_PANE);
+            set(cx + half, floorY + 2, cz + d, Material.GLASS_PANE);
+        }
+        // Puerta al SUR (hacia la plaza), hueco de 2.
+        set(cx, floorY + 1, cz + half, Material.AIR);
+        set(cx, floorY + 2, cz + half, Material.AIR);
+        // Tejado plano con voladizo y remate de losas.
+        for (int dx = -half - 1; dx <= half + 1; dx++) {
+            for (int dz = -half - 1; dz <= half + 1; dz++) {
+                set(cx + dx, floorY + 5, cz + dz, Material.DEEPSLATE_TILES);
+            }
+        }
+        for (int dx = -half + 1; dx <= half - 1; dx++) {
+            for (int dz = -half + 1; dz <= half - 1; dz++) {
+                set(cx + dx, floorY + 6, cz + dz, Material.DEEPSLATE_TILE_SLAB);
+            }
+        }
+        // Botica por dentro: mostrador al fondo, alambique, caldero de agua y estanterias.
+        for (int dx = -2; dx <= 2; dx++) {
+            set(cx + dx, floorY + 1, cz - half + 2, Material.SPRUCE_PLANKS);   // mostrador
+            set(cx + dx, floorY + 2, cz - half + 2, Material.SPRUCE_SLAB);
+        }
+        set(cx - 2, floorY + 1, cz - half + 1, Material.BREWING_STAND);
+        set(cx + 2, floorY + 1, cz - half + 1, Material.CAULDRON);
+        set(cx - 3, floorY + 1, cz, Material.BOOKSHELF);
+        set(cx - 3, floorY + 2, cz, Material.FLOWER_POT);
+        set(cx + 3, floorY + 1, cz, Material.BOOKSHELF);
+        set(cx + 3, floorY + 2, cz, Material.FLOWER_POT);
+        set(cx, floorY + 4, cz, Material.LANTERN);
+        // CRUZ de faroles sobre la puerta: se ve desde lejos que ahi curan.
+        set(cx, floorY + 3, cz + half, Material.LANTERN);
+        set(cx - 1, floorY + 4, cz + half, Material.LANTERN);
+        set(cx + 1, floorY + 4, cz + half, Material.LANTERN);
+        set(cx, floorY + 5, cz + half, Material.LANTERN);
+        civicSign("botica", cx, cz, floorY, town);
+        return new Location(world, cx + 0.5, floorY + 1, cz - half + 3 + 0.5);   // tras el mostrador
+    }
+
     public Location buildTavern(int cx, int cz, int floorY, String town) {
         final int half = 4;
         levelPad(cx, cz, half + 2, floorY);   // solar a ras y despejado (no incrustada)
@@ -586,6 +662,8 @@ public final class VillageModule {
                     "§6Taberna", "§7de " + town);
             case "mercado" -> placeWallSign(cx + 1, floorY + 2, cz - 3, BlockFace.NORTH,
                     "§6Mercado", "§7de " + town);
+            case "botica" -> placeWallSign(cx + 1, floorY + 2, cz + 4, BlockFace.SOUTH,
+                    "§dBotica", "§7de " + town);
             default -> { }
         }
     }

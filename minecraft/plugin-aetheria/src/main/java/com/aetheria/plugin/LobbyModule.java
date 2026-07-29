@@ -161,22 +161,16 @@ public final class LobbyModule implements Listener {
     private void placePortal(World world, PortalDef def, int[] off) {
         final int cx = off[0];
         final int cz = off[1];
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dz = -1; dz <= 1; dz++) {
-                setBlock(world, cx + dx, 0, cz + dz, def.material());
-            }
-        }
-        setBlock(world, cx, 0, cz, Material.SEA_LANTERN);         // centro luminoso
-
-        // Cartel entre el centro y el portal, MIRANDO al jugador que llega.
-        final int sx = cx - Integer.signum(cx) * 2;
-        final int sz = cz - Integer.signum(cz) * 2;
+        // Portal VERTICAL relleno de AGUA (forma de portal nether), no una losa en el suelo: se
+        // CRUZA andando por cualquiera de los dos lados. Si el portal esta en el eje Z se cruza en
+        // Z (marco a lo ancho en X) y viceversa. El cartel de pared mira al centro (por donde llega
+        // el jugador).
+        final boolean alongX = cz != 0;
         final BlockFace facing = towardCenter(cx, cz);
-        placeSign(world.getBlockAt(OX + sx, FLOOR_Y + 1, OZ + sz), facing,
-                "== " + def.label() + " ==", "Pisa el portal", "para viajar", "a " + def.label());
-
-        portals.add(new PlacedPortal(def.server(),
-                new Location(world, OX + cx + 0.5, FLOOR_Y + 1, OZ + cz + 0.5)));
+        final Location center = WaterPortal.build(world, OX + cx, FLOOR_Y, OZ + cz, alongX,
+                def.material(), facing,
+                new String[] {"== " + def.label() + " ==", "", "Cruza para", "viajar a " + def.label()});
+        portals.add(new PlacedPortal(def.server(), center));
         // Los portales ya no llevan guia propio: el lobby tiene UN solo conserje que ronda
         // la sala (LobbyGuideModule).
     }

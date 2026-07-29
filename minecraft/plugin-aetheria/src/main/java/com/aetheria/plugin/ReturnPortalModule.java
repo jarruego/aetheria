@@ -120,11 +120,11 @@ public final class ReturnPortalModule implements Listener {
             world.getBlockAt(cx + c[0], baseY + 3, cz + c[1]).setType(Material.SEA_LANTERN, false);
         }
 
-        // Cartel mirando al jugador (que llega desde el norte del portal).
-        placeSign(world.getBlockAt(cx, baseY + 1, cz - 1), BlockFace.NORTH,
-                "== LOBBY ==", "Pisa aqui", "para volver", "al lobby");
-
-        this.portalCenter = new Location(world, cx + 0.5, baseY + 1, cz + 0.5);
+        // Portal VERTICAL relleno de AGUA (forma de portal nether) sobre la plataforma: se CRUZA
+        // andando por cualquiera de los dos lados. El cartel de pared, pegado al marco, mira al que
+        // llega (desde el norte). El centro del hueco es el punto que detecta el paso.
+        this.portalCenter = WaterPortal.build(world, cx, baseY, cz, true, Material.AMETHYST_BLOCK,
+                BlockFace.NORTH, new String[] {"== LOBBY ==", "", "Cruza para", "volver al lobby"});
 
         // Punto de llegada: al OTRO lado del portal (lado del pueblo), 4 casillas por delante y
         // MIRANDO al pueblo (portal a su espalda), para no volver a entrar al moverse. NO se

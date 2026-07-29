@@ -242,16 +242,20 @@ public final class SettlementModule implements Listener {
     }
 
     /**
-     * Tamano a efectos de coste: SOLO los vecinos que hay ahora.
+     * Tamano a efectos de COSTE: solo los ADULTOS de la aldea.
      *
-     * <p>Se probo a cobrar tambien por los que se marcharon a fundar (poblacion + 2 por escision)
-     * y dejaba a la aldea madre demasiado tocada: encima de perder gente y medio fondo, pagaba
-     * precios de aldea grande y no levantaba cabeza. El freno a colonizar sin parar lo pone el
-     * UMBRAL de escision ({@link #splitThreshold}, +2 por cada aldea fundada), no el precio de
-     * cada vecino.
+     * <p>Los ninos cuentan como vecinos en todo lo demas (marcador, panel de la plaza, edificios
+     * civicos) y comen su parte del coste de vida cada ciclo, pero <b>no encarecen la llegada del
+     * siguiente vecino</b>: no producen. Como cada vecino cuesta el doble que el anterior, contar
+     * dos criticos cuadruplicaba el precio (480 AET en vez de 120) y dejaba a la aldea atascada
+     * pagando como si fuera el doble de grande de lo que trabaja.
+     *
+     * <p>Tampoco se cobra por los que se marcharon a fundar otra aldea: se probo y dejaba a la
+     * madre demasiado tocada. El freno a colonizar sin parar lo pone el UMBRAL de escision
+     * ({@link #splitThreshold}, +2 por cada aldea fundada).
      */
     private int chargedSize(int vid) {
-        return townPopulation(vid);
+        return countInTown(vid);
     }
 
     /** Desgracias que sirven de excusa para que unos vecinos se marchen a fundar una aldea nueva. */
@@ -645,8 +649,29 @@ public final class SettlementModule implements Listener {
 
     /** Crea el bebe de un nino del pueblo (entidad, nombre sobre la cabeza y conversable). */
     private Villager spawnBaby(String name, Location at) {
-        final Villager baby = (Villager) world.spawnEntity(at, EntityType.VILLAGER);
+        // Reutiliza el bebe YA persistido con ese nombre (evita CLONES al reiniciar) y quita los
+        // duplicados cargados. Los bebes de aldeas descargadas los reconcilia onEntitiesLoad.
+        final String label = name + " (nino)";
+        Villager baby = null;
+        for (final Villager v : world.getEntitiesByClass(Villager.class)) {
+            if (!v.getScoreboardTags().contains(BABY_TAG) || v.customName() == null) {
+                continue;
+            }
+            final String pn = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
+                    .plainText().serialize(v.customName());
+            if (label.equals(pn)) {
+                if (baby == null) {
+                    baby = v;
+                } else {
+                    v.remove();   // duplicado del mismo nino: fuera
+                }
+            }
+        }
+        if (baby == null) {
+            baby = (Villager) world.spawnEntity(at, EntityType.VILLAGER);
+        }
         baby.setBaby();
+        baby.setAgeLock(true);   // NO crece solo (vanilla): sigue nino hasta que madura por codigo
         baby.customName(Component.text("§b" + name + " §7(nino)"));
         baby.setCustomNameVisible(true);
         baby.setPersistent(true);
@@ -1039,6 +1064,8 @@ public final class SettlementModule implements Listener {
                 return;
             }
             routines.dedupe();  // borra aldeanos-clon que hayan quedado de reinicios/recargas
+            sweepBabies();      // y bebes-clon / ninos que crecieron solos (zona del spawn, que no
+                                // dispara EntitiesLoadEvent tras arrancar)
             ageAndDeath();      // envejecen; a los 65 se jubilan; de muy mayores mueren (lento)
             matureChildren();   // los ninos que ya han crecido se mudan a su casa
             maybeMarry();       // dos solteros pueden casarse y mudarse a una casa mediana nueva
@@ -2241,6 +2268,65 @@ public final class SettlementModule implements Listener {
                 }
             }
         }, 40L);
+    }
+
+    /** Al CARGAR las entidades de un trozo de mundo, reconcilia los BEBES: quita los huerfanos
+     *  (clones o ninos que crecieron y ya no estan en la lista), deja UNO por nombre, y a los que
+     *  siguen siendo ninos les vuelve a fijar el aspecto de bebe (por si un baby vanilla habia
+     *  crecido solo). Asi no quedan "ninos sueltos" ni con aspecto adulto al acercarse a la aldea. */
+    @EventHandler
+    public void onBabiesLoad(org.bukkit.event.world.EntitiesLoadEvent e) {
+        final java.util.Set<String> seen = new java.util.HashSet<>();
+        for (final org.bukkit.entity.Entity ent : e.getEntities()) {
+            if (!(ent instanceof Villager v) || !v.getScoreboardTags().contains(BABY_TAG)
+                    || v.customName() == null) {
+                continue;
+            }
+            final String pn = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
+                    .plainText().serialize(v.customName());
+            final String childName = pn.endsWith(" (nino)") ? pn.substring(0, pn.length() - 7) : pn;
+            boolean isChild = false;
+            for (final Child c : children) {
+                if (c.name.equals(childName)) {
+                    isChild = true;
+                    break;
+                }
+            }
+            if (!isChild || !seen.add(childName)) {
+                v.remove();   // no es un nino actual (clon/huerfano que crecio) o es un duplicado
+                continue;
+            }
+            v.setBaby();          // por si el baby vanilla habia crecido solo (aspecto adulto)
+            v.setAgeLock(true);   // y que no vuelva a crecer
+        }
+    }
+
+    /** Barre TODOS los bebes cargados (no solo los recien cargados): misma limpieza que
+     *  {@link #onBabiesLoad}. Se llama cada ciclo para cubrir la zona del spawn, que no dispara
+     *  EntitiesLoadEvent despues de arrancar. */
+    private void sweepBabies() {
+        final java.util.Set<String> seen = new java.util.HashSet<>();
+        for (final Villager v : world.getEntitiesByClass(Villager.class)) {
+            if (!v.getScoreboardTags().contains(BABY_TAG) || v.customName() == null) {
+                continue;
+            }
+            final String pn = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
+                    .plainText().serialize(v.customName());
+            final String childName = pn.endsWith(" (nino)") ? pn.substring(0, pn.length() - 7) : pn;
+            boolean isChild = false;
+            for (final Child c : children) {
+                if (c.name.equals(childName)) {
+                    isChild = true;
+                    break;
+                }
+            }
+            if (!isChild || !seen.add(childName)) {
+                v.remove();
+                continue;
+            }
+            v.setBaby();
+            v.setAgeLock(true);
+        }
     }
 
     /** La aldea que se llama asi, o -1. */

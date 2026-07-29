@@ -14,6 +14,10 @@ default-npc: "arquitecto-01"
 # ponlo en false para comprobarlo (los NPC volveran a verse como aldeanos, sin tocar su comportamiento).
 human-skins: true
 
+# Mundo CREATIVO: cada bloque que coloca un jugador solo lo puede romper el mismo (o un op). Protege
+# las construcciones de unos jugadores frente a otros. Ponlo en false para creativo libre.
+creative-protection: true
+
 # Rol del servidor: 'main' (por defecto) o 'lobby'. Puede sobreescribirse con la
 # variable de entorno AETHERIA_ROLE (recomendado en docker-compose).
 role: "main"

@@ -106,6 +106,12 @@ public final class AetheriaPlugin extends JavaPlugin {
             // que sabemos construir). El resto del creativo se queda igual.
             if (role.equals("creative")) {
                 new CatalogModule(this, getServer().getWorlds().get(0)).build();
+                // Cada bloque que coloque un jugador solo lo puede romper EL (o un op): protege las
+                // construcciones de unos jugadores frente a otros.
+                if (getConfig().getBoolean("creative-protection", true)) {
+                    getServer().getPluginManager().registerEvents(
+                            new CreativeProtectionModule(this, getServer().getWorlds().get(0)), this);
+                }
             }
 
             // Fase 7: aldea fisica + vecinos con rutina diaria en el mundo principal (no en creativo).
@@ -137,6 +143,7 @@ public final class AetheriaPlugin extends JavaPlugin {
                 final QuestModule questsMod = new QuestModule(this, gateway, settlement);
                 getServer().getPluginManager().registerEvents(questsMod, this);
                 Objects.requireNonNull(getCommand("prestigio")).setExecutor(questsMod);
+                command.setSettlement(settlement);   // /aetheria reparar
                 settlement.setQuests(questsMod);
                 market.setQuests(questsMod);
                 questsMod.start();   // la ronda del alguacil por la plaza de cada aldea

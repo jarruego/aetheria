@@ -12,6 +12,9 @@ import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.TextDisplay;
 import org.bukkit.entity.Villager;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.world.EntitiesLoadEvent;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
@@ -24,7 +27,7 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
  * <p>Son ademas conversables (se registran en {@link ConversationManager}), asi que el
  * mundo empieza a sentirse habitado en lugar de tener guias estaticos junto a los portales.
  */
-public final class NpcRoutineModule {
+public final class NpcRoutineModule implements Listener {
 
     private static final String WORKER_TAG = "aetheria_worker";
     private static final String SONG_TAG = "aetheria_song";
@@ -546,6 +549,19 @@ public final class NpcRoutineModule {
             if (w.name.equals(name) && w.entity instanceof Villager v) {
                 v.setProfession(prof);
                 return;
+            }
+        }
+    }
+
+    /** Cuando cargan las entidades de un trozo de mundo, se borran las burbujas de canto/cotilleo
+     *  que hubieran quedado guardadas ahi (de versiones antiguas o de un borrado que no las alcanzo
+     *  por estar el chunk descargado). Asi NO reaparecen frases colgadas al acercarse a la aldea.
+     *  Las nuevas ya no persisten (ver {@link #bubble}), pero esto limpia las viejas al vuelo. */
+    @EventHandler
+    public void onEntitiesLoad(EntitiesLoadEvent e) {
+        for (final org.bukkit.entity.Entity ent : e.getEntities()) {
+            if (ent instanceof TextDisplay && ent.getScoreboardTags().contains(SONG_TAG)) {
+                ent.remove();
             }
         }
     }

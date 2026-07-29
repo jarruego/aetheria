@@ -2166,7 +2166,9 @@ public final class SettlementModule implements Listener {
         final List<Rank> rk = computeRanking(vid);
         ranking.put(vid, rk);
         final String alcalde = rk.isEmpty() ? "" : rk.get(0).name();
-        infoPanel(vid, t, alcalde);
+        // El cartel de info (nombre/alcalde/habitantes) se quito: ya sale en el marcador lateral.
+        // Se limpia el que hubiera quedado flotando de antes.
+        removeInfoPanel(t);
         prestigeBoard(vid, t, rk);
         final String prev = alcaldes.get(vid);
         if (!alcalde.isEmpty() && !alcalde.equals(prev)) {
@@ -2410,8 +2412,7 @@ public final class SettlementModule implements Listener {
                     new org.joml.Vector3f(), new org.joml.Quaternionf(),
                     new org.joml.Vector3f(1.5f, 1.5f, 1.5f), new org.joml.Quaternionf()));
         }
-        final StringBuilder sb = new StringBuilder("§6§lPrestigio de " + t.name + "\n");
-        sb.append("§8vecinos y viajeros, en la misma tabla\n \n");
+        final StringBuilder sb = new StringBuilder("§6§l" + t.name + "\n \n");
         if (rk.isEmpty()) {
             sb.append("§7(aun no hay nadie en el tablon)");
         }
@@ -2487,40 +2488,22 @@ public final class SettlementModule implements Listener {
 
     private static final String PANEL_TAG = "aetheria_panel";
 
-    /** Panel HOLOGRAFICO de color (Text Display) flotando sobre la plaza: nombre del pueblo,
-     *  alcalde, habitantes y prosperidad — como una pantalla de informacion, sin carteles. */
-    private void infoPanel(int vid, Town t, String alcalde) {
+    /** El cartel de info de la plaza (nombre/alcalde/habitantes) se RETIRO: esos datos ya salen en
+     *  el marcador lateral, y un TextDisplay menos aligera la plaza. Esto borra el que hubiera
+     *  quedado flotando de versiones anteriores. */
+    private void removeInfoPanel(Town t) {
         if (!plazaLoaded(t)) {
-            return;   // aldea descargada: no se toca (evita duplicar el panel)
+            return;
         }
-        final int gy = t.baseY;   // cota fija de la plaza (nada de groundY: no debe "trepar")
-        // Limpia posibles carteles/poste viejos apilados (bug anterior) sobre el punto del cartel.
-        for (int yy = gy; yy <= gy + 20; yy++) {
-            final Material m = world.getBlockAt(t.cx, yy, t.cz - 4).getType();
-            if (m == Material.OAK_SIGN || m == Material.OAK_WALL_SIGN || m == Material.OAK_FENCE) {
-                world.getBlockAt(t.cx, yy, t.cz - 4).setType(Material.AIR, false);
+        // El cartel de info llevaba el tag por-aldea "aetheria_panel_<vid>" (el tablon de prestigio
+        // lleva "aetheria_rank_<vid>" y el arca "aetheria_arca_<vid>", asi que no se tocan).
+        final Location loc = new Location(world, t.cx + 0.5, t.baseY + 3.4, t.cz + 0.5);
+        for (final org.bukkit.entity.Entity e : world.getNearbyEntities(loc, 10, 6, 10)) {
+            if (e instanceof TextDisplay && e.getScoreboardTags().stream()
+                    .anyMatch(s -> s.startsWith(PANEL_TAG + "_"))) {
+                e.remove();
             }
         }
-        final Location loc = new Location(world, t.cx + 0.5, gy + 3.4, t.cz + 0.5);
-        final String tag = PANEL_TAG + "_" + vid;
-        TextDisplay panel = singlePanel(loc, tag, 10);
-        if (panel == null) {
-            panel = (TextDisplay) world.spawnEntity(loc, EntityType.TEXT_DISPLAY);
-            panel.addScoreboardTag(PANEL_TAG);
-            panel.addScoreboardTag(tag);
-            panel.setBillboard(Display.Billboard.CENTER);   // siempre mira al jugador
-            panel.setSeeThrough(false);
-            panel.setPersistent(true);
-            panel.setBackgroundColor(Color.fromARGB(190, 15, 15, 25));
-            panel.setAlignment(TextDisplay.TextAlignment.CENTER);
-        }
-        final int hab = townPopulation(vid);
-        panel.text(Component.text(
-                "§6§l" + t.name + "\n"
-                + "§r§8· pueblo de Aetheria ·\n \n"
-                + "§7Alcalde: §e" + (alcalde.isEmpty() ? "sin nombrar" : alcalde) + "\n"
-                + "§7Habitantes: §a" + hab));
-        panel.teleport(loc);
     }
 
     /** Reserva los solares de los edificios civicos (taberna/mercado) de cada aldea y construye ya
